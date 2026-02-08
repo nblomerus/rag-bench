@@ -1,0 +1,13 @@
+-c requirements.txt
+coverage
+ruff
+mock
+pytest
+pytest-mock
+pytest-cov
+pytest-docker
+pre-commit
+
+# Packages for scraping and parsing
+arxiv>=2.1.0
+pymupdf

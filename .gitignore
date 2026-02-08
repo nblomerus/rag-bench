@@ -5,13 +5,7 @@ __pycache__/
 *.egg-info/
 .venv/
 .pyenv/
-
-# Data (large / generated)
-data/pdfs/
-data/chunks.json
-data/parsed_papers.json
-data/scraped_papers.json
-chroma_db/
+.python-version
 
 # Logs
 logs/
