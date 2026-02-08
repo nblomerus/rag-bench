@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+.pyenv/
+
+# Data (large / generated)
+data/pdfs/
+data/chunks.json
+data/parsed_papers.json
+data/scraped_papers.json
+chroma_db/
+
+# Logs
+logs/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Data
+/data
