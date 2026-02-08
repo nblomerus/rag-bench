@@ -1,0 +1,74 @@
+[
+  {
+    "id": "eval_001",
+    "question": "What is the scaled dot-product attention formula?",
+    "difficulty": "easy",
+    "top_score": 0.0,
+    "is_relevant": false,
+    "num_results": 0,
+    "should_deflect": false
+  },
+  {
+    "id": "eval_002",
+    "question": "How many trainable parameters does LoRA reduce compared to full fine-tuning on GPT-3?",
+    "difficulty": "easy",
+    "top_score": 0.0,
+    "is_relevant": false,
+    "num_results": 0,
+    "should_deflect": false
+  },
+  {
+    "id": "eval_003",
+    "question": "What BLEU score did the Transformer achieve on English-to-German translation?",
+    "difficulty": "easy",
+    "top_score": 0.0,
+    "is_relevant": false,
+    "num_results": 0,
+    "should_deflect": false
+  },
+  {
+    "id": "eval_004",
+    "question": "What is the forward diffusion process in DDPM?",
+    "difficulty": "easy",
+    "top_score": 0.0,
+    "is_relevant": false,
+    "num_results": 0,
+    "should_deflect": false
+  },
+  {
+    "id": "eval_005",
+    "question": "How many demonstration prompts were used to train the InstructGPT SFT model?",
+    "difficulty": "easy",
+    "top_score": 0.0,
+    "is_relevant": false,
+    "num_results": 0,
+    "should_deflect": false
+  },
+  {
+    "id": "eval_006",
+    "question": "What retriever does the RAG model use?",
+    "difficulty": "easy",
+    "top_score": 0.0,
+    "is_relevant": false,
+    "num_results": 0,
+    "should_deflect": false
+  },
+  {
+    "id": "eval_007",
+    "question": "What is the difference between RAG-Sequence and RAG-Token?",
+    "difficulty": "easy",
+    "top_score": 0.0,
+    "is_relevant": false,
+    "num_results": 0,
+    "should_deflect": false
+  },
+  {
+    "id": "eval_008",
+    "question": "Why does the Transformer need positional encoding?",
+    "difficulty": "easy",
+    "top_score": 0.0,
+    "is_relevant": false,
+    "num_results": 0,
+    "should_deflect": false
+  }
+]
