@@ -6,11 +6,14 @@ aiohttp==3.13.3
     # via fsspec
 aiosignal==1.4.0
     # via aiohttp
+annotated-doc==0.0.4
+    # via fastapi
 annotated-types==0.7.0
     # via pydantic
 anyio==4.12.1
     # via
     #   httpx
+    #   starlette
     #   watchfiles
 attrs==25.4.0
     # via
@@ -52,6 +55,8 @@ distro==1.9.0
     # via posthog
 durationpy==0.10
     # via kubernetes
+fastapi==0.128.5
+    # via -r requirements.in
 filelock==3.20.3
     # via
     #   datasets
@@ -86,6 +91,7 @@ httptools==0.7.1
     # via uvicorn
 httpx==0.28.1
     # via
+    #   -r requirements.in
     #   chromadb
     #   datasets
     #   huggingface-hub
@@ -98,6 +104,7 @@ huggingface-hub==1.4.1
     #   transformers
 idna==3.11
     # via
+    #   -r requirements.in
     #   anyio
     #   httpx
     #   requests
@@ -252,7 +259,9 @@ pybase64==1.4.3
     # via chromadb
 pydantic==2.12.5
     # via
+    #   -r requirements.in
     #   chromadb
+    #   fastapi
     #   langchain-core
     #   langsmith
 pydantic-core==2.41.5
@@ -287,6 +296,7 @@ regex==2026.1.15
     # via transformers
 requests==2.32.5
     # via
+    #   -r requirements.in
     #   datasets
     #   kubernetes
     #   langsmith
@@ -324,6 +334,8 @@ six==1.17.0
     #   kubernetes
     #   posthog
     #   python-dateutil
+starlette==0.52.1
+    # via fastapi
 sympy==1.14.0
     # via
     #   onnxruntime
@@ -365,6 +377,7 @@ typing-extensions==4.15.0
     #   aiosignal
     #   anyio
     #   chromadb
+    #   fastapi
     #   grpcio
     #   huggingface-hub
     #   langchain-core
@@ -376,12 +389,15 @@ typing-extensions==4.15.0
     #   pydantic-core
     #   referencing
     #   sentence-transformers
+    #   starlette
     #   torch
     #   typer
     #   typer-slim
     #   typing-inspection
 typing-inspection==0.4.2
-    # via pydantic
+    # via
+    #   fastapi
+    #   pydantic
 urllib3==2.6.3
     # via
     #   kubernetes
@@ -391,7 +407,9 @@ uuid-utils==0.14.0
     #   langchain-core
     #   langsmith
 uvicorn==0.40.0
-    # via chromadb
+    # via
+    #   -r requirements.in
+    #   chromadb
 uvloop==0.22.1
     # via uvicorn
 watchfiles==1.1.1

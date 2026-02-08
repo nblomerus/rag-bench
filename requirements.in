@@ -16,3 +16,11 @@ langchain-text-splitters
 
 # Vector Database
 chromadb
+
+# Web server
+requests
+fastapi
+uvicorn[standard]
+pydantic>=2.0.0
+httpx
+idna
