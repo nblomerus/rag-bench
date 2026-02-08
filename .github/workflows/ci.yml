@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -37,11 +39,20 @@ jobs:
         run: |
           CURRENT_VERSION=$(cat version)
           BASE_VERSION=$(git show origin/${{ github.base_ref }}:version)
-          if [ "$CURRENT_VERSION" <= "$BASE_VERSION" ]; then
-            echo "❌ Version has not been incremented. Please update the version file."
-            exit 1
-          fi
-          echo "✓ Version incremented: $BASE_VERSION -> $CURRENT_VERSION"
+          python3 << EOF
+          def parse_version(v):
+              return tuple(int(x) for x in v.strip().split('.'))
+          
+          current = parse_version("$CURRENT_VERSION")
+          base = parse_version("$BASE_VERSION")
+          
+          if current <= base:
+              print("❌ Version has not been incremented. Please update the version file.")
+              print(f"  Base version: $BASE_VERSION")
+              print(f"  Current version: $CURRENT_VERSION")
+              exit(1)
+          print(f"✓ Version incremented: $BASE_VERSION -> $CURRENT_VERSION")
+          EOF
 
   test:
     name: Test
