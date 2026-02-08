@@ -1,5 +1,7 @@
 # RAG-Bench
 
+[![CI](https://github.com/nblomerus/rag-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/nblomerus/rag-bench/actions/workflows/ci.yml)
+
 A Retrieval-Augmented Generation system for querying AI/ML research papers. Scrapes papers via the ArXiv API, chunks them with equation/table/acronym awareness, indexes with BGE embeddings in ChromaDB, and serves a web UI for asking questions with inline source citations and PDF highlighting.
 
 ## Architecture
