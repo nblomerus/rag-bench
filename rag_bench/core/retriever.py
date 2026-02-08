@@ -20,6 +20,7 @@ from pathlib import Path
 
 import chromadb
 import numpy as np
+from sentence_transformers import CrossEncoder
 
 from rag_bench.core.embedder import _load_embedding_model
 
@@ -155,8 +156,6 @@ class CrossEncoderReranker:
     def _load_model(self):
         """Try to load the cross-encoder model."""
         try:
-            from sentence_transformers import CrossEncoder
-
             self.model = CrossEncoder(self.model_name)
             logger.info(f"Loaded cross-encoder: {self.model_name}")
         except Exception as e:

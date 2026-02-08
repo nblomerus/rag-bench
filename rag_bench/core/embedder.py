@@ -15,6 +15,8 @@ from collections import Counter
 from pathlib import Path
 
 import chromadb
+import numpy as np
+from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
@@ -45,8 +47,6 @@ class TfidfFallbackEmbedder:
         **kwargs,
     ):
         """Encode sentences into fixed-dimension TF-IDF vectors."""
-        import numpy as np
-
         if isinstance(sentences, str):
             sentences = [sentences]
 
@@ -78,8 +78,6 @@ class TfidfFallbackEmbedder:
 def _load_embedding_model(model_name: str):
     """Try to load SentenceTransformer; fall back to TF-IDF if unavailable."""
     try:
-        from sentence_transformers import SentenceTransformer
-
         model = SentenceTransformer(model_name)
         logger.info(f"Loaded SentenceTransformer: {model_name}")
         return model

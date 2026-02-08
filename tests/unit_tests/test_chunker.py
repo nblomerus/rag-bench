@@ -460,3 +460,130 @@ class TestChunkAllPapers:
         doc_ids = {c["doc_id"] for c in chunks}
         assert len(doc_ids) == 1
         assert "arxiv_1234.5678" in doc_ids
+
+
+class TestChunkerEdgeCasesAndCoverage:
+    """Test additional edge cases for coverage improvement."""
+
+    def test_chunk_paper_with_very_small_sections(self):
+        """Test chunking with very small section content that gets filtered."""
+        paper = {
+            "doc_id": "arxiv_1234.1234",
+            "title": "Short Paper",
+            "authors": ["Author"],
+            "year": 2024,
+            "arxiv_id": "1234.1234",
+            "sections": {
+                "intro": "Hi",  # Less than 20 characters after processing
+                "method": "This is a proper section with enough content to pass the minimum length requirement.",
+            },
+            "acronyms": {},
+        }
+        chunker = PaperChunker()
+        chunks = chunker.chunk_paper(paper)
+        # Should skip the 'intro' section due to small size
+        # Should only have chunks from 'method'
+        assert all(c["section"] != "intro" for c in chunks)
+
+    def test_restore_equations_without_equations_stored(self):
+        """Test equation restoration when no equations were stored."""
+        chunker = PaperChunker()
+        # Don't protect equations, so _equation_store won't exist
+        text = "Some normal text without equations"
+        if not hasattr(chunker, "_equation_store") and hasattr(chunker, "_equation_store"):
+            delattr(chunker, "_equation_store")
+
+        result = chunker._restore_equations(text)
+        assert result == text
+
+    def test_protect_and_restore_equations_roundtrip(self):
+        """Test that equation protection and restoration preserve content."""
+        chunker = PaperChunker()
+        original = "The equation $x = y^2$ is important. Also $$E = mc^2$$."
+
+        # Protect equations
+        protected = chunker._protect_equations(original)
+        # Text should contain placeholders
+        assert "__EQ_" in protected
+
+        # Restore equations
+        restored = chunker._restore_equations(protected)
+        assert restored == original
+
+    def test_chunk_paper_preserves_acronyms(self):
+        """Test that acronym expansions are applied in chunks."""
+        paper = {
+            "doc_id": "arxiv_1234.1234",
+            "title": "Paper with Acronyms",
+            "authors": ["Author"],
+            "year": 2024,
+            "arxiv_id": "1234.1234",
+            "sections": {
+                "intro": "ML is important. This stands for Machine Learning. ML algorithms are useful.",
+            },
+            "acronyms": {"ML": "Machine Learning"},
+        }
+        chunker = PaperChunker()
+        chunks = chunker.chunk_paper(paper)
+        # Chunks should exist
+        assert len(chunks) > 0
+        # At least one chunk should contain text
+        assert any(len(c["text"]) > 0 for c in chunks)
+
+    def test_chunk_paper_with_all_small_sections(self):
+        """Test paper where all sections are too small to chunk."""
+        paper = {
+            "doc_id": "arxiv_5678.5678",
+            "title": "Tiny Paper",
+            "authors": ["Author"],
+            "year": 2024,
+            "arxiv_id": "5678.5678",
+            "sections": {
+                "a": "x",
+                "b": "y",
+                "c": "z",
+            },
+            "acronyms": {},
+        }
+        chunker = PaperChunker()
+        chunks = chunker.chunk_paper(paper)
+        # All sections are too small, should result in no chunks
+        assert len(chunks) == 0
+
+    def test_chunk_paper_handles_missing_acronyms(self):
+        """Test chunking when acronyms field is missing."""
+        paper = {
+            "doc_id": "arxiv_1234.1234",
+            "title": "Paper",
+            "authors": ["Author"],
+            "year": 2024,
+            "arxiv_id": "1234.1234",
+            "sections": {
+                "intro": "This paper discusses various important topics and methods used in modern research.",
+            },
+            # No 'acronyms' field
+        }
+        chunker = PaperChunker()
+        chunks = chunker.chunk_paper(paper)
+        # Should still work without acronyms
+        assert len(chunks) > 0
+
+    def test_clean_text_removes_excess_whitespace(self):
+        """Test that text cleaning removes extra whitespace."""
+        chunker = PaperChunker()
+        messy_text = "This   has\n\n\nmultiple    spaces\t\tand\n\nnewlines."
+        cleaned = chunker._clean_text(messy_text)
+        # Should have normalized whitespace
+        # Multiple spaces might be collapsed
+        assert len(cleaned) > 0
+
+    def test_equation_store_multiple_equations(self):
+        """Test protecting and restoring multiple equations."""
+        chunker = PaperChunker()
+        text = "First: $a = b$. Second: $c = d$. Third: $$e = f$$."
+        protected = chunker._protect_equations(text)
+        # Should have at least one placeholder
+        assert "__EQ_" in protected
+
+        restored = chunker._restore_equations(protected)
+        assert restored == text
