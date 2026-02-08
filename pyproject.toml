@@ -16,11 +16,15 @@ fixable = ["ALL"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-v"
+filterwarnings = [
+    "ignore::UserWarning:torch.cuda",
+    "ignore:CUDA initialization:UserWarning",
+]
 
 [tool.coverage.run]
 source = ["rag_bench"]
-omit = ["tests/*"]
+omit = ["tests/*", "config.py"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 0
+fail_under = 90
