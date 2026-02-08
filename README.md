@@ -41,7 +41,6 @@ python -m api.server
 
 ## Development
 
-```bash
 make ruff    # Format and lint
 make test    # Run tests
 make check   # Run pre-commit hooks
