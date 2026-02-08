@@ -22,6 +22,7 @@ import time
 from contextlib import asynccontextmanager
 
 import httpx
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
@@ -760,8 +761,6 @@ async def serve_frontend():
 
 def run():
     """Entry point for `rag-serve` CLI command."""
-    import uvicorn
-
     port = int(os.environ.get("RAG_API_PORT", 8080))
     uvicorn.run(
         "rag_bench.api.server:app",

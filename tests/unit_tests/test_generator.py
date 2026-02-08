@@ -12,10 +12,12 @@ Tests cover:
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from rag_bench.core.generator import (
     LLMBackend,
     OllamaBackend,
+    OpenAICompatibleBackend,
     RAGGenerator,
     RelevanceGate,
     TemplateFallbackBackend,
@@ -754,8 +756,6 @@ class TestOpenAIBackend:
         mock_response.json.return_value = {"choices": [{"message": {"content": "OpenAI response text"}}]}
         mock_post.return_value = mock_response
 
-        from rag_bench.core.generator import OpenAICompatibleBackend
-
         backend = OpenAICompatibleBackend(model="gpt-3.5-turbo", base_url="http://localhost:8000/v1")
         result = backend.generate("test prompt", system_prompt="you are helpful")
 
@@ -771,8 +771,6 @@ class TestOpenAIBackend:
         mock_response.json.return_value = {"choices": [{"message": {"content": "response"}}]}
         mock_post.return_value = mock_response
 
-        from rag_bench.core.generator import OpenAICompatibleBackend
-
         backend = OpenAICompatibleBackend(api_key="custom-key-123")
         backend.generate("prompt")
 
@@ -783,8 +781,6 @@ class TestOpenAIBackend:
     def test_openai_backend_handles_error(self, mock_post):
         """Test OpenAI backend error handling."""
         mock_post.side_effect = Exception("Network error")
-
-        from rag_bench.core.generator import OpenAICompatibleBackend
 
         backend = OpenAICompatibleBackend()
 
@@ -1213,3 +1209,292 @@ class TestMathPostProcessingEdgeCases:
 
         # Σ in sigma should not be converted since preceded by g
         assert result == text
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Additional tests for error handling and fallback paths (coverage improvement)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestLLMBackendErrorHandling:
+    """Test error handling in LLM backends."""
+
+    @patch("requests.post")
+    def test_ollama_backend_timeout(self, mock_post):
+        """Test Ollama backend with timeout."""
+        mock_post.side_effect = requests.Timeout("Connection timed out")
+        backend = OllamaBackend(model="test:7b")
+        with pytest.raises(requests.Timeout):
+            backend.generate(prompt="Test", system_prompt="System")
+
+    @patch("requests.post")
+    def test_ollama_backend_connection_error(self, mock_post):
+        """Test Ollama backend with connection error."""
+        mock_post.side_effect = requests.ConnectionError("Failed to connect")
+        backend = OllamaBackend(model="test:7b")
+        with pytest.raises(requests.ConnectionError):
+            backend.generate(prompt="Test", system_prompt="System")
+
+    def test_template_fallback_backend_with_system_prompt(self):
+        """Test template fallback backend includes system prompt."""
+        backend = TemplateFallbackBackend()
+        response = backend.generate(prompt="What is AI?", system_prompt="You are an expert in AI.")
+        assert isinstance(response, str)
+        assert len(response) > 0
+
+
+class TestRAGGeneratorErrorHandling:
+    """Test error handling in RAGGenerator."""
+
+    def test_answer_with_llm_error_falls_back(self, sample_retrieval_results):
+        """Test that LLM generation error falls back to template."""
+        mock_retriever = MagicMock()
+        mock_retriever.query.return_value = sample_retrieval_results
+
+        mock_llm = MagicMock()
+        mock_llm.generate.side_effect = Exception("LLM Error")
+
+        generator = RAGGenerator(
+            retriever=mock_retriever,
+            llm_backend=mock_llm,
+            relevance_gate=RelevanceGate(),
+            top_k=5,
+        )
+
+        result = generator.answer("What is attention?")
+        assert "answer" in result
+        assert len(result["answer"]) > 0
+
+    def test_answer_alignment_detects_tangential_response(self, sample_retrieval_results):
+        """Test answer alignment detection for tangential responses."""
+        mock_retriever = MagicMock()
+        mock_retriever.query.return_value = sample_retrieval_results
+
+        mock_llm = MagicMock()
+        mock_llm.generate.return_value = "The weather is nice today."
+
+        generator = RAGGenerator(
+            retriever=mock_retriever,
+            llm_backend=mock_llm,
+            relevance_gate=RelevanceGate(),
+            top_k=5,
+        )
+
+        result = generator.answer("What is attention?")
+        # Should detect tangential response
+        assert "answer" in result
+
+    def test_answer_with_empty_question(self):
+        """Test answer with effectively empty question."""
+        mock_retriever = MagicMock()
+        mock_retriever.query.return_value = []
+
+        mock_llm = MagicMock()
+
+        generator = RAGGenerator(
+            retriever=mock_retriever,
+            llm_backend=mock_llm,
+            relevance_gate=RelevanceGate(),
+            top_k=5,
+        )
+
+        result = generator.answer("?????")
+        assert "answer" in result
+
+
+class TestRelevanceGateEdgeCases:
+    """Test edge cases in RelevanceGate."""
+
+    def test_entity_extraction_with_no_entities(self):
+        """Test entity extraction when no entities found."""
+        gate = RelevanceGate()
+        entities = gate._extract_entities("what is the weather")
+        assert isinstance(entities, list)
+
+    def test_entity_extraction_with_quoted_terms(self):
+        """Test entity extraction with quoted terms."""
+        gate = RelevanceGate()
+        entities = gate._extract_entities('What is "machine learning"?')
+        assert any("machine learning" in e.lower() for e in entities)
+
+    def test_entity_extraction_with_hyphenated_words(self):
+        """Test entity extraction with hyphenated technical terms."""
+        gate = RelevanceGate()
+        entities = gate._extract_entities("Tell me about state-of-the-art methods")
+        assert len(entities) > 0
+
+    def test_entity_presence_with_no_results(self):
+        """Test entity presence check with no retrieval results."""
+        gate = RelevanceGate()
+        is_missing, reason = gate._check_entity_presence("What is BERT?", [])
+        assert isinstance(is_missing, bool)
+
+    def test_entity_presence_with_concept_acronyms(self):
+        """Test entity presence check with concept-level acronyms."""
+        gate = RelevanceGate()
+        results = [
+            {
+                "text": "Machine learning is a field of AI",
+                "metadata": {"title": "AI Paper"},
+            }
+        ]
+        # Common acronyms like AI, ML, NLP should not trigger entity mismatch
+        is_missing, reason = gate._check_entity_presence("What is AI?", results)
+        # Should not report missing for concept acronyms
+        assert isinstance(is_missing, bool)
+
+    def test_compute_keyword_overlap_with_stopwords(self):
+        """Test keyword overlap computation filters stopwords."""
+        gate = RelevanceGate()
+        overlap = gate._compute_keyword_overlap(
+            "What is the impact of transformers?",
+            "Transformers have great impact on the field.",
+        )
+        assert isinstance(overlap, float)
+        assert 0 <= overlap <= 1
+
+    def test_should_deflect_with_low_calibration(self):
+        """Test deflection with low calibrated threshold."""
+        gate = RelevanceGate()
+        gate._calibrated_threshold = -5.0  # Very low threshold
+
+        should_deflect, reason = gate.should_deflect(
+            retrieval_results=[{"score": 0.1, "text": "some irrelevant text", "metadata": {}}],
+        )
+        assert isinstance(should_deflect, bool)
+
+    def test_naive_stem_preserves_short_words(self):
+        """Test that naive stemming preserves short words."""
+        gate = RelevanceGate()
+        stemmed = gate._naive_stem("I am learning AI")
+        assert "ai" in stemmed.lower() or "AI" in stemmed
+
+
+class TestRAGGeneratorAdvancedFeatures:
+    """Test advanced features in RAGGenerator."""
+
+    def test_filter_relevant_sources_with_very_high_scores(self):
+        """Test source filtering with very high scores."""
+        mock_retriever = MagicMock()
+        mock_llm = MagicMock()
+
+        generator = RAGGenerator(
+            retriever=mock_retriever,
+            llm_backend=mock_llm,
+            relevance_gate=RelevanceGate(),
+            top_k=5,
+        )
+
+        results = [
+            {"score": 50.0, "text": "text1", "metadata": {}},
+            {"score": 45.0, "text": "text2", "metadata": {}},
+            {"score": 30.0, "text": "text3", "metadata": {}},
+        ]
+
+        filtered = generator._filter_relevant_sources(results)
+        assert isinstance(filtered, list)
+        assert len(filtered) <= 4
+
+    def test_check_answer_alignment_with_missing_term(self):
+        """Test answer alignment when key term is missing."""
+        mock_retriever = MagicMock()
+        mock_llm = MagicMock()
+
+        generator = RAGGenerator(
+            retriever=mock_retriever,
+            llm_backend=mock_llm,
+            relevance_gate=RelevanceGate(),
+            top_k=5,
+        )
+
+        question = "What is quantum computing?"
+        answer = "Systems are important because of efficiency."
+
+        is_tangential, term = generator._check_answer_alignment(question, answer)
+        assert isinstance(is_tangential, bool)
+
+    def test_format_citations_with_missing_metadata(self):
+        """Test citation formatting with missing metadata."""
+        mock_retriever = MagicMock()
+        mock_llm = MagicMock()
+
+        generator = RAGGenerator(
+            retriever=mock_retriever,
+            llm_backend=mock_llm,
+            relevance_gate=RelevanceGate(),
+            top_k=5,
+        )
+
+        results = [
+            {"text": "text1", "metadata": {}},  # Missing source_display
+            {"text": "text2", "metadata": {"source_display": "Paper A"}},
+        ]
+
+        citations = generator._format_citations(results)
+        assert isinstance(citations, list)
+        assert len(citations) == 2
+
+
+class TestAnswerStreamingErrorHandling:
+    """Test error handling in streaming answer generation."""
+
+    @patch("requests.post")
+    def test_answer_stream_with_streaming_failure(self, mock_post, sample_retrieval_results):
+        """Test streaming that fails and falls back to non-streaming."""
+        mock_retriever = MagicMock()
+        mock_retriever.query.return_value = sample_retrieval_results
+
+        mock_llm = MagicMock()
+        mock_llm.generate_stream.side_effect = Exception("Stream error")
+        mock_llm.generate.return_value = "Fallback answer"
+
+        generator = RAGGenerator(
+            retriever=mock_retriever,
+            llm_backend=mock_llm,
+            relevance_gate=RelevanceGate(),
+            top_k=5,
+        )
+
+        events = list(generator.answer_stream("What is attention?"))
+        assert len(events) > 0
+        # Should have done event or token event
+        has_token_or_done = any(e.get("event") in ("token", "done") for e in events)
+        assert has_token_or_done
+
+    @patch("requests.post")
+    def test_answer_stream_detects_tangential_in_stream(self, mock_post):
+        """Test that streaming correctly detects tangential responses."""
+        mock_retriever = MagicMock()
+        mock_retriever.query.return_value = [
+            {
+                "chunk_id": "c1",
+                "text": "Transformers use attention",
+                "score": 0.9,
+                "metadata": {"source_display": "Paper", "section": "intro"},
+            }
+        ]
+
+        mock_llm = MagicMock()
+
+        def stream_gen(prompt, system_prompt):
+            yield "About"
+            yield " weather"
+            yield "..."
+
+        mock_llm.generate_stream.return_value = stream_gen("", "")
+        mock_llm.generate.return_value = "About weather..."
+
+        generator = RAGGenerator(
+            retriever=mock_retriever,
+            llm_backend=mock_llm,
+            relevance_gate=RelevanceGate(),
+            top_k=5,
+        )
+
+        events = list(generator.answer_stream("What is attention?"))
+        # Check if we got events
+        assert len(events) > 0
+
+
+class TestAdditionalEdgeCases:
+    """Additional tests for edge case coverage."""

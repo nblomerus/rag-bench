@@ -15,6 +15,8 @@ import json
 import logging
 import re
 
+import requests
+
 from rag_bench.utils.text import fix_encoding
 
 logger = logging.getLogger(__name__)
@@ -333,8 +335,6 @@ class OllamaBackend(LLMBackend):
         logger.info(f"Ollama backend: {model} at {base_url}")
 
     def generate(self, prompt: str, system_prompt: str = "", max_tokens: int = 1024) -> str:
-        import requests
-
         payload = {
             "model": self.model,
             "prompt": prompt,
@@ -366,8 +366,6 @@ class OllamaBackend(LLMBackend):
         Yields:
             str: Each token/chunk as it arrives from Ollama.
         """
-        import requests
-
         payload = {
             "model": self.model,
             "prompt": prompt,
@@ -416,8 +414,6 @@ class OpenAICompatibleBackend(LLMBackend):
         logger.info(f"OpenAI-compatible backend: {model} at {base_url}")
 
     def generate(self, prompt: str, system_prompt: str = "", max_tokens: int = 1024) -> str:
-        import requests
-
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})

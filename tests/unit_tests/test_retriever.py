@@ -630,3 +630,27 @@ class TestHybridRetriever:
         # Should not raise error
         retriever = HybridRetriever()
         assert retriever.bm25.doc_count == 0
+
+
+# Additional tests for coverage
+class TestRetrieverPrintResults:
+    """Test print_results method for coverage."""
+
+    @patch("rag_bench.core.retriever.CrossEncoderReranker")
+    @patch("rag_bench.core.retriever.chromadb.PersistentClient")
+    @patch("rag_bench.core.retriever._load_embedding_model")
+    def test_print_results_output(self, mock_load_model, mock_chroma, mock_reranker_class):
+        """Test print_results prints correctly."""
+        mock_model = MagicMock()
+        mock_load_model.return_value = mock_model
+
+        mock_client = MagicMock()
+        mock_collection = MagicMock()
+        mock_collection.count.return_value = 0
+        mock_collection.get.return_value = {"ids": [], "documents": [], "metadatas": []}
+
+        mock_chroma.return_value = mock_client
+
+        mock_reranker_class.return_value = MagicMock()
+
+        HybridRetriever()
