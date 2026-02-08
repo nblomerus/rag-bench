@@ -41,13 +41,20 @@ clean:
 	find . -type f -name "*.pyo" -delete
 	find . -type f -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 
-help:
-	@echo "  pyenv          Create Python virtualenv with pyenv
-	@echo "  upgrade        Compile requirements
-	@echo "  install        Install/sync dependencies
-	@echo "  check          Run pre-commit checks
-	@echo "  ruff           Run ruff formatter and linter
-	@echo "  test           Run tests
-	@echo "  clean          Remove Python artifacts
+# Git 
 
-.PHONY: pyenv upgrade install pre-commit check ruff test clean help
+prune-branches:
+	git fetch --all --prune
+	git fetch -p && for branch in $(git branch -vv | grep ': gone]' | awk '{print $1}'); do git branch -D $branch; done
+
+help:
+	@echo "  pyenv           Create Python virtualenv with pyenv
+	@echo "  upgrade         Compile requirements
+	@echo "  install         Install/sync dependencies
+	@echo "  check           Run pre-commit checks
+	@echo "  ruff            Run ruff formatter and linter
+	@echo "  test            Run tests
+	@echo "  clean           Remove Python artifacts
+	@echo "  prune-branches  Delete local branches that have been removed from the remote
+
+.PHONY: pyenv upgrade install pre-commit check ruff test clean help prune-branches
