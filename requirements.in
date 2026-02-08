@@ -4,9 +4,15 @@
 tqdm
 numpy
 
+# Data
+datasets
+
 # Core ML / Embeddings
 torch>=2.0.0
 sentence-transformers
+
+# Text Processing
+langchain-text-splitters
 
 # Vector Database
 chromadb
