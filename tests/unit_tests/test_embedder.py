@@ -235,7 +235,7 @@ class TestTfidfFallbackEmbedder:
 class TestLoadEmbeddingModel:
     """Tests for _load_embedding_model function."""
 
-    @patch("sentence_transformers.SentenceTransformer")
+    @patch("rag_bench.core.embedder.SentenceTransformer")
     def test_successful_model_loading(self, mock_st_class):
         """Test successful loading of SentenceTransformer model."""
         mock_model = MagicMock()
@@ -246,7 +246,7 @@ class TestLoadEmbeddingModel:
         assert result == mock_model
         mock_st_class.assert_called_once_with("test-model")
 
-    @patch("sentence_transformers.SentenceTransformer")
+    @patch("rag_bench.core.embedder.SentenceTransformer")
     def test_fallback_on_import_error(self, mock_st_class):
         """Test fallback to TfidfFallbackEmbedder on ImportError."""
         mock_st_class.side_effect = ImportError("No module named 'sentence_transformers'")
@@ -256,7 +256,7 @@ class TestLoadEmbeddingModel:
         assert isinstance(result, TfidfFallbackEmbedder)
         assert result.dim == 768
 
-    @patch("sentence_transformers.SentenceTransformer")
+    @patch("rag_bench.core.embedder.SentenceTransformer")
     def test_fallback_on_os_error(self, mock_st_class):
         """Test fallback on OSError (e.g., network/download failure)."""
         mock_st_class.side_effect = OSError("Connection failed")
@@ -265,7 +265,7 @@ class TestLoadEmbeddingModel:
 
         assert isinstance(result, TfidfFallbackEmbedder)
 
-    @patch("sentence_transformers.SentenceTransformer")
+    @patch("rag_bench.core.embedder.SentenceTransformer")
     def test_fallback_on_generic_exception(self, mock_st_class):
         """Test fallback on any generic exception."""
         mock_st_class.side_effect = RuntimeError("Unexpected error")
@@ -274,7 +274,7 @@ class TestLoadEmbeddingModel:
 
         assert isinstance(result, TfidfFallbackEmbedder)
 
-    @patch("sentence_transformers.SentenceTransformer")
+    @patch("rag_bench.core.embedder.SentenceTransformer")
     @patch("rag_bench.core.embedder.logger")
     def test_logging_on_successful_load(self, mock_logger, mock_st_class):
         """Test that successful load logs info message."""
@@ -286,7 +286,7 @@ class TestLoadEmbeddingModel:
         mock_logger.info.assert_called_once()
         assert "test-model" in str(mock_logger.info.call_args)
 
-    @patch("sentence_transformers.SentenceTransformer")
+    @patch("rag_bench.core.embedder.SentenceTransformer")
     @patch("rag_bench.core.embedder.logger")
     def test_logging_on_fallback(self, mock_logger, mock_st_class):
         """Test that fallback logs warning message."""

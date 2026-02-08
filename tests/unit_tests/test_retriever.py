@@ -262,7 +262,7 @@ class TestBM25:
 class TestCrossEncoderReranker:
     """Tests for CrossEncoderReranker class."""
 
-    @patch("sentence_transformers.CrossEncoder")
+    @patch("rag_bench.core.retriever.CrossEncoder")
     def test_init_with_model(self, mock_ce_class):
         """Test initialization with successful model loading."""
         mock_model = MagicMock()
@@ -273,7 +273,7 @@ class TestCrossEncoderReranker:
         assert reranker.model == mock_model
         mock_ce_class.assert_called_once()
 
-    @patch("sentence_transformers.CrossEncoder")
+    @patch("rag_bench.core.retriever.CrossEncoder")
     def test_init_fallback_on_error(self, mock_ce_class):
         """Test fallback when model loading fails."""
         mock_ce_class.side_effect = ImportError("No module")
@@ -282,7 +282,7 @@ class TestCrossEncoderReranker:
 
         assert reranker.model is None
 
-    @patch("sentence_transformers.CrossEncoder")
+    @patch("rag_bench.core.retriever.CrossEncoder")
     def test_rerank_with_model(self, mock_ce_class, sample_candidates):
         """Test reranking with cross-encoder model."""
         mock_model = MagicMock()
@@ -297,7 +297,7 @@ class TestCrossEncoderReranker:
         assert results[0]["rerank_score"] > results[1]["rerank_score"]
         mock_model.predict.assert_called_once()
 
-    @patch("sentence_transformers.CrossEncoder")
+    @patch("rag_bench.core.retriever.CrossEncoder")
     def test_rerank_with_keywords(self, mock_ce_class, sample_candidates):
         """Test keyword-based fallback reranking."""
         mock_ce_class.side_effect = ImportError("No module")
@@ -312,7 +312,7 @@ class TestCrossEncoderReranker:
         scores = [r["rerank_score"] for r in results]
         assert scores == sorted(scores, reverse=True)
 
-    @patch("sentence_transformers.CrossEncoder")
+    @patch("rag_bench.core.retriever.CrossEncoder")
     def test_rerank_empty_candidates(self, mock_ce_class):
         """Test reranking with empty candidates."""
         mock_model = MagicMock()
@@ -324,7 +324,7 @@ class TestCrossEncoderReranker:
         assert results == []
         mock_model.predict.assert_not_called()
 
-    @patch("sentence_transformers.CrossEncoder")
+    @patch("rag_bench.core.retriever.CrossEncoder")
     def test_rerank_respects_top_k(self, mock_ce_class, sample_candidates):
         """Test that top_k parameter is respected."""
         mock_model = MagicMock()
@@ -336,7 +336,7 @@ class TestCrossEncoderReranker:
 
         assert len(results) == 1
 
-    @patch("sentence_transformers.CrossEncoder")
+    @patch("rag_bench.core.retriever.CrossEncoder")
     def test_rerank_keyword_overlap_scoring(self, mock_ce_class):
         """Test keyword overlap scoring in fallback mode."""
         mock_ce_class.side_effect = ImportError("No module")
@@ -352,7 +352,7 @@ class TestCrossEncoderReranker:
         # First result should have higher overlap
         assert results[0]["chunk_id"] == "1"
 
-    @patch("sentence_transformers.CrossEncoder")
+    @patch("rag_bench.core.retriever.CrossEncoder")
     def test_rerank_phrase_bonus(self, mock_ce_class):
         """Test that phrase matching gets bonus in fallback mode."""
         mock_ce_class.side_effect = ImportError("No module")
@@ -640,17 +640,105 @@ class TestRetrieverPrintResults:
     @patch("rag_bench.core.retriever.chromadb.PersistentClient")
     @patch("rag_bench.core.retriever._load_embedding_model")
     def test_print_results_output(self, mock_load_model, mock_chroma, mock_reranker_class):
-        """Test print_results prints correctly."""
+        """Test print_results prints correctly with relevant results."""
+        import sys
+        from io import StringIO
+
         mock_model = MagicMock()
+        mock_model.encode.return_value = np.array([0.1] * 768)
+        mock_load_model.return_value = mock_model
+
+        mock_client = MagicMock()
+        mock_collection = MagicMock()
+        mock_collection.count.return_value = 1
+        mock_collection.get.return_value = {
+            "ids": ["chunk_1"],
+            "documents": ["test document"],
+            "metadatas": [{"title": "Paper 1", "section": "intro"}],
+        }
+        mock_collection.query.return_value = {
+            "ids": [["chunk_1"]],
+            "documents": [["test document"]],
+            "metadatas": [[{"title": "Paper 1", "section": "intro"}]],
+            "distances": [[0.1]],
+        }
+        mock_client.get_collection.return_value = mock_collection
+        mock_chroma.return_value = mock_client
+
+        mock_reranker = MagicMock()
+        mock_reranker.rerank.return_value = [
+            {
+                "chunk_id": "chunk_1",
+                "text": "This is a test document with relevant content",
+                "rerank_score": 0.95,
+                "metadata": {"title": "Paper 1", "section": "intro", "source_display": "Paper 1"},
+                "score": 0.9,
+                "sources": ["dense"],
+                "bm25_score": 0.8,
+                "dense_score": 0.9,
+                "rrf_score": 0.95,
+            }
+        ]
+        mock_reranker_class.return_value = mock_reranker
+
+        retriever = HybridRetriever()
+
+        # Capture output
+        old_stdout = sys.stdout
+        sys.stdout = captured_output = StringIO()
+
+        result = retriever.print_results("test question", top_k=1)
+
+        output_str = captured_output.getvalue()
+        sys.stdout = old_stdout
+
+        # Verify output contains expected strings
+        assert "test question" in output_str
+        assert "Paper 1" in output_str
+        assert result is not None
+        assert result["is_relevant"]
+
+    @patch("rag_bench.core.retriever.CrossEncoderReranker")
+    @patch("rag_bench.core.retriever.chromadb.PersistentClient")
+    @patch("rag_bench.core.retriever._load_embedding_model")
+    def test_print_results_not_relevant(self, mock_load_model, mock_chroma, mock_reranker_class):
+        """Test print_results with non-relevant (low score) results."""
+        import sys
+        from io import StringIO
+
+        mock_model = MagicMock()
+        mock_model.encode.return_value = np.array([0.1] * 768)
         mock_load_model.return_value = mock_model
 
         mock_client = MagicMock()
         mock_collection = MagicMock()
         mock_collection.count.return_value = 0
         mock_collection.get.return_value = {"ids": [], "documents": [], "metadatas": []}
-
+        mock_collection.query.return_value = {
+            "ids": [[]],
+            "documents": [[]],
+            "metadatas": [[]],
+            "distances": [[]],
+        }
+        mock_client.get_collection.return_value = mock_collection
         mock_chroma.return_value = mock_client
 
-        mock_reranker_class.return_value = MagicMock()
+        mock_reranker = MagicMock()
+        mock_reranker.rerank.return_value = []
+        mock_reranker_class.return_value = mock_reranker
 
-        HybridRetriever()
+        retriever = HybridRetriever()
+
+        # Capture output
+        old_stdout = sys.stdout
+        sys.stdout = captured_output = StringIO()
+
+        result = retriever.print_results("unrelated question", top_k=5)
+
+        output_str = captured_output.getvalue()
+        sys.stdout = old_stdout
+
+        # Verify output indicates no relevant results
+        assert "No sufficiently relevant results" in output_str
+        assert result is not None
+        assert not result["is_relevant"]

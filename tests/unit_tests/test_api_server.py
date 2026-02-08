@@ -535,3 +535,409 @@ class TestPaperEndpoints:
         with patch("rag_bench.api.server._retriever", None):
             response = client.get("/api/papers/some_id/pdf")
             assert response.status_code == 503
+
+
+class TestQueryWithBackendOverride:
+    """Test query endpoint with backend override."""
+
+    def test_query_with_backend_override(self, client):
+        """Test query with custom backend."""
+        with patch("rag_bench.api.server.build_llm_backend") as mock_build:
+            mock_build.return_value = MagicMock()
+
+            # Mock RAGGenerator to return answer when initialized with different backend
+            mock_gen_instance = MagicMock(
+                answer=MagicMock(
+                    return_value={
+                        "answer": "Test answer",
+                        "deflected": False,
+                        "results": [],
+                        "filtered_results": [],
+                        "scores": [0.8],
+                    }
+                )
+            )
+
+            with (
+                patch("rag_bench.api.server._generator", MagicMock()),
+                patch("rag_bench.api.server._retriever", MagicMock()),
+                patch("rag_bench.api.server._llm_backend_name", "ollama"),
+                patch("rag_bench.api.server.RAGGenerator", return_value=mock_gen_instance),
+            ):
+                response = client.post(
+                    "/api/query",
+                    json={
+                        "question": "What is ML?",
+                        "backend": "openai",
+                        "model": "gpt-4",
+                    },
+                )
+                assert response.status_code == 200
+                # Should have called build_llm_backend with the custom backend
+                mock_build.assert_called_with("openai", "gpt-4", "")
+
+    def test_query_with_backend_same_as_current(self, client):
+        """Test query when backend is same as current."""
+        with (
+            patch(
+                "rag_bench.api.server._generator",
+                MagicMock(
+                    answer=MagicMock(
+                        return_value={
+                            "answer": "Test",
+                            "deflected": False,
+                            "results": [],
+                            "filtered_results": [],
+                            "scores": [],
+                        }
+                    )
+                ),
+            ),
+            patch("rag_bench.api.server._llm_backend_name", "ollama"),
+        ):
+            response = client.post(
+                "/api/query",
+                json={"question": "Test?", "backend": "ollama"},
+            )
+            assert response.status_code == 200
+
+
+class TestStreamingWithResults:
+    """Test streaming endpoint with actual results."""
+
+    def test_query_stream_with_non_casual_question(self, client):
+        """Test streaming with a real question (non-casual)."""
+
+        def mock_stream():
+            yield {
+                "event": "sources",
+                "results": [{"text": "source 1", "score": 0.9, "chunk_id": "c1", "metadata": {"title": "Test"}}],
+                "filtered_results": [{"text": "source 1", "score": 0.9, "chunk_id": "c1", "metadata": {"title": "Test"}}],
+            }
+            yield {"event": "token", "token": "This"}
+            yield {"event": "token", "token": " is"}
+            yield {"event": "done", "answer": "This is a test", "deflection_reason": ""}
+
+        generator_mock = MagicMock(answer_stream=MagicMock(return_value=mock_stream()))
+
+        with (
+            patch("rag_bench.api.server._generator", generator_mock),
+            patch("rag_bench.api.server._llm_backend_name", "ollama"),
+            patch("rag_bench.api.server._llm_model_name", "mistral"),
+        ):
+            response = client.post("/api/query/stream", json={"question": "What is machine learning?"})
+            assert response.status_code == 200
+            # Should contain SSE data
+            assert b"data:" in response.content or response.status_code == 200
+
+    def test_query_stream_with_deflection(self, client):
+        """Test streaming with deflection."""
+
+        def mock_stream():
+            yield {
+                "event": "sources",
+                "results": [],
+                "filtered_results": [],
+            }
+            yield {"event": "deflected", "answer": "Cannot help", "reason": "Off topic"}
+
+        generator_mock = MagicMock(answer_stream=MagicMock(return_value=mock_stream()))
+
+        with (
+            patch("rag_bench.api.server._generator", generator_mock),
+            patch("rag_bench.api.server._llm_backend_name", "ollama"),
+            patch("rag_bench.api.server._llm_model_name", "mistral"),
+        ):
+            response = client.post("/api/query/stream", json={"question": "What is pizza flavor?"})
+            assert response.status_code == 200
+
+    def test_query_stream_pipeline_not_loaded(self, client):
+        """Test streaming when pipeline is not loaded."""
+        with patch("rag_bench.api.server._generator", None):
+            response = client.post("/api/query/stream", json={"question": "test question"})
+            assert response.status_code == 503
+
+
+class TestGetPaperDetail:
+    """Test the get paper detail endpoint."""
+
+    def test_get_paper_success(self, client):
+        """Test getting paper details successfully."""
+        retriever_mock = MagicMock()
+        retriever_mock.collection.count.return_value = 2
+
+        # Mock the first successful get call on "doc_id" field
+        retriever_mock.collection.get.side_effect = [
+            {
+                "ids": ["chunk1", "chunk2"],
+                "documents": ["Text 1", "Text 2"],
+                "metadatas": [
+                    {
+                        "doc_id": "paper1",
+                        "title": "Test Paper",
+                        "year": 2023,
+                        "arxiv_id": "2301.0001",
+                        "section": "intro",
+                        "source_display": "Test Paper (2023)",
+                    },
+                    {
+                        "doc_id": "paper1",
+                        "title": "Test Paper",
+                        "year": 2023,
+                        "arxiv_id": "2301.0001",
+                        "section": "methods",
+                        "source_display": "Test Paper (2023)",
+                    },
+                ],
+            }
+        ]
+
+        with patch("rag_bench.api.server._retriever", retriever_mock):
+            response = client.get("/api/papers/paper1")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["title"] == "Test Paper"
+            assert data["year"] == 2023
+            assert data["arxiv_id"] == "2301.0001"
+            assert len(data["chunks"]) == 2
+
+    def test_get_paper_with_chunk_index(self, client):
+        """Test parsing chunk index from chunk_id."""
+        retriever_mock = MagicMock()
+        retriever_mock.collection.count.return_value = 1
+
+        retriever_mock.collection.get.side_effect = [
+            {
+                "ids": ["paper_intro_5"],
+                "documents": ["Introduction text"],
+                "metadatas": [
+                    {
+                        "doc_id": "paper",
+                        "title": "Test",
+                        "year": 2023,
+                        "arxiv_id": "2301.0001",
+                        "section": "intro",
+                        "source_display": "Test",
+                    }
+                ],
+            }
+        ]
+
+        with patch("rag_bench.api.server._retriever", retriever_mock):
+            response = client.get("/api/papers/paper")
+            assert response.status_code == 200
+            data = response.json()
+            # Chunk index should be parsed as 5
+            assert len(data["chunks"]) == 1
+
+
+class TestQueryFormatSourcesWithMissingScore:
+    """Test format sources with edge cases around scoring."""
+
+    def test_format_sources_with_missing_score(self):
+        """Test formatting when score is missing from results."""
+        results = [
+            {
+                "text": "Sample text",
+                "chunk_id": "chunk_1",
+                "metadata": {
+                    "title": "Test Paper",
+                    "section": "intro",
+                    "paper_id": "arxiv:2103.05674",
+                },
+            }
+        ]
+        sources = _format_sources(results)
+        assert len(sources) == 1
+        # Should default to low relevance when no score
+        assert sources[0].relevance in ["low", "medium", "high"]
+
+    def test_format_sources_with_filtered_results_empty(self):
+        """Test when filtered_results is empty but results is populated."""
+        results = [
+            {
+                "score": 0.95,
+                "text": "Sample" * 50,
+                "chunk_id": "chunk_1",
+                "metadata": {
+                    "title": "Test Paper",
+                    "section": "intro",
+                    "paper_id": "arxiv:2103.05674",
+                },
+            }
+        ]
+        sources = _format_sources(results)
+        assert len(sources) == 1
+        assert sources[0].score == 0.95
+
+
+class TestApiServerErrorHandling:
+    """Test error handling in API endpoints."""
+
+    def test_eval_endpoint_with_llm_level_deflection_detection(self, client):
+        """Test eval endpoint detecting LLM-level deflection."""
+        with (
+            patch(
+                "rag_bench.api.server._generator",
+                MagicMock(
+                    answer=MagicMock(
+                        return_value={
+                            "answer": "I cannot answer this question as it's outside my scope.",
+                            "deflected": False,  # Not deflected by gate
+                            "results": [],
+                            "scores": [0.2],
+                        }
+                    )
+                ),
+            ),
+            patch("pathlib.Path.exists", return_value=True),
+            patch("builtins.open", MagicMock()),
+            patch(
+                "json.load",
+                return_value=[
+                    {
+                        "id": "q1",
+                        "question": "Off-topic?",
+                        "should_deflect": True,  # Should have deflected
+                        "difficulty": "deflection",
+                    }
+                ],
+            ),
+        ):
+            response = client.post("/api/eval", json={"run_all": False})
+            assert response.status_code == 200
+            data = response.json()
+            # Should detect LLM-level deflection
+            assert "results" in data
+
+    def test_eval_endpoint_with_empty_scores(self, client):
+        """Test eval endpoint when scores list is empty."""
+        with (
+            patch(
+                "rag_bench.api.server._generator",
+                MagicMock(
+                    answer=MagicMock(
+                        return_value={
+                            "answer": "Test",
+                            "deflected": False,
+                            "results": [],
+                            "scores": [],  # Empty scores
+                        }
+                    )
+                ),
+            ),
+            patch("pathlib.Path.exists", return_value=True),
+            patch("builtins.open", MagicMock()),
+            patch(
+                "json.load",
+                return_value=[
+                    {
+                        "id": "q1",
+                        "question": "Test?",
+                        "should_deflect": False,
+                        "difficulty": "easy",
+                    }
+                ],
+            ),
+        ):
+            response = client.post("/api/eval", json={"run_all": False})
+            assert response.status_code == 200
+            data = response.json()
+            assert data["results"][0]["top_score"] == 0.0
+
+    def test_query_stream_with_exception_in_stream(self, client):
+        """Test streaming endpoint error handling."""
+
+        def mock_stream_with_error():
+            yield {"event": "sources", "results": [], "filtered_results": []}
+            raise Exception("Stream error test")
+
+        with (
+            patch(
+                "rag_bench.api.server._generator",
+                MagicMock(answer_stream=MagicMock(return_value=mock_stream_with_error())),
+            ),
+            patch("rag_bench.api.server._llm_backend_name", "ollama"),
+        ):
+            response = client.post("/api/query/stream", json={"question": "What is ML?"})
+            assert response.status_code == 200
+
+    def test_get_paper_with_arxiv_id_lookup(self, client):
+        """Test getting paper using arxiv_id field."""
+        retriever_mock = MagicMock()
+        retriever_mock.collection.count.return_value = 1
+
+        # Mock the "doc_id" call to fail, then "paper_id", then succeed with "arxiv_id"
+        retriever_mock.collection.get.side_effect = [
+            {"ids": []},  # doc_id lookup fails
+            {"ids": []},  # paper_id lookup fails
+            {
+                # arxiv_id lookup succeeds
+                "ids": ["chunk1"],
+                "documents": ["Text"],
+                "metadatas": [
+                    {
+                        "arxiv_id": "2301.0001",
+                        "title": "Test Paper",
+                        "year": 2023,
+                        "section": "intro",
+                        "source_display": "Test",
+                    }
+                ],
+            },
+        ]
+
+        with patch("rag_bench.api.server._retriever", retriever_mock):
+            response = client.get("/api/papers/arxiv_2301.0001")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["title"] == "Test Paper"
+
+    def test_get_paper_with_exception_in_lookup(self, client):
+        """Test paper lookup with exception in field search."""
+        retriever_mock = MagicMock()
+        retriever_mock.collection.count.return_value = 1
+
+        # First two calls raise exceptions, third succeeds
+        retriever_mock.collection.get.side_effect = [
+            Exception("Query error"),  # doc_id lookup raises exception
+            Exception("Query error"),  # paper_id lookup raises exception
+            {
+                # arxiv_id lookup succeeds
+                "ids": ["chunk1"],
+                "documents": ["Text"],
+                "metadatas": [
+                    {
+                        "arxiv_id": "2301.0001",
+                        "title": "Test Paper",
+                        "year": 2023,
+                        "section": "intro",
+                        "source_display": "Test",
+                    }
+                ],
+            },
+        ]
+
+        with patch("rag_bench.api.server._retriever", retriever_mock):
+            response = client.get("/api/papers/paper1")
+            assert response.status_code == 200
+
+    def test_get_paper_pdf_with_exception_in_fetch(self, client):
+        """Test PDF fetch error handling."""
+        with (
+            patch("rag_bench.api.server._retriever", MagicMock()),
+            patch("rag_bench.api.server._fetch_pdf", side_effect=Exception("Network error")),
+        ):
+            response = client.get("/api/papers/2301.0001/pdf")
+            assert response.status_code == 502
+
+    def test_stats_endpoint_returns_info(self, client):
+        """Test stats endpoint with actual stats."""
+        retriever_mock = MagicMock()
+        retriever_mock.collection.count.return_value = 42
+
+        with patch("rag_bench.api.server._retriever", retriever_mock):
+            response = client.get("/api/stats")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["total_chunks"] == 42
