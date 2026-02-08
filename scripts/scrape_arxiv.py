@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 
 import arxiv
-import fitz
+import pymupdf
 import requests
 from tqdm import tqdm
 
@@ -162,7 +162,7 @@ def download_pdf(arxiv_id: str, output_dir: Path) -> Path | None:
 def extract_text_from_pdf(pdf_path: Path) -> str:
     """Extract text from a PDF using PyMuPDF."""
     try:
-        doc = fitz.open(str(pdf_path))
+        doc = pymupdf.open(str(pdf_path))
         text_parts = []
         for page in doc:
             text_parts.append(page.get_text())
