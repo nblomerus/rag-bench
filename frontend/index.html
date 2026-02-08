@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RAG-Bench | AI/ML Research Assistant</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            gray: {
+              950: '#0a0f1a',
+              900: '#111827',
+              850: '#151d2e',
+              800: '#1e293b',
+              700: '#334155',
+              600: '#475569',
+              500: '#64748b',
+              400: '#94a3b8',
+              300: '#cbd5e1',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Markdown rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- KaTeX math rendering -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <!-- PDF.js for PDF rendering (legacy build for UMD) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+    .citation-ref { color: #60a5fa; font-weight: 600; }
+    @keyframes pulse-dot {
+      0%, 80%, 100% { transform: scale(0); }
+      40% { transform: scale(1); }
+    }
+    .loading-dots span {
+      display: inline-block; width: 8px; height: 8px; margin: 0 3px;
+      background: #60a5fa; border-radius: 50%;
+      animation: pulse-dot 1.4s infinite ease-in-out;
+    }
+    .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .animate-spin { animation: spin 1s linear infinite; }
+    .source-card { transition: all 0.15s ease; }
+    .source-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+
+    /* Markdown answer styling */
+    .answer-md h1, .answer-md h2, .answer-md h3 { font-weight: 600; margin: 0.8em 0 0.4em; color: #e2e8f0; }
+    .answer-md h1 { font-size: 1.2em; } .answer-md h2 { font-size: 1.1em; } .answer-md h3 { font-size: 1em; }
+    .answer-md p { margin: 0.4em 0; }
+    .answer-md ul, .answer-md ol { margin: 0.4em 0; padding-left: 1.5em; }
+    .answer-md li { margin: 0.2em 0; }
+    .answer-md code { background: #1e293b; border: 1px solid #334155; padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.9em; color: #93c5fd; }
+    .answer-md pre { background: #0f172a; border: 1px solid #334155; padding: 0.8em; border-radius: 6px; overflow-x: auto; margin: 0.6em 0; }
+    .answer-md pre code { background: none; border: none; padding: 0; color: #e2e8f0; }
+    .answer-md blockquote { border-left: 3px solid #3b82f6; padding-left: 0.8em; margin: 0.5em 0; color: #94a3b8; }
+    .answer-md strong { color: #f1f5f9; font-weight: 600; }
+    .answer-md table { border-collapse: collapse; margin: 0.5em 0; width: 100%; }
+    .answer-md th, .answer-md td { border: 1px solid #334155; padding: 0.4em 0.6em; text-align: left; font-size: 0.85em; }
+    .answer-md th { background: #1e293b; font-weight: 600; }
+
+    /* KaTeX overrides for dark theme */
+    .katex { font-size: 1.05em; color: #e2e8f0; }
+    .katex-display { margin: 0.8em 0; overflow-x: auto; padding: 0.4em 0; }
+    .katex-display > .katex { font-size: 1.15em; }
+    .answer-md .katex-html { white-space: nowrap; }
+
+    /* Clickable citations */
+    .citation-ref { color: #60a5fa; font-weight: 600; cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+    .citation-ref:hover { color: #93bbfc; text-decoration-style: solid; }
+
+    /* Paper viewer panel — persistent right side */
+    .paper-panel {
+      flex: 0 0 600px; min-width: 300px; max-width: 50vw;
+      background: #111827; z-index: 40;
+      display: flex; flex-direction: column;
+      border-left: 1px solid #334155;
+      overflow: hidden;
+      transition: flex 0.3s ease;
+    }
+    .paper-panel.empty {
+      background: #0a0f1a;
+    }
+    @media (max-width: 1400px) {
+      .paper-panel { flex: 0 0 500px; }
+    }
+    @media (max-width: 1024px) {
+      .paper-panel {
+        position: fixed; top: 0; right: 0; bottom: 0;
+        flex: none; width: 100%; max-width: 100%; z-index: 50;
+        border-left: none;
+        transform: translateX(100%);
+        transition: transform 0.3s ease;
+      }
+      .paper-panel.visible {
+        transform: translateX(0);
+      }
+    }
+
+    /* Main content wrapper — shrinks when paper panel opens */
+    .main-content-wrapper {
+      flex: 1; display: flex; flex-direction: column; overflow: hidden;
+      min-width: 0; /* Important for flex shrinking */
+    }
+
+    /* Header bar */
+    .paper-viewer-header {
+      flex-shrink: 0; background: #1e293b;
+      border-bottom: 1px solid #334155; padding: 0.5em 0.75em;
+    }
+
+    /* PDF canvas container */
+    .paper-pdf-container {
+      flex: 1; overflow: hidden; background: #525659;
+      display: flex; flex-direction: column;
+      padding: 0; position: relative;
+    }
+    .paper-pdf-content {
+      flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center;
+      padding: 16px; width: 100%;
+    }
+    .pdf-canvas-wrapper {
+      position: relative; margin-bottom: 0;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      background: white;
+      display: flex;
+      align-items: flex-start;
+      max-width: 100%;
+      height: auto;
+    }
+    .pdf-canvas {
+      display: block;
+      background: white;
+      max-width: 100%;
+      height: auto;
+      width: 100%;
+    }
+    .pdf-text-highlight {
+      position: absolute;
+      background: rgba(255, 215, 0, 0.25);
+      border: 2px solid rgba(255, 215, 0, 0.5);
+      pointer-events: none;
+      z-index: 5;
+      box-sizing: border-box;
+    }
+    .pdf-text-highlight.first-highlight {
+      background: rgba(255, 215, 0, 0.5);
+      border: 3px solid rgba(255, 193, 7, 1);
+      box-shadow: 0 0 12px rgba(255, 215, 0, 0.7), inset 0 0 6px rgba(255, 215, 0, 0.4);
+      z-index: 10;
+      animation: pulse-highlight 2s ease-in-out infinite;
+    }
+    @keyframes pulse-highlight {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.8; transform: scale(1.08); }
+    }
+    .pdf-controls {
+      display: flex; align-items: center; gap: 12px;
+      padding: 8px 12px; background: #1e293b;
+      border-radius: 6px; margin-bottom: 12px;
+      border: 1px solid #334155;
+    }
+    .pdf-controls button {
+      background: #334155; color: #cbd5e1;
+      border: none; padding: 6px 12px;
+      border-radius: 4px; cursor: pointer;
+      font-size: 13px; transition: background 0.15s;
+    }
+    .pdf-controls button:hover:not(:disabled) {
+      background: #475569;
+    }
+    .pdf-controls button:disabled {
+      opacity: 0.4; cursor: not-allowed;
+    }
+    .pdf-status {
+      font-size: 13px; color: #94a3b8;
+      display: flex; align-items: center; gap: 6px;
+    }
+
+    /* Cited passage card — appears below PDF */
+    .cited-passage-card {
+      background: #1e293b; border: 1px solid #334155; border-top: 2px solid #475569;
+      border-radius: 0; padding: 0; overflow: hidden;
+      flex: 0 0 auto; min-height: 120px; max-height: 200px;
+    }
+    .cited-passage-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.5em 0.75em; border-bottom: 1px solid #334155;
+      background: #0f172a;
+    }
+    .cited-passage-body {
+      padding: 0.75em; overflow-y: auto; max-height: 160px;
+      font-size: 0.8em; line-height: 1.5; color: #cbd5e1;
+    }
+    .cited-passage-section {
+      display: inline-block; font-size: 0.7em; font-weight: 600;
+      color: #60a5fa; background: #60a5fa15; padding: 2px 8px;
+      border-radius: 4px; text-transform: capitalize;
+    }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useRef, useEffect, useCallback } = React;
+
+    const API_BASE = '/api';
+
+    // ─── API helpers ──────────────────────────────────────────
+
+    // Stream tokens from SSE endpoint, calling callbacks as events arrive
+    async function queryRAGStream(question, { onSources, onToken, onDone, onError, topK = 5 }) {
+      const res = await fetch(`${API_BASE}/query/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, top_k: topK }),
+      });
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const evt = JSON.parse(line.slice(6));
+            if (evt.event === 'sources' && onSources) onSources(evt.sources || []);
+            else if (evt.event === 'token' && onToken) onToken(evt.token);
+            else if (evt.event === 'done' && onDone) onDone(evt);
+            else if (evt.event === 'error' && onError) onError(evt.message);
+          } catch (e) { /* skip malformed */ }
+        }
+      }
+    }
+
+    // Non-streaming fallback (used by eval)
+    async function queryRAG(question, topK = 5) {
+      const res = await fetch(`${API_BASE}/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, top_k: topK }),
+      });
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      return res.json();
+    }
+
+    async function fetchStats() {
+      const res = await fetch(`${API_BASE}/stats`);
+      if (!res.ok) throw new Error(`Stats error: ${res.status}`);
+      return res.json();
+    }
+
+    async function runEvalAPI(runAll = false) {
+      const res = await fetch(`${API_BASE}/eval`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ run_all: runAll }),
+      });
+      if (!res.ok) throw new Error(`Eval error: ${res.status}`);
+      return res.json();
+    }
+
+    async function fetchPaper(paperId) {
+      const res = await fetch(`${API_BASE}/papers/${encodeURIComponent(paperId)}`);
+      if (!res.ok) throw new Error(`Paper fetch error: ${res.status}`);
+      return res.json();
+    }
+
+    // ─── Icons (inline SVGs) ─────────────────────────────────
+    const Icon = ({ d, size = 16, className = '' }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+           strokeLinejoin="round" className={className}>
+        <path d={d} />
+      </svg>
+    );
+
+    const SendIcon = ({ size }) => <Icon size={size} d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2Z" />;
+    const BookIcon = ({ size }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+      </svg>
+    );
+    const DatabaseIcon = ({ size }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+      </svg>
+    );
+    const BarChartIcon = ({ size }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="12" y1="20" x2="12" y2="10" /><line x1="18" y1="20" x2="18" y2="4" /><line x1="6" y1="20" x2="6" y2="16" />
+      </svg>
+    );
+    const ZapIcon = ({ size }) => <Icon size={size} d="M13 2L3 14H12L11 22L21 10H12L13 2Z" />;
+    const SearchIcon = ({ size }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+      </svg>
+    );
+    const CpuIcon = ({ size }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="4" y="4" width="16" height="16" rx="2" ry="2" /><rect x="9" y="9" width="6" height="6" /><line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" /><line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" /><line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" /><line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" />
+      </svg>
+    );
+    const ChevronDown = ({ size }) => <Icon size={size} d="M6 9L12 15L18 9" />;
+    const ChevronUp = ({ size }) => <Icon size={size} d="M18 15L12 9L6 15" />;
+    const XIcon = ({ size }) => <Icon size={size} d="M18 6L6 18M6 6L18 18" />;
+    const EyeIcon = ({ size }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+      </svg>
+    );
+    const ArrowLeftIcon = ({ size }) => <Icon size={size} d="M19 12H5M12 19L5 12L12 5" />;
+    const AlertIcon = ({ size }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+      </svg>
+    );
+    const Spinner = ({ size = 16 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           strokeWidth="2" className="animate-spin">
+        <path d="M21 12a9 9 0 11-6.219-8.56" />
+      </svg>
+    );
+
+    // ─── Render math with KaTeX (safe fallback) ───────────────
+    function renderKatex(latex, displayMode) {
+      try {
+        return katex.renderToString(latex, { displayMode, throwOnError: false, trust: true });
+      } catch (e) {
+        // Return the raw LaTeX in a styled span so it's still readable
+        return `<code class="text-yellow-300">${latex}</code>`;
+      }
+    }
+
+    // ─── Format answer: Markdown + KaTeX + Citation refs ─────
+    function formatAnswer(text) {
+      if (!text) return null;
+
+      // Step 1: Protect [Source N] citations from markdown mangling
+      let processed = text.replace(/\[Source (\d+)\]/g, '%%SOURCE_$1%%');
+
+      // Step 2: Protect and render KaTeX math BEFORE markdown processing
+      // This prevents marked from mangling LaTeX backslashes and underscores.
+      const mathBlocks = [];
+      let mathIdx = 0;
+
+      // Display math: $$ ... $$
+      processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (_, latex) => {
+        const rendered = renderKatex(latex.trim(), true);
+        const placeholder = `%%MATH_BLOCK_${mathIdx}%%`;
+        mathBlocks.push(rendered);
+        mathIdx++;
+        return placeholder;
+      });
+
+      // Inline math: $ ... $ (but not $$)
+      processed = processed.replace(/(?<!\$)\$(?!\$)((?:[^$\\]|\\.)+?)\$(?!\$)/g, (_, latex) => {
+        const rendered = renderKatex(latex.trim(), false);
+        const placeholder = `%%MATH_BLOCK_${mathIdx}%%`;
+        mathBlocks.push(rendered);
+        mathIdx++;
+        return placeholder;
+      });
+
+      // Step 3: Render markdown via marked
+      if (window.marked) {
+        marked.setOptions({
+          breaks: true,
+          gfm: true,
+          headerIds: false,
+          mangle: false,
+        });
+        processed = marked.parse(processed);
+      }
+
+      // Step 4: Restore math blocks (they were protected from markdown)
+      for (let i = 0; i < mathBlocks.length; i++) {
+        processed = processed.replace(`%%MATH_BLOCK_${i}%%`, mathBlocks[i]);
+      }
+
+      // Step 5: Restore citation refs with clickable spans
+      processed = processed.replace(/%%SOURCE_(\d+)%%/g,
+        '<span class="citation-ref" data-source-idx="$1" role="button" tabindex="0">[Source $1]</span>');
+
+      return <div className="answer-md" dangerouslySetInnerHTML={{ __html: processed }} />;
+    }
+
+    // ─── Source Card ──────────────────────────────────────────
+    function SourceCard({ source, index, isExpanded, onToggle, onViewInPaper }) {
+      const relevance = source.relevance || 'low';
+      const badgeConfig = {
+        high:   { color: 'text-green-400', bg: 'bg-green-400/10', border: 'border-green-800/50', label: 'High match' },
+        medium: { color: 'text-yellow-400', bg: 'bg-yellow-400/10', border: 'border-yellow-800/50', label: 'Partial match' },
+        low:    { color: 'text-orange-400', bg: 'bg-orange-400/10', border: 'border-orange-800/50', label: 'Weak match' },
+      };
+      const badge = badgeConfig[relevance] || badgeConfig.low;
+
+      return (
+        <div className={`source-card bg-gray-800 rounded-lg border ${badge.border} p-3`}>
+          <div className="flex items-start justify-between cursor-pointer" onClick={onToggle}>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded">
+                  Source {index + 1}
+                </span>
+                <span className={`text-xs font-mono font-semibold ${badge.color}`}>
+                  {source.score.toFixed(2)}
+                </span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${badge.bg} ${badge.color}`}>
+                  {badge.label}
+                </span>
+              </div>
+              <p className="text-sm text-gray-200 mt-1 truncate font-medium">{source.title}</p>
+              {source.section && <p className="text-xs text-gray-500 mt-0.5">{source.section}</p>}
+            </div>
+            <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+              {source.paper_id && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onViewInPaper && onViewInPaper(source); }}
+                  className="text-blue-400 hover:text-blue-300 p-1 rounded hover:bg-blue-400/10 transition"
+                  title="View in paper">
+                  <EyeIcon size={14} />
+                </button>
+              )}
+              <button className="text-gray-500 hover:text-gray-300">
+                {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+            </div>
+          </div>
+          {isExpanded && (
+            <div className="mt-2 pt-2 border-t border-gray-700">
+              <p className="text-xs text-gray-400 leading-relaxed whitespace-pre-wrap">
+                {source.text_preview}
+              </p>
+              {source.paper_id && (
+                <button
+                  onClick={() => onViewInPaper && onViewInPaper(source)}
+                  className="mt-2 text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                  <EyeIcon size={12} /> View passage in full paper
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ─── Message Bubble ──────────────────────────────────────
+    function Message({ message, onViewSource }) {
+      const [expandedSources, setExpandedSources] = useState({});
+      const toggleSource = (idx) => setExpandedSources(p => ({...p, [idx]: !p[idx]}));
+      const answerRef = useRef(null);
+
+      // Handle clicks on [Source N] citation refs inside the rendered answer
+      useEffect(() => {
+        const el = answerRef.current;
+        if (!el || !onViewSource || !message.data?.sources?.length) return;
+        const handler = (e) => {
+          const citEl = e.target.closest('[data-source-idx]');
+          if (!citEl) return;
+          const idx = parseInt(citEl.dataset.sourceIdx, 10) - 1; // Source 1 → index 0
+          const source = message.data.sources[idx];
+          if (source) onViewSource(source);
+        };
+        el.addEventListener('click', handler);
+        return () => el.removeEventListener('click', handler);
+      }, [message.data?.sources, onViewSource]);
+
+      if (message.role === 'user') {
+        return (
+          <div className="flex justify-end mb-4">
+            <div className="bg-blue-600 text-white px-4 py-3 rounded-2xl rounded-br-md max-w-[75%]">
+              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+            </div>
+          </div>
+        );
+      }
+
+      const { data, streaming } = message;
+      // Split answer before "Sources:" section
+      const answerText = (message.content || '').split('\nSources:\n')[0];
+
+      return (
+        <div className="flex justify-start mb-6">
+          <div className="max-w-[85%] w-full">
+            {data?.deflected && !streaming && (
+              <div className="flex items-center gap-2 bg-amber-900/30 border border-amber-700/50 text-amber-300 px-3 py-2 rounded-lg mb-2 text-xs">
+                <AlertIcon size={14} />
+                <span>Deflected: {data.deflection_reason}</span>
+              </div>
+            )}
+            <div className="bg-gray-800 border border-gray-700 rounded-2xl rounded-bl-md px-4 py-3">
+              <div ref={answerRef} className="text-sm text-gray-200 leading-relaxed">
+                {answerText ? formatAnswer(answerText) : (streaming ? '' : 'No response.')}
+                {streaming && <span className="inline-block w-2 h-4 bg-blue-400 ml-0.5 animate-pulse rounded-sm" />}
+              </div>
+              {data && !streaming && (
+                <div className="flex items-center gap-3 mt-3 pt-2 border-t border-gray-700 text-xs text-gray-500">
+                  <span className="flex items-center gap-1"><ZapIcon size={12} />{data.latency_ms?.toFixed(0) || '0'}ms</span>
+                  <span className="flex items-center gap-1"><CpuIcon size={12} />{data.backend || '...'}/{((data.model || '').split(':')[0]) || '...'}</span>
+                  <span className="flex items-center gap-1"><SearchIcon size={12} />{data.sources?.length || 0} relevant source{data.sources?.length !== 1 ? 's' : ''}</span>
+                </div>
+              )}
+              {streaming && data?.sources?.length > 0 && (
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-700 text-xs text-gray-500">
+                  <SearchIcon size={12} />
+                  <span>{data.sources.length} source{data.sources.length !== 1 ? 's' : ''} found — generating answer...</span>
+                </div>
+              )}
+            </div>
+            {data?.sources?.length > 0 && !data.deflected && (
+              <div className="mt-2 space-y-1.5">
+                {data.sources.map((source, idx) => (
+                  <SourceCard key={idx} source={source} index={idx}
+                    isExpanded={expandedSources[idx] || false}
+                    onToggle={() => toggleSource(idx)}
+                    onViewInPaper={onViewSource} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── Loading Dots ────────────────────────────────────────
+    function LoadingDots() {
+      return (
+        <div className="flex justify-start mb-4">
+          <div className="bg-gray-800 border border-gray-700 rounded-2xl rounded-bl-md px-4 py-3">
+            <div className="loading-dots"><span></span><span></span><span></span></div>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── Stats Panel ─────────────────────────────────────────
+    function StatsPanel({ stats, onClose }) {
+      if (!stats) return null;
+      const items = [
+        { label: 'Papers', value: stats.total_papers, icon: BookIcon },
+        { label: 'Chunks', value: stats.total_chunks?.toLocaleString(), icon: DatabaseIcon },
+        { label: 'Embedding', value: (stats.embedding_model || '').split('/')[1], icon: CpuIcon },
+        { label: 'LLM Backend', value: stats.llm_backend, icon: ZapIcon },
+        { label: 'Model', value: (stats.llm_model || '').split(':')[0], icon: CpuIcon },
+        { label: 'Collection', value: stats.collection_name, icon: SearchIcon },
+      ];
+      return (
+        <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
+              <DatabaseIcon size={16} /> Pipeline Stats
+            </h3>
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-300"><XIcon size={16} /></button>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {items.map(({ label, value, icon: Ic }) => (
+              <div key={label} className="bg-gray-900 rounded-lg p-2">
+                <div className="flex items-center gap-1.5 text-gray-500 text-xs mb-1"><Ic size={12} /> {label}</div>
+                <p className="text-sm font-medium text-gray-200">{value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── Eval Panel ──────────────────────────────────────────
+    function EvalPanel({ evalResults, isRunning, onRun, onClose }) {
+      return (
+        <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
+              <BarChartIcon size={16} /> Evaluation Suite
+            </h3>
+            <div className="flex items-center gap-2">
+              <button onClick={() => onRun(false)} disabled={isRunning}
+                className="text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-3 py-1 rounded-md">
+                {isRunning ? 'Running...' : 'Quick Eval'}
+              </button>
+              <button onClick={() => onRun(true)} disabled={isRunning}
+                className="text-xs bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-200 px-3 py-1 rounded-md">
+                Full Eval
+              </button>
+              <button onClick={onClose} className="text-gray-500 hover:text-gray-300"><XIcon size={16} /></button>
+            </div>
+          </div>
+          {isRunning && (
+            <div className="flex items-center gap-2 text-sm text-gray-400">
+              <Spinner size={14} /> Running evaluation queries...
+            </div>
+          )}
+          {evalResults && (
+            <div>
+              <div className="flex items-center gap-4 mb-3">
+                <div className={`text-2xl font-bold ${
+                  evalResults.accuracy === 100 ? 'text-green-400' :
+                  evalResults.accuracy >= 90 ? 'text-yellow-400' : 'text-red-400'
+                }`}>{evalResults.accuracy}%</div>
+                <div className="text-xs text-gray-400">{evalResults.correct}/{evalResults.total} correct</div>
+              </div>
+              <div className="flex gap-2 mb-3 flex-wrap">
+                {Object.entries(evalResults.by_difficulty).map(([diff, data]) => (
+                  <span key={diff} className={`text-xs px-2 py-1 rounded-md border ${
+                    data.accuracy === 100 ? 'bg-green-900/30 text-green-400 border-green-800' :
+                    data.accuracy >= 80 ? 'bg-yellow-900/30 text-yellow-400 border-yellow-800' :
+                    'bg-red-900/30 text-red-400 border-red-800'
+                  }`}>{diff}: {data.correct}/{data.total}</span>
+                ))}
+              </div>
+              <div className="max-h-60 overflow-y-auto space-y-1">
+                {evalResults.results.map((r) => (
+                  <div key={r.id} className={`flex items-center gap-2 text-xs p-1.5 rounded ${
+                    r.passed ? 'bg-gray-900' : 'bg-red-900/20'}`}>
+                    <span className={`font-bold ${r.passed ? 'text-green-400' : 'text-red-400'}`}>
+                      {r.passed ? 'PASS' : 'FAIL'}
+                    </span>
+                    <span className="text-gray-500 font-mono w-16">{r.id}</span>
+                    <span className="text-gray-400 truncate flex-1">{r.question}</span>
+                    <span className="text-gray-500 font-mono">{r.top_score.toFixed(1)}</span>
+                    {r.actual_deflect && (
+                      <span className="text-amber-400 text-xs">({r.deflect_source})</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ─── Paper Viewer (persistent right panel) — PDF.js viewer + cited passage ─
+    function PaperViewer({ paper, highlightChunkId, highlightText, onClose, isEmpty }) {
+      const [pdfError, setPdfError] = useState(false);
+      const [pdfDoc, setPdfDoc] = useState(null);
+      const [currentPage, setCurrentPage] = useState(1);
+      const [totalPages, setTotalPages] = useState(0);
+      const [isSearching, setIsSearching] = useState(false);
+      const [searchStatus, setSearchStatus] = useState('');
+      const [highlightBoxes, setHighlightBoxes] = useState([]);
+      const [renderScale, setRenderScale] = useState(1.5);
+      const canvasRef = useRef(null);
+      const containerRef = useRef(null);
+
+      // Close on Escape key
+      useEffect(() => {
+        const handler = (e) => { if (e.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+      }, [onClose]);
+
+      // Find the cited chunk for the floating reference card
+      let citedChunk = null;
+      if (paper && highlightChunkId) {
+        citedChunk = paper.chunks.find(c => c.chunk_id === highlightChunkId);
+      }
+      if (!citedChunk && paper && highlightText) {
+        const preview = highlightText.slice(0, 100).toLowerCase();
+        citedChunk = paper.chunks.find(c => c.text && c.text.toLowerCase().includes(preview));
+      }
+
+      const hasPdf = paper && !!paper.arxiv_id;
+      const pdfUrl = hasPdf ? `${API_BASE}/papers/${encodeURIComponent(paper.paper_id || paper.arxiv_id)}/pdf` : '';
+
+      // Load PDF document
+      useEffect(() => {
+        if (!pdfUrl) return;
+
+        let cancelled = false;
+
+        async function loadPDF() {
+          try {
+            // Use global pdfjsLib from CDN
+            if (!window.pdfjsLib) {
+              console.error('PDF.js library not loaded');
+              setPdfError(true);
+              return;
+            }
+
+            // Set worker path
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 
+              'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+            const loadingTask = window.pdfjsLib.getDocument(pdfUrl);
+            const pdf = await loadingTask.promise;
+            
+            if (cancelled) return;
+            setPdfDoc(pdf);
+            setTotalPages(pdf.numPages);
+            setPdfError(false);
+          } catch (error) {
+            console.error('Error loading PDF:', error);
+            if (!cancelled) setPdfError(true);
+          }
+        }
+
+        loadPDF();
+        return () => { cancelled = true; };
+      }, [pdfUrl]);
+
+      // Render current page
+      useEffect(() => {
+        if (!pdfDoc || !canvasRef.current || currentPage < 1 || currentPage > totalPages) return;
+
+        let cancelled = false;
+
+        async function renderPage() {
+          try {
+            const page = await pdfDoc.getPage(currentPage);
+            if (cancelled) return;
+
+            const canvas = canvasRef.current;
+            const context = canvas.getContext('2d');
+            
+            // Use fixed scale for consistent rendering
+            const RENDER_SCALE = 1.5;
+            const viewport = page.getViewport({ scale: RENDER_SCALE });
+            
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+
+            const renderContext = {
+              canvasContext: context,
+              viewport: viewport
+            };
+
+            await page.render(renderContext).promise;
+            setRenderScale(RENDER_SCALE);
+          } catch (error) {
+            console.error('Error rendering page:', error);
+          }
+        }
+
+        renderPage();
+        return () => { cancelled = true; };
+      }, [pdfDoc, currentPage, totalPages]);
+
+      // Search for cited text and navigate to it
+      useEffect(() => {
+        if (!pdfDoc || !citedChunk || !citedChunk.text) return;
+
+        let cancelled = false;
+
+        async function searchAndHighlight() {
+          setIsSearching(true);
+          setSearchStatus('Searching...');
+          setHighlightBoxes([]);
+
+          try {
+            const chunkText = citedChunk.text.trim();
+            const firstWords = chunkText.split(/\s+/).slice(0, 8).join(' ').toLowerCase();
+            const searchWords = chunkText.slice(0, 150).toLowerCase()
+              .split(/\s+/).filter(w => w.length > 2);
+
+            // Helper: strict prefix match — only matches the first 8 words as a contiguous sequence
+            function findPassageStart(items) {
+              for (let i = 0; i < items.length; i++) {
+                let concat = '';
+                for (let j = i; j < Math.min(i + 15, items.length); j++) {
+                  concat += (j > i ? ' ' : '') + items[j].str.trim();
+                  const concatLower = concat.toLowerCase();
+                  if (concatLower.length >= firstWords.length && concatLower.startsWith(firstWords)) {
+                    return items[i];
+                  }
+                }
+              }
+              return null;
+            }
+
+            // Helper: create a highlight box from a text item
+            function makeHighlight(item, page) {
+              const RENDER_SCALE = 1.5;
+              const viewport = page.getViewport({ scale: RENDER_SCALE });
+              const x0 = item.transform[4];
+              const y0 = item.transform[5];
+              const w = item.width * RENDER_SCALE;
+              const h = (item.height || item.transform[3]) * RENDER_SCALE;
+              const x = x0 * RENDER_SCALE;
+              const canvasY = viewport.height - (y0 * RENDER_SCALE);
+              return {
+                leftPct:   Math.max(0, (x / viewport.width) * 100),
+                topPct:    Math.max(0, ((canvasY - h) / viewport.height) * 100),
+                widthPct:  Math.max(0.5, (w / viewport.width) * 100),
+                heightPct: Math.max(0.5, (h / viewport.height) * 100),
+                isFirst:   true
+              };
+            }
+
+            // Pass 1: strict prefix match — scan all pages for the exact passage start
+            let found = false;
+            for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+              if (cancelled) return;
+              const page = await pdfDoc.getPage(pageNum);
+              const textContent = await page.getTextContent();
+              const items = textContent.items.filter(it => it.str && it.str.trim());
+
+              const foundItem = findPassageStart(items);
+              if (foundItem && !cancelled) {
+                setCurrentPage(pageNum);
+                setHighlightBoxes([makeHighlight(foundItem, page)]);
+                setSearchStatus(`Found on page ${pageNum}`);
+                found = true;
+                break;
+              }
+            }
+
+            // Pass 2: if strict match failed, try looser 3-word phrase match
+            if (!found && !cancelled) {
+              const phrase = chunkText.split(/\s+/).slice(0, 3).join(' ').toLowerCase();
+              for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+                if (cancelled) return;
+                const page = await pdfDoc.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                const items = textContent.items.filter(it => it.str && it.str.trim());
+                const pageText = items.map(it => it.str).join(' ').toLowerCase();
+
+                // Only consider pages with enough word overlap
+                const matchCount = searchWords.filter(word => pageText.includes(word)).length;
+                const requiredMatches = Math.max(2, Math.ceil(searchWords.length * 0.4));
+                if (matchCount < requiredMatches) continue;
+
+                // Look for the 3-word phrase in concatenated page text
+                if (pageText.includes(phrase)) {
+                  const phraseItem = items.find(it => it.str.toLowerCase().includes(phrase));
+                  if (phraseItem && !cancelled) {
+                    setCurrentPage(pageNum);
+                    setHighlightBoxes([makeHighlight(phraseItem, page)]);
+                    setSearchStatus(`Found on page ${pageNum}`);
+                    found = true;
+                    break;
+                  }
+                }
+              }
+            }
+
+            // Pass 3: last resort — just navigate to the page with most word overlap
+            if (!found && !cancelled) {
+              let bestPage = 1;
+              let bestCount = 0;
+              for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+                if (cancelled) return;
+                const page = await pdfDoc.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(it => it.str).join(' ').toLowerCase();
+                const matchCount = searchWords.filter(word => pageText.includes(word)).length;
+                if (matchCount > bestCount) {
+                  bestCount = matchCount;
+                  bestPage = pageNum;
+                }
+              }
+              setCurrentPage(bestPage);
+              setSearchStatus(`Navigated to page ${bestPage}`);
+            }
+
+            if (!cancelled) {
+              setIsSearching(false);
+              setTimeout(() => setSearchStatus(''), 4000);
+            }
+          } catch (error) {
+            console.error('Error searching PDF:', error);
+            if (!cancelled) {
+              setIsSearching(false);
+              setSearchStatus('');
+            }
+          }
+        }
+
+        searchAndHighlight();
+        return () => { cancelled = true; };
+      }, [pdfDoc, citedChunk]);
+
+      // Page navigation handlers
+      const goToPrevPage = () => {
+        if (currentPage > 1) {
+          setCurrentPage(currentPage - 1);
+          setHighlightBoxes([]);
+        }
+      };
+
+      const goToNextPage = () => {
+        if (currentPage < totalPages) {
+          setCurrentPage(currentPage + 1);
+          setHighlightBoxes([]);
+        }
+      };
+
+      return (
+        <div className={`paper-panel ${isEmpty ? 'empty' : 'visible'}`}>
+            {/* Header bar */}
+            <div className="paper-viewer-header">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  {!isEmpty && (
+                    <button onClick={onClose}
+                      className="text-gray-400 hover:text-gray-200 p-1 rounded hover:bg-gray-700 flex-shrink-0"
+                      title="Close">
+                      <XIcon size={16} />
+                    </button>
+                  )}
+                  <span className="text-xs text-gray-300 truncate font-medium">
+                    {isEmpty ? 'Reference Viewer' : paper.title}
+                  </span>
+                </div>
+                {!isEmpty && (
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {paper.year > 0 && (
+                      <span className="text-[10px] text-gray-500">{paper.year}</span>
+                    )}
+                    {paper.arxiv_id && (
+                      <a href={`https://arxiv.org/abs/${paper.arxiv_id}`}
+                         target="_blank" rel="noopener noreferrer"
+                         className="text-[10px] text-blue-400 hover:text-blue-300">
+                        arXiv:{paper.arxiv_id}
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Content area */}
+            {isEmpty ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-gray-500 text-center p-8">
+                <div className="w-16 h-16 bg-gray-800/30 rounded-full flex items-center justify-center mb-4">
+                  <EyeIcon size={32} />
+                </div>
+                <h3 className="text-sm font-medium text-gray-400 mb-2">No reference selected</h3>
+                <p className="text-xs text-gray-600 max-w-xs">
+                  Click the eye icon next to any source to view the full paper with highlighted citations.
+                </p>
+              </div>
+            ) : hasPdf && !pdfError && pdfDoc ? (
+              <div className="paper-pdf-container" ref={containerRef}>
+                {/* PDF Controls */}
+                <div className="pdf-controls">
+                  <button onClick={goToPrevPage} disabled={currentPage <= 1 || isSearching}>
+                    ← Previous
+                  </button>
+                  <span className="pdf-status">
+                    Page {currentPage} of {totalPages}
+                    {isSearching && (
+                      <span className="loading-dots">
+                        <span></span><span></span><span></span>
+                      </span>
+                    )}
+                  </span>
+                  <button onClick={goToNextPage} disabled={currentPage >= totalPages || isSearching}>
+                    Next →
+                  </button>
+                  {searchStatus && (
+                    <span className="text-xs text-amber-400 ml-2">{searchStatus}</span>
+                  )}
+                </div>
+
+                {/* PDF Content Area */}
+                <div className="paper-pdf-content">
+                  <div className="pdf-canvas-wrapper">
+                    <canvas ref={canvasRef} className="pdf-canvas" />
+                    {/* Highlight overlays */}
+                    {highlightBoxes.map((box, idx) => (
+                      <div
+                        key={idx}
+                        className={`pdf-text-highlight ${box.isFirst ? 'first-highlight' : ''}`}
+                        style={{
+                          left: `${box.leftPct}%`,
+                          top: `${box.topPct}%`,
+                          width: `${box.widthPct}%`,
+                          height: `${box.heightPct}%`
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Referenced passage below PDF */}
+                {citedChunk && (
+                  <div className="cited-passage-card">
+                    <div className="cited-passage-header">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-semibold text-amber-400">
+                          Referenced passage
+                        </span>
+                        {citedChunk.section && (
+                          <span className="cited-passage-section">
+                            {citedChunk.section.replace(/_/g, ' ')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="cited-passage-body">
+                      {citedChunk.text}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : hasPdf && !pdfError && !pdfDoc ? (
+              <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
+                <div className="loading-dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <span className="ml-2">Loading PDF...</span>
+              </div>
+            ) : !isEmpty ? (
+              <div className="flex-1 flex items-center justify-center text-gray-500 text-sm p-8 text-center">
+                <div>
+                  <p className="mb-2">PDF not available for this paper.</p>
+                  {paper && paper.arxiv_id && (
+                    <a href={`https://arxiv.org/pdf/${paper.arxiv_id}`}
+                       target="_blank" rel="noopener noreferrer"
+                       className="text-blue-400 hover:text-blue-300 text-xs">
+                      Open on arXiv directly
+                    </a>
+                  )}
+                </div>
+              </div>
+            ) : null}
+        </div>
+      );
+    }
+
+    // ─── Example Queries ─────────────────────────────────────
+    const EXAMPLES = [
+      "What is the scaled dot-product attention formula?",
+      "How does LoRA reduce trainable parameters?",
+      "Compare RAG and RLHF approaches to factual accuracy",
+      "What is the forward diffusion process in DDPM?",
+      "What is the Mamba architecture's selective state space mechanism?",
+    ];
+
+    // ─── Main App ────────────────────────────────────────────
+    function App() {
+      const [messages, setMessages] = useState([]);
+      const [input, setInput] = useState('');
+      const [isLoading, setIsLoading] = useState(false);
+      const [stats, setStats] = useState(null);
+      const [showStats, setShowStats] = useState(false);
+      const [showEval, setShowEval] = useState(false);
+      const [evalResults, setEvalResults] = useState(null);
+      const [evalRunning, setEvalRunning] = useState(false);
+      const [error, setError] = useState(null);
+      const [ready, setReady] = useState(false);
+
+      // Paper viewer state
+      const [paperViewerData, setPaperViewerData] = useState(null); // { paper, highlightChunkId, highlightText }
+      const [paperLoading, setPaperLoading] = useState(false);
+      const paperCache = useRef({}); // Cache fetched papers: paperId → paper data
+
+      const endRef = useRef(null);
+      const inputRef = useRef(null);
+
+      useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isLoading]);
+
+      useEffect(() => {
+        const check = async () => {
+          try {
+            const res = await fetch(`${API_BASE}/health`);
+            const d = await res.json();
+            setReady(d.pipeline_ready);
+            if (!d.pipeline_ready) setTimeout(check, 2000);
+          } catch { setTimeout(check, 3000); }
+        };
+        check();
+      }, []);
+
+      const handleSubmit = useCallback(async (override) => {
+        const q = override || input.trim();
+        if (!q || isLoading) return;
+        setInput(''); setError(null);
+
+        // Add user message
+        setMessages(prev => [...prev, { role: 'user', content: q }]);
+
+        // Add placeholder assistant message that we'll update in real-time
+        const assistantIdx = messages.length + 1; // index of the assistant msg we're about to add
+        setMessages(prev => [...prev, {
+          role: 'assistant', content: '', streaming: true,
+          data: { sources: [], deflected: false, deflection_reason: '', latency_ms: 0, backend: '', model: '' },
+        }]);
+        setIsLoading(true);
+
+        let streamedText = '';
+
+        try {
+          await queryRAGStream(q, {
+            onSources: (sources) => {
+              setMessages(prev => {
+                const updated = [...prev];
+                const msg = updated[updated.length - 1];
+                if (msg?.role === 'assistant') {
+                  msg.data = { ...msg.data, sources };
+                }
+                return updated;
+              });
+            },
+            onToken: (token) => {
+              streamedText += token;
+              setMessages(prev => {
+                const updated = [...prev];
+                const msg = updated[updated.length - 1];
+                if (msg?.role === 'assistant') {
+                  msg.content = streamedText;
+                }
+                return [...updated]; // new array ref to trigger re-render
+              });
+            },
+            onDone: (evt) => {
+              setMessages(prev => {
+                const updated = [...prev];
+                const msg = updated[updated.length - 1];
+                if (msg?.role === 'assistant') {
+                  msg.content = evt.answer || streamedText;
+                  msg.streaming = false;
+                  msg.data = {
+                    ...msg.data,
+                    deflected: evt.deflected || false,
+                    deflection_reason: evt.reason || '',
+                    latency_ms: evt.latency_ms || 0,
+                    backend: evt.backend || '',
+                    model: evt.model || '',
+                  };
+                }
+                return [...updated];
+              });
+            },
+            onError: (errMsg) => {
+              setError(errMsg);
+              setMessages(prev => {
+                const updated = [...prev];
+                const msg = updated[updated.length - 1];
+                if (msg?.role === 'assistant') {
+                  msg.content = `Error: ${errMsg}`;
+                  msg.streaming = false;
+                }
+                return [...updated];
+              });
+            },
+          });
+        } catch (err) {
+          setError(err.message);
+          setMessages(prev => {
+            const updated = [...prev];
+            const msg = updated[updated.length - 1];
+            if (msg?.role === 'assistant') {
+              msg.content = `Error: ${err.message}`;
+              msg.streaming = false;
+            }
+            return [...updated];
+          });
+        } finally {
+          setIsLoading(false);
+          inputRef.current?.focus();
+        }
+      }, [input, isLoading, messages.length]);
+
+      const handleKeyDown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
+      };
+
+      const handleRunEval = async (runAll) => {
+        setEvalRunning(true);
+        try { setEvalResults(await runEvalAPI(runAll)); }
+        catch (err) { setError(`Eval failed: ${err.message}`); }
+        finally { setEvalRunning(false); }
+      };
+
+      const handleShowStats = async () => {
+        if (!showStats) {
+          try { setStats(await fetchStats()); }
+          catch (err) { setError(`Stats: ${err.message}`); }
+        }
+        setShowStats(!showStats);
+      };
+
+      // Open paper viewer for a source — fetch paper then highlight the chunk
+      const handleViewSource = useCallback(async (source) => {
+        if (!source.paper_id) return;
+        setPaperLoading(true);
+        try {
+          let paper = paperCache.current[source.paper_id];
+          if (!paper) {
+            paper = await fetchPaper(source.paper_id);
+            paperCache.current[source.paper_id] = paper;
+          }
+          setPaperViewerData({
+            paper,
+            highlightChunkId: source.chunk_id || '',
+            highlightText: source.text_preview || '',
+          });
+        } catch (err) {
+          setError(`Paper: ${err.message}`);
+        } finally {
+          setPaperLoading(false);
+        }
+      }, []);
+
+      const isEmpty = messages.length === 0;
+
+      const hasPaperOpen = !!paperViewerData;
+
+      return (
+        <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
+          {/* Header */}
+          <header className="border-b border-gray-800 bg-gray-900/80 backdrop-blur-sm sticky top-0 z-10">
+            <div className="mx-auto px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                  <BookIcon size={18} />
+                </div>
+                <div>
+                  <h1 className="text-sm font-bold">RAG-Bench</h1>
+                  <p className="text-xs text-gray-500">AI/ML Research Paper Assistant</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={handleShowStats}
+                  className={`text-xs px-3 py-1.5 rounded-md transition ${
+                    showStats ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'}`}>
+                  <span className="inline-flex items-center gap-1"><DatabaseIcon size={12} />Stats</span>
+                </button>
+                <button onClick={() => setShowEval(!showEval)}
+                  className={`text-xs px-3 py-1.5 rounded-md transition ${
+                    showEval ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'}`}>
+                  <span className="inline-flex items-center gap-1"><BarChartIcon size={12} />Eval</span>
+                </button>
+                <div className={`w-2 h-2 rounded-full ${ready ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`} />
+              </div>
+            </div>
+          </header>
+
+          {/* Main content row with paper panel */}
+          <div className="flex flex-1 overflow-hidden">
+            {/* Main content area */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-4 flex flex-col">
+            {showStats && <StatsPanel stats={stats} onClose={() => setShowStats(false)} />}
+            {showEval && <EvalPanel evalResults={evalResults} isRunning={evalRunning} onRun={handleRunEval} onClose={() => setShowEval(false)} />}
+
+            <div className="flex-1 overflow-y-auto pb-4">
+              {isEmpty && !isLoading && (
+                <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
+                  <div className="w-16 h-16 bg-blue-600/10 border border-blue-600/20 rounded-2xl flex items-center justify-center mb-4">
+                    <BookIcon size={28} />
+                  </div>
+                  <h2 className="text-lg font-semibold text-gray-200 mb-1">Ask about AI/ML research</h2>
+                  <p className="text-sm text-gray-500 mb-6 max-w-md">
+                    Grounded answers with citations from {stats?.total_papers || '500+'} research papers.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-w-lg w-full">
+                    {EXAMPLES.map((q, i) => (
+                      <button key={i} onClick={() => handleSubmit(q)} disabled={!ready}
+                        className="text-left text-xs bg-gray-800/50 hover:bg-gray-800 border border-gray-700/50
+                                   hover:border-gray-600 rounded-lg p-3 text-gray-400 hover:text-gray-200
+                                   transition disabled:opacity-50 disabled:cursor-not-allowed">
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                  {!ready && (
+                    <p className="text-xs text-yellow-500 mt-4 flex items-center gap-2">
+                      <Spinner size={12} /> Loading pipeline...
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {messages.map((msg, i) => <Message key={i} message={msg} onViewSource={handleViewSource} />)}
+              <div ref={endRef} />
+            </div>
+
+            {/* Input */}
+            <div className="sticky bottom-0 pt-2 pb-2 bg-gray-950">
+              {error && (
+                <div className="text-xs text-red-400 mb-2 flex items-center gap-1">
+                  <AlertIcon size={12} />{error}
+                </div>
+              )}
+              <div className="flex items-end gap-2">
+                <textarea ref={inputRef} value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={ready ? "Ask a question about AI/ML research papers..." : "Pipeline loading..."}
+                  disabled={!ready || isLoading} rows={1}
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm
+                             text-gray-200 placeholder-gray-500 resize-none focus:outline-none focus:ring-2
+                             focus:ring-blue-500/50 focus:border-blue-500/50 disabled:opacity-50"
+                  style={{ minHeight: '48px', maxHeight: '120px' }}
+                  onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'; }}
+                />
+                <button onClick={() => handleSubmit()}
+                  disabled={!input.trim() || isLoading || !ready}
+                  className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500
+                             text-white p-3 rounded-xl transition flex-shrink-0">
+                  {isLoading ? <Spinner size={18} /> : <SendIcon size={18} />}
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-600 text-center mt-2">
+                Answers grounded in research papers. Always verify against original sources.
+              </p>
+            </div>
+          </main>
+
+              {/* Paper loading indicator */}
+              {paperLoading && (
+                <div className="fixed bottom-6 left-6 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 flex items-center gap-2 z-50 shadow-lg">
+                  <Spinner size={14} /> <span className="text-xs text-gray-300">Loading paper...</span>
+                </div>
+              )}
+            </div>
+
+            {/* Paper Viewer — persistent right panel */}
+            <PaperViewer
+              paper={paperViewerData?.paper}
+              highlightChunkId={paperViewerData?.highlightChunkId}
+              highlightText={paperViewerData?.highlightText}
+              onClose={() => setPaperViewerData(null)}
+              isEmpty={!paperViewerData}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

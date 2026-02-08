@@ -41,6 +41,11 @@ clean:
 	find . -type f -name "*.pyo" -delete
 	find . -type f -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 
+# Deploy
+
+run-server:
+	python -m rag_bench.api.server
+
 # Git 
 
 prune-branches:

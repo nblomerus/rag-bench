@@ -28,3 +28,6 @@ htmlcov/
 
 # ChromaDB
 chroma_db/
+
+# Node modules
+node_modules/
