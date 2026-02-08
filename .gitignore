@@ -26,3 +26,5 @@ coverage.xml
 htmlcov/
 .coverage
 
+# ChromaDB
+chroma_db/
