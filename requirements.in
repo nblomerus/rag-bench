@@ -3,3 +3,10 @@
 # Utilities
 tqdm
 numpy
+
+# Core ML / Embeddings
+torch>=2.0.0
+sentence-transformers
+
+# Vector Database
+chromadb
