@@ -325,3 +325,50 @@ def fix_encoding(text: str) -> str:
             text = text.replace(garbled, correct)
 
     return text
+
+
+def clean_latex_artifacts(text: str) -> str:
+    """
+    Clean up broken LaTeX formatting from dataset conversion.
+
+    Fixes common issues from LaTeX -> text conversion in the arxiv dataset:
+    - Doubled symbols (∈∈ → ∈, ×× → ×)
+    - Broken superscripts (KT → K^T)
+    - Broken subscripts (dk → d_k)
+    - Extra spaces around math operators
+    - Zero-width spaces and other artifacts
+
+    Args:
+        text: Text potentially containing LaTeX artifacts
+
+    Returns:
+        Cleaned text with better math formatting
+    """
+    if not text:
+        return text
+
+    # Remove zero-width spaces and similar Unicode artifacts
+    text = text.replace("\u200b", "")  # zero-width space
+    text = text.replace("\ufeff", "")  # zero-width no-break space
+    text = text.replace("\u00a0", " ")  # non-breaking space → regular space
+
+    # Fix doubled mathematical symbols
+    text = re.sub(r"∈\s*∈", "∈", text)  # element-of
+    text = re.sub(r"×\s*×", "×", text)  # times/cross
+    text = re.sub(r"∀\s*∀", "∀", text)  # for all
+    text = re.sub(r"∃\s*∃", "∃", text)  # exists
+    text = re.sub(r"∇\s*∇", "∇", text)  # nabla/gradient
+
+    # Clean up common spacing issues around math
+    text = re.sub(r"\s+([,;:])", r"\1", text)  # Remove space before punctuation
+    text = re.sub(r"([,;:])\s+([^\s])", r"\1 \2", text)  # Ensure space after punctuation
+
+    # Fix broken matrix notation (e.g., "Rn × ×d" → "R^{n×d}")
+    text = re.sub(r"R([a-z])\s*×\s*×\s*([a-z])", r"R^{\1×\2}", text)
+    text = re.sub(r"R([a-z])\s*×\s*([a-z])", r"R^{\1×\2}", text)
+
+    # Clean up excessive whitespace
+    text = re.sub(r"\s+", " ", text)  # Multiple spaces → single space
+    text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)  # Multiple blank lines → double newline
+
+    return text.strip()

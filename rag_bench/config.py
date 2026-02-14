@@ -26,11 +26,12 @@ COLLECTION_NAME = "ai_ml_papers"
 DISTANCE_METRIC = "cosine"  # cosine similarity for normalized embeddings
 
 # ── Chunking ──
-CHUNK_SIZE = 512  # tokens (characters used as proxy; ~4 chars/token)
-CHUNK_OVERLAP = 50  # token overlap between chunks
-CHUNK_SIZE_CHARS = 2048  # approximate character equivalent of 512 tokens
-CHUNK_OVERLAP_CHARS = 200  # approximate character equivalent of 50 tokens
+CHUNK_SIZE = 256  # tokens (characters used as proxy; ~4 chars/token)
+CHUNK_OVERLAP = 32  # token overlap between chunks
+CHUNK_SIZE_CHARS = 1024  # approximate character equivalent of 256 tokens
+CHUNK_OVERLAP_CHARS = 128  # approximate character equivalent of 32 tokens
 MIN_SECTION_LENGTH = 50  # skip sections shorter than this (characters)
+MIN_CHUNK_LENGTH = 100  # skip chunks shorter than this (characters)
 
 # Separators in priority order — equations first to keep them atomic
 CHUNK_SEPARATORS = [
@@ -45,12 +46,37 @@ CHUNK_SEPARATORS = [
     "",  # character break (last resort)
 ]
 
+# Sections to exclude from indexing (noise that degrades retrieval at scale)
+SECTION_BLOCKLIST = frozenset(
+    {
+        "references",
+        "bibliography",
+        "acknowledgments",
+        "acknowledgements",
+        "acknowledgment",
+        "acknowledgement",
+        "preamble",
+        "author_contributions",
+        "funding",
+        "competing_interests",
+        "data_availability",
+        "ethics_statement",
+    }
+)
+
 # ── Retrieval ──
 DEFAULT_TOP_K = 10
 RELEVANCE_THRESHOLD = 0.3  # minimum cosine similarity to consider relevant
+FIRST_STAGE_K = 150  # candidates per first-stage retriever (BM25 + dense)
+RERANK_CANDIDATES = 100  # candidates passed to cross-encoder reranker
+BM25_WEIGHT = 0.3  # RRF fusion weight for BM25 (reduced at scale)
+DENSE_WEIGHT = 0.7  # RRF fusion weight for dense retrieval
+
+# ── Reranker ──
+RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
 
 # ── Indexing ──
-EMBEDDING_BATCH_SIZE = 64  # batch size for embedding computation
+EMBEDDING_BATCH_SIZE = 254  # batch size for embedding computation (increased for GPU)
 
 # ── Logging ──
 LOG_LEVEL = "INFO"

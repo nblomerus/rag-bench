@@ -262,7 +262,7 @@ SEARCH_TOPICS = {
             "OR alignment OR DPO OR reward model OR constitutional AI"
             ")"
         ),
-        "max_results": 2500,
+        "max_results": 1000,
     },
     "efficient_finetuning": {
         "query": (
@@ -271,7 +271,7 @@ SEARCH_TOPICS = {
             "OR low-rank adaptation OR prompt tuning"
             ")"
         ),
-        "max_results": 1500,
+        "max_results": 1250,
     },
     "rag_retrieval": {
         "query": (
@@ -280,7 +280,7 @@ SEARCH_TOPICS = {
             "OR knowledge-grounded OR RAG OR retrieval-enhanced"
             ")"
         ),
-        "max_results": 2500,
+        "max_results": 1500,
     },
     "long_context": {
         "query": (
@@ -289,7 +289,7 @@ SEARCH_TOPICS = {
             "OR context window extension OR rotary embedding OR Mamba"
             ")"
         ),
-        "max_results": 1500,
+        "max_results": 1000,
     },
     "diffusion": {
         "query": (
@@ -298,7 +298,7 @@ SEARCH_TOPICS = {
             "OR flow matching OR consistency model OR diffusion transformer"
             ")"
         ),
-        "max_results": 2500,
+        "max_results": 1000,
     },
     "multimodal": {
         "query": (
@@ -307,7 +307,7 @@ SEARCH_TOPICS = {
             "OR contrastive learning CLIP OR visual instruction tuning"
             ")"
         ),
-        "max_results": 2500,
+        "max_results": 1500,
     },
     "mixture_of_experts": {
         "query": (
@@ -325,7 +325,7 @@ SEARCH_TOPICS = {
             "OR reasoning OR planning agent OR agentic"
             ")"
         ),
-        "max_results": 2500,
+        "max_results": 1500,
     },
     # ── 8 NEW categories ─────────────────────────────────────────────────
     "code_generation": {
@@ -335,7 +335,7 @@ SEARCH_TOPICS = {
             "OR automated software engineering OR code completion"
             ") OR cat:cs.CL AND (code generation large language model)"
         ),
-        "max_results": 2500,
+        "max_results": 1000,
     },
     "safety_alignment": {
         "query": (
@@ -344,7 +344,7 @@ SEARCH_TOPICS = {
             "OR AI safety OR LLM guardrails OR harmful content detection"
             ")"
         ),
-        "max_results": 1500,
+        "max_results": 1000,
     },
     "inference_optimization": {
         "query": (
@@ -353,7 +353,7 @@ SEARCH_TOPICS = {
             "OR inference optimization OR efficient serving OR model compression"
             ") OR cat:cs.CL AND (efficient inference large language model)"
         ),
-        "max_results": 2500,
+        "max_results": 1000,
     },
     "small_language_models": {
         "query": (
@@ -389,7 +389,7 @@ SEARCH_TOPICS = {
             "OR reasoning LLM OR chain of thought scaling"
             ")"
         ),
-        "max_results": 1500,
+        "max_results": 500,
     },
     "video_generation": {
         "query": (
@@ -412,6 +412,7 @@ def download_pdf(arxiv_id: str, output_dir: Path) -> Path | None:
     pdf_path = output_dir / f"{arxiv_id.replace('/', '_')}.pdf"
 
     if pdf_path.exists():
+        logger.info(f"Using cached PDF: {arxiv_id}")
         return pdf_path
 
     max_retries = 8
@@ -436,6 +437,7 @@ def download_pdf(arxiv_id: str, output_dir: Path) -> Path | None:
                 for chunk in resp.iter_content(chunk_size=8192):
                     f.write(chunk)
 
+            logger.info(f"Downloaded PDF: {arxiv_id}")
             return pdf_path
         except Exception as e:
             logger.warning(f"Failed to download PDF for {arxiv_id} (attempt {attempt}/{max_retries}): {e}")
@@ -592,7 +594,7 @@ def fetch_by_ids(
 
     client = RobustArxivClient(
         page_size=20,
-        delay_seconds=3.0,  # Be nice to ArXiv API
+        delay_seconds=0.5,  # Reduced for speed (ArXiv handles well)
         num_retries=10,
     )
 
@@ -611,7 +613,7 @@ def fetch_by_ids(
         except Exception:
             pass
 
-    for result in tqdm(client.results(search), total=len(arxiv_ids), desc="Fetching papers"):
+    for i, result in enumerate(tqdm(client.results(search), total=len(arxiv_ids), desc="Fetching papers")):
         arxiv_id = result.entry_id.split("/")[-1]
         arxiv_id_clean = re.sub(r"v\d+$", "", arxiv_id)
 
@@ -651,14 +653,21 @@ def fetch_by_ids(
         docs.append(doc)
         docs_by_id[arxiv_id_clean] = doc
 
-        # Incremental save after each paper
+        # Batch save every 50 papers instead of every paper
+        if (i + 1) % 50 == 0:
+            try:
+                with open(output_path, "w") as outf:
+                    json.dump(list(docs_by_id.values()), outf, indent=2, default=str)
+            except Exception as e:
+                logger.warning(f"Could not update {output_path}: {e}")
+
+    # Save remaining papers
+    if docs_by_id:
         try:
             with open(output_path, "w") as outf:
                 json.dump(list(docs_by_id.values()), outf, indent=2, default=str)
         except Exception as e:
-            logger.warning(f"Could not update {output_path}: {e}")
-
-        time.sleep(1)
+            logger.warning(f"Could not final save {output_path}: {e}")
 
     # No summary log
     return docs
@@ -691,7 +700,7 @@ def fetch_by_search(
 
     client = RobustArxivClient(
         page_size=50,
-        delay_seconds=3.0,
+        delay_seconds=0.5,  # Reduced for speed
         num_retries=10,
     )
 
@@ -705,6 +714,18 @@ def fetch_by_search(
             progress = json.load(pf)
     except Exception:
         progress = {}
+
+    # Prepare output path for incremental saving
+    output_path = pdf_dir.parent / "scraped_papers.json" if pdf_dir else Path("scraped_papers.json")
+    docs_by_id = {}
+    if output_path.exists():
+        try:
+            with open(output_path) as f:
+                for d in json.load(f):
+                    if "arxiv_id" in d:
+                        docs_by_id[d["arxiv_id"]] = d
+        except Exception:
+            pass
 
     for topic_name, topic_config in topics.items():
         if progress.get(topic_name, False):
@@ -720,118 +741,103 @@ def fetch_by_search(
 
         topic_docs = []
 
-        # Prepare output path for incremental saving
-        output_path = pdf_dir.parent / "scraped_papers.json" if pdf_dir else Path("scraped_papers.json")
-        docs_by_id = {}
-        if output_path.exists():
+        max_retries_topic = 6
+        topic_failed = False
+        for attempt_topic in range(1, max_retries_topic + 1):
             try:
-                with open(output_path) as f:
-                    for d in json.load(f):
-                        if "arxiv_id" in d:
-                            docs_by_id[d["arxiv_id"]] = d
-            except Exception:
-                pass
-
-            max_retries_topic = 6
-            topic_failed = False
-            for attempt_topic in range(1, max_retries_topic + 1):
-                try:
-                    for result in tqdm(
+                for i, result in enumerate(
+                    tqdm(
                         client.results(search),
                         total=topic_config["max_results"],
                         desc=f"  {topic_name}",
-                    ):
-                        arxiv_id = result.entry_id.split("/")[-1]
-                        arxiv_id_clean = re.sub(r"v\d+$", "", arxiv_id)
+                    )
+                ):
+                    arxiv_id = result.entry_id.split("/")[-1]
+                    arxiv_id_clean = re.sub(r"v\d+$", "", arxiv_id)
 
-                        if arxiv_id_clean in seen_ids:
-                            continue
-                        seen_ids.add(arxiv_id_clean)
+                    if arxiv_id_clean in seen_ids:
+                        continue
+                    seen_ids.add(arxiv_id_clean)
 
-                        full_text = ""
-                        sections = {}
+                    full_text = ""
+                    sections = {}
 
-                        if download_pdfs and pdf_dir:
-                            pdf_path = download_pdf(arxiv_id_clean, pdf_dir)
-                            if pdf_path:
-                                full_text = extract_text_from_pdf(pdf_path)
-                                if full_text:
-                                    sections = extract_sections_from_text(full_text)
+                    if download_pdfs and pdf_dir:
+                        pdf_path = download_pdf(arxiv_id_clean, pdf_dir)
+                        if pdf_path:
+                            full_text = extract_text_from_pdf(pdf_path)
+                            if full_text:
+                                sections = extract_sections_from_text(full_text)
 
-                        if not sections:
-                            sections = {"abstract": result.summary.strip()}
-                            full_text = result.summary.strip()
+                    if not sections:
+                        sections = {"abstract": result.summary.strip()}
+                        full_text = result.summary.strip()
 
-                        year = result.published.year if result.published else None
+                    year = result.published.year if result.published else None
 
-                        doc = {
-                            "doc_id": f"arxiv_{arxiv_id_clean}",
-                            "title": result.title.strip(),
-                            "authors": [a.name for a in result.authors],
-                            "year": year,
-                            "arxiv_id": arxiv_id_clean,
-                            "categories": result.categories,
-                            "pdf_url": result.pdf_url,
-                            "full_text": full_text,
-                            "sections": sections,
-                            "acronyms": build_acronym_dict(full_text),
-                            "topic": topic_name,
-                        }
-                        topic_docs.append(doc)
-                        docs_by_id[arxiv_id_clean] = doc
+                    doc = {
+                        "doc_id": f"arxiv_{arxiv_id_clean}",
+                        "title": result.title.strip(),
+                        "authors": [a.name for a in result.authors],
+                        "year": year,
+                        "arxiv_id": arxiv_id_clean,
+                        "categories": result.categories,
+                        "pdf_url": result.pdf_url,
+                        "full_text": full_text,
+                        "sections": sections,
+                        "acronyms": build_acronym_dict(full_text),
+                        "topic": topic_name,
+                    }
+                    topic_docs.append(doc)
+                    docs_by_id[arxiv_id_clean] = doc
 
-                        # Incremental save after each paper
+                    # Batch save every 50 papers instead of every paper
+                    if (i + 1) % 50 == 0:
                         try:
                             with open(output_path, "w") as outf:
                                 json.dump(list(docs_by_id.values()), outf, indent=2, default=str)
                         except Exception as e:
                             logger.warning(f"Could not update {output_path}: {e}")
-
-                        time.sleep(0.5)
-                    break  # Success, break out of retry loop
-                except arxiv.HTTPError as e:
-                    # arxiv.HTTPError has .status attribute for HTTP code
-                    if getattr(e, "status", None) == 429:
-                        wait_time = min(60 * attempt_topic, 600)
-                        logger.warning(
-                            f"HTTP 429 Too Many Requests for topic '{topic_name}', "
-                            f"retrying in {wait_time} seconds (attempt {attempt_topic}/{max_retries_topic})..."
-                        )
-                        time.sleep(wait_time)
-                    else:
-                        logger.error(f"arxiv HTTPError for topic '{topic_name}': {e}")
-                        topic_failed = True
-                        break
-                except Exception as e:
-                    logger.error(f"Unexpected error for topic '{topic_name}': {e}")
+                break  # Success, break out of retry loop
+            except arxiv.HTTPError as e:
+                # arxiv.HTTPError has .status attribute for HTTP code
+                if getattr(e, "status", None) == 429:
+                    wait_time = min(60 * attempt_topic, 600)
+                    logger.warning(
+                        f"HTTP 429 Too Many Requests for topic '{topic_name}', "
+                        f"retrying in {wait_time} seconds (attempt {attempt_topic}/{max_retries_topic})..."
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"arxiv HTTPError for topic '{topic_name}': {e}")
                     topic_failed = True
                     break
-
-            if topic_failed:
-                logger.error(f"Skipping topic '{topic_name}' after repeated failures.")
-                progress[topic_name] = "failed"
-            else:
-                all_docs.extend(topic_docs)
-                # No per-category summary log
-
-                # Mark topic as completed in progress file
-                progress[topic_name] = True
-            try:
-                with open(progress_file, "w") as pf:
-                    json.dump(progress, pf, indent=2)
             except Exception as e:
-                logger.warning(f"Could not update progress file: {e}")
+                logger.error(f"Unexpected error for topic '{topic_name}': {e}")
+                topic_failed = True
+                break
 
-        all_docs.extend(topic_docs)
-        # No per-category summary log
+        if topic_failed:
+            logger.error(f"Skipping topic '{topic_name}' after repeated failures.")
+            progress[topic_name] = "failed"
+        else:
+            all_docs.extend(topic_docs)
+            # Mark topic as completed in progress file
+            progress[topic_name] = True
 
-        # Mark topic as completed in progress file
-        progress[topic_name] = True
         try:
             with open(progress_file, "w") as pf:
                 json.dump(progress, pf, indent=2)
         except Exception as e:
             logger.warning(f"Could not update progress file: {e}")
+
+    # Final save to ensure all data is written
+    if docs_by_id:
+        try:
+            with open(output_path, "w") as outf:
+                json.dump(list(docs_by_id.values()), outf, indent=2, default=str)
+        except Exception as e:
+            logger.warning(f"Could not final save {output_path}: {e}")
 
     # No total summary log
     return all_docs

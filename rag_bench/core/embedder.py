@@ -16,6 +16,7 @@ from pathlib import Path
 
 import chromadb
 import numpy as np
+import torch
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
@@ -78,8 +79,19 @@ class TfidfFallbackEmbedder:
 def _load_embedding_model(model_name: str):
     """Try to load SentenceTransformer; fall back to TF-IDF if unavailable."""
     try:
-        model = SentenceTransformer(model_name)
-        logger.info(f"Loaded SentenceTransformer: {model_name}")
+        # Check CUDA availability with detailed logging
+        cuda_available = torch.cuda.is_available()
+        if cuda_available:
+            device_count = torch.cuda.device_count()
+            device_name = torch.cuda.get_device_name(0) if device_count > 0 else "Unknown"
+            logger.info(f"CUDA available: {device_count} device(s) - {device_name}")
+            device = "cuda"
+        else:
+            logger.warning("CUDA not available - check PyTorch installation and GPU drivers")
+            device = "cpu"
+
+        model = SentenceTransformer(model_name, device=device)
+        logger.info(f"Loaded SentenceTransformer: {model_name} on {device}")
         return model
     except Exception as e:
         logger.warning(f"Could not load SentenceTransformer ({e}). Falling back to TF-IDF hashed embedder.")
@@ -151,6 +163,8 @@ class Embedder:
                 batch,
                 normalize_embeddings=normalize,
                 show_progress_bar=False,
+                convert_to_tensor=False,  # Keep as numpy for ChromaDB
+                batch_size=batch_size,  # Pass through batch size to model
             )
             all_embeddings.extend(embeddings.tolist())
 
@@ -159,7 +173,7 @@ class Embedder:
     def index_chunks(
         self,
         chunks: list[dict],
-        batch_size: int = 64,
+        batch_size: int = 256,
         skip_existing: bool = True,
     ) -> int:
         """
@@ -174,21 +188,26 @@ class Embedder:
             Number of newly indexed chunks
         """
         # Filter out already-indexed chunks if requested
-        if skip_existing and self.collection.count() > 0:
-            existing_ids = set()
-            # Check in batches to avoid memory issues
-            for i in range(0, len(chunks), 1000):
-                batch_ids = [c["chunk_id"] for c in chunks[i : i + 1000]]
-                try:
-                    result = self.collection.get(ids=batch_ids)
-                    existing_ids.update(result["ids"])
-                except Exception:
-                    pass  # IDs not found, that's fine
+        if skip_existing:
+            existing_count = self.collection.count()
+            if existing_count > 0:
+                logger.info(f"Checking for duplicate chunks (DB has {existing_count} existing chunks)...")
+                existing_ids = set()
+                # Check in larger batches for speed
+                for i in range(0, len(chunks), 5000):
+                    batch_ids = [c["chunk_id"] for c in chunks[i : i + 5000]]
+                    try:
+                        result = self.collection.get(ids=batch_ids)
+                        existing_ids.update(result["ids"])
+                    except Exception:
+                        pass  # IDs not found, that's fine
 
-            original_count = len(chunks)
-            chunks = [c for c in chunks if c["chunk_id"] not in existing_ids]
-            if original_count != len(chunks):
-                logger.info(f"Skipping {original_count - len(chunks)} already-indexed chunks")
+                original_count = len(chunks)
+                chunks = [c for c in chunks if c["chunk_id"] not in existing_ids]
+                if original_count != len(chunks):
+                    logger.info(f"Skipping {original_count - len(chunks)} already-indexed chunks")
+            else:
+                logger.info("Database is empty, skipping duplicate check")
 
         if not chunks:
             logger.info("No new chunks to index")
@@ -222,6 +241,8 @@ class Embedder:
                 texts,
                 normalize_embeddings=True,
                 show_progress_bar=False,
+                convert_to_tensor=False,  # Keep as numpy for ChromaDB
+                batch_size=batch_size,  # Use specified batch size for embedding computation
             )
 
             # Add to ChromaDB
