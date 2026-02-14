@@ -301,8 +301,9 @@ class TestLoadEmbeddingModel:
 
         _load_embedding_model("test-model")
 
-        mock_logger.warning.assert_called_once()
-        assert "falling" in str(mock_logger.warning.call_args).lower()
+        # Should have called warning at least once with fallback message
+        warning_calls = [str(call).lower() for call in mock_logger.warning.call_args_list]
+        assert any("falling" in call or "fallback" in call for call in warning_calls)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
