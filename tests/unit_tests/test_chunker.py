@@ -751,3 +751,49 @@ class TestContextualPrefix:
         assert len(chunks) > 0
         # Chunk text should start with the title prefix
         assert chunks[0]["text"].startswith("Attention Is All You Need")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Branch Coverage Tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestChunkerBranchCoverage:
+    """Additional tests to improve branch coverage."""
+
+    def test_categories_as_string(self):
+        """Test handling when categories is already a string (not a list)."""
+        paper = {
+            "doc_id": "paper_001",
+            "title": "Test Paper",
+            "authors": ["Author One"],
+            "year": 2023,
+            "arxiv_id": "2301.00001",
+            "sections": {"introduction": "This is the introduction text with enough content to make a chunk. " * 50},
+            "categories": "cs.CL",  # Already a string, not a list
+            "acronyms": {},
+        }
+        chunker = PaperChunker()
+        chunks = chunker.chunk_paper(paper)
+
+        assert len(chunks) > 0
+        # Should handle string categories correctly
+        assert chunks[0]["metadata"]["categories"] == "cs.CL"
+
+    def test_categories_as_empty_string(self):
+        """Test handling when categories is empty string."""
+        paper = {
+            "doc_id": "paper_002",
+            "title": "Test Paper",
+            "authors": ["Author One"],
+            "year": 2023,
+            "arxiv_id": "2301.00002",
+            "sections": {"introduction": "This is the introduction text with enough content to make a chunk. " * 50},
+            "categories": "",  # Empty string
+            "acronyms": {},
+        }
+        chunker = PaperChunker()
+        chunks = chunker.chunk_paper(paper)
+
+        assert len(chunks) > 0
+        assert chunks[0]["metadata"]["categories"] == ""
