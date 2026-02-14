@@ -107,14 +107,16 @@ class TestBM25:
         assert tokens == ["hello", "world", "test"]
 
     def test_tokenize_with_numbers(self):
-        """Test tokenization includes alphanumeric tokens."""
+        """Test tokenization includes alphanumeric tokens (stopwords filtered)."""
         bm25 = BM25()
         tokens = bm25._tokenize("BERT-128 model v2.5")
         assert "bert" in tokens
         assert "128" in tokens
-        assert "model" in tokens
+        # "model" is a stopword at scale, filtered out
+        assert "model" not in tokens
         assert "v2" in tokens
-        assert "5" in tokens
+        # Single-char tokens ("5") are filtered
+        assert "5" not in tokens
 
     def test_tokenize_contractions(self):
         """Test tokenization handles contractions."""
@@ -390,7 +392,7 @@ class TestHybridRetriever:
         mock_collection = MagicMock()
         mock_collection.count.return_value = 0
         mock_collection.get.return_value = {"ids": [], "documents": [], "metadatas": []}
-        mock_client.get_collection.return_value = mock_collection
+        mock_client.get_or_create_collection.return_value = mock_collection
         mock_chroma.return_value = mock_client
 
         mock_reranker = MagicMock()
@@ -419,7 +421,7 @@ class TestHybridRetriever:
             "documents": [c["text"] for c in sample_chunks],
             "metadatas": [c["metadata"] for c in sample_chunks],
         }
-        mock_client.get_collection.return_value = mock_collection
+        mock_client.get_or_create_collection.return_value = mock_collection
         mock_chroma.return_value = mock_client
 
         mock_reranker_class.return_value = MagicMock()
@@ -447,7 +449,7 @@ class TestHybridRetriever:
             "metadatas": [[{"title": "Paper 1"}, {"title": "Paper 2"}]],
             "distances": [[0.2, 0.4]],
         }
-        mock_client.get_collection.return_value = mock_collection
+        mock_client.get_or_create_collection.return_value = mock_collection
         mock_chroma.return_value = mock_client
 
         mock_reranker_class.return_value = MagicMock()
@@ -472,7 +474,7 @@ class TestHybridRetriever:
         mock_collection = MagicMock()
         mock_collection.count.return_value = 0
         mock_collection.get.return_value = {"ids": [], "documents": [], "metadatas": []}
-        mock_client.get_collection.return_value = mock_collection
+        mock_client.get_or_create_collection.return_value = mock_collection
         mock_chroma.return_value = mock_client
 
         mock_reranker_class.return_value = MagicMock()
@@ -518,7 +520,7 @@ class TestHybridRetriever:
             "metadatas": [[{"title": "P1"}]],
             "distances": [[0.1]],
         }
-        mock_client.get_collection.return_value = mock_collection
+        mock_client.get_or_create_collection.return_value = mock_collection
         mock_chroma.return_value = mock_client
 
         mock_reranker = MagicMock()
@@ -551,7 +553,7 @@ class TestHybridRetriever:
             "metadatas": [[]],
             "distances": [[]],
         }
-        mock_client.get_collection.return_value = mock_collection
+        mock_client.get_or_create_collection.return_value = mock_collection
         mock_chroma.return_value = mock_client
 
         mock_reranker = MagicMock()
@@ -587,7 +589,7 @@ class TestHybridRetriever:
             "metadatas": [[]],
             "distances": [[]],
         }
-        mock_client.get_collection.return_value = mock_collection
+        mock_client.get_or_create_collection.return_value = mock_collection
         mock_chroma.return_value = mock_client
 
         mock_reranker = MagicMock()
@@ -622,7 +624,7 @@ class TestHybridRetriever:
         mock_collection = MagicMock()
         mock_collection.count.return_value = 0
         mock_collection.get.return_value = {"ids": [], "documents": [], "metadatas": []}
-        mock_client.get_collection.return_value = mock_collection
+        mock_client.get_or_create_collection.return_value = mock_collection
         mock_chroma.return_value = mock_client
 
         mock_reranker_class.return_value = MagicMock()
@@ -662,7 +664,7 @@ class TestRetrieverPrintResults:
             "metadatas": [[{"title": "Paper 1", "section": "intro"}]],
             "distances": [[0.1]],
         }
-        mock_client.get_collection.return_value = mock_collection
+        mock_client.get_or_create_collection.return_value = mock_collection
         mock_chroma.return_value = mock_client
 
         mock_reranker = MagicMock()
@@ -720,7 +722,7 @@ class TestRetrieverPrintResults:
             "metadatas": [[]],
             "distances": [[]],
         }
-        mock_client.get_collection.return_value = mock_collection
+        mock_client.get_or_create_collection.return_value = mock_collection
         mock_chroma.return_value = mock_client
 
         mock_reranker = MagicMock()

@@ -244,7 +244,11 @@ class TestLoadEmbeddingModel:
         result = _load_embedding_model("test-model")
 
         assert result == mock_model
-        mock_st_class.assert_called_once_with("test-model")
+        # Check that SentenceTransformer was called with model_name and device
+        assert mock_st_class.call_count == 1
+        call_args = mock_st_class.call_args
+        assert call_args[0][0] == "test-model"
+        assert "device" in call_args[1]
 
     @patch("rag_bench.core.embedder.SentenceTransformer")
     def test_fallback_on_import_error(self, mock_st_class):
@@ -283,8 +287,11 @@ class TestLoadEmbeddingModel:
 
         _load_embedding_model("test-model")
 
-        mock_logger.info.assert_called_once()
-        assert "test-model" in str(mock_logger.info.call_args)
+        # Multiple info calls: one for CUDA status, one for successful model load
+        assert mock_logger.info.call_count >= 1
+        # Check that one of the calls mentions the model name
+        all_calls = str(mock_logger.info.call_args_list)
+        assert "test-model" in all_calls
 
     @patch("rag_bench.core.embedder.SentenceTransformer")
     @patch("rag_bench.core.embedder.logger")
@@ -1049,7 +1056,7 @@ class TestEdgeCasesAndErrors:
     @patch("rag_bench.core.embedder.chromadb.PersistentClient")
     @patch("rag_bench.core.embedder._load_embedding_model")
     def test_index_chunks_large_batch_check(self, mock_load_model, mock_chroma):
-        """Test that large chunk lists are checked in batches of 1000."""
+        """Test that large chunk lists are checked in batches of 5000."""
         mock_model = MagicMock()
         mock_model.get_sentence_embedding_dimension.return_value = 768
         mock_model.encode.return_value = np.array([[0.1] * 768])
@@ -1069,5 +1076,5 @@ class TestEdgeCasesAndErrors:
         embedder = Embedder()
         embedder.index_chunks(chunks, skip_existing=True)
 
-        # Should call get() 3 times: ceil(2500/1000) = 3
-        assert mock_collection.get.call_count == 3
+        # Should call get() 1 time: ceil(2500/5000) = 1
+        assert mock_collection.get.call_count == 1

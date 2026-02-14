@@ -14,7 +14,9 @@ The hybrid approach handles edge cases that pure dense retrieval misses:
 
 import logging
 import math
+import pickle
 import re
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -22,6 +24,13 @@ import chromadb
 import numpy as np
 from sentence_transformers import CrossEncoder
 
+from rag_bench.config import (
+    BM25_WEIGHT,
+    DENSE_WEIGHT,
+    FIRST_STAGE_K,
+    RERANK_CANDIDATES,
+    RERANKER_MODEL,
+)
 from rag_bench.core.embedder import _load_embedding_model
 
 logger = logging.getLogger(__name__)
@@ -38,6 +47,127 @@ class BM25:
     the same chunk collection as the dense retriever.
     """
 
+    # Stopwords: standard English + ML-ubiquitous terms with near-zero IDF at scale
+    STOPWORDS = frozenset(
+        {
+            # Standard English stopwords
+            "the",
+            "a",
+            "an",
+            "is",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "being",
+            "have",
+            "has",
+            "had",
+            "do",
+            "does",
+            "did",
+            "will",
+            "would",
+            "shall",
+            "should",
+            "may",
+            "might",
+            "must",
+            "can",
+            "could",
+            "and",
+            "but",
+            "or",
+            "nor",
+            "not",
+            "no",
+            "so",
+            "if",
+            "than",
+            "that",
+            "this",
+            "these",
+            "those",
+            "it",
+            "its",
+            "to",
+            "of",
+            "in",
+            "for",
+            "on",
+            "with",
+            "at",
+            "by",
+            "from",
+            "as",
+            "into",
+            "about",
+            "between",
+            "through",
+            "during",
+            "before",
+            "after",
+            "above",
+            "below",
+            "up",
+            "down",
+            "out",
+            "off",
+            "over",
+            "under",
+            "again",
+            "further",
+            "then",
+            "once",
+            "here",
+            "there",
+            "when",
+            "where",
+            "why",
+            "how",
+            "all",
+            "each",
+            "every",
+            "both",
+            "few",
+            "more",
+            "most",
+            "other",
+            "some",
+            "such",
+            "only",
+            "own",
+            "same",
+            "too",
+            "very",
+            "just",
+            "also",
+            "we",
+            "our",
+            "us",
+            "they",
+            "their",
+            "them",
+            "he",
+            "she",
+            "him",
+            "her",
+            "his",
+            # ML-ubiquitous terms (IDF near zero in 19K paper corpus)
+            "model",
+            "models",
+            "method",
+            "methods",
+            "approach",
+            "results",
+            "paper",
+            "proposed",
+            "using",
+            "used",
+        }
+    )
+
     def __init__(self, k1: float = 1.5, b: float = 0.75):
         self.k1 = k1
         self.b = b
@@ -51,10 +181,12 @@ class BM25:
         self.chunk_metadata = []  # parallel array of metadata
 
     def _tokenize(self, text: str) -> list[str]:
-        """Simple tokenizer: lowercase, split on non-alphanumeric."""
+        """Tokenize with stopword removal for better signal at scale."""
+        if text is None:
+            return []
         text = text.lower()
         tokens = re.findall(r"[a-z0-9]+(?:'[a-z]+)?", text)
-        return tokens
+        return [t for t in tokens if t not in self.STOPWORDS and len(t) > 1]
 
     def index(self, chunks: list[dict]):
         """Build the BM25 index from a list of chunk dicts."""
@@ -132,6 +264,44 @@ class BM25:
 
         return results
 
+    def save_to_cache(self, path: Path):
+        """Serialize the BM25 index to disk for fast reload."""
+        state = {
+            "doc_count": self.doc_count,
+            "avgdl": self.avgdl,
+            "k1": self.k1,
+            "b": self.b,
+            "idf": self.idf,
+            "doc_len": self.doc_len,
+            "doc_freqs": self.doc_freqs,
+            "chunk_ids": self.chunk_ids,
+            "chunk_texts": self.chunk_texts,
+            "chunk_metadata": self.chunk_metadata,
+        }
+        with open(path, "wb") as f:
+            pickle.dump(state, f, protocol=pickle.HIGHEST_PROTOCOL)
+        logger.info(f"BM25 cache saved to {path} ({path.stat().st_size / 1024 / 1024:.0f} MB)")
+
+    def load_from_cache(self, path: Path) -> bool:
+        """Load a previously serialized BM25 index. Returns True on success."""
+        try:
+            with open(path, "rb") as f:
+                state = pickle.load(f)  # noqa: S301
+            self.doc_count = state["doc_count"]
+            self.avgdl = state["avgdl"]
+            self.k1 = state["k1"]
+            self.b = state["b"]
+            self.idf = state["idf"]
+            self.doc_len = state["doc_len"]
+            self.doc_freqs = state["doc_freqs"]
+            self.chunk_ids = state["chunk_ids"]
+            self.chunk_texts = state["chunk_texts"]
+            self.chunk_metadata = state["chunk_metadata"]
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to load BM25 cache: {e}")
+            return False
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Cross-Encoder Reranker
@@ -144,11 +314,11 @@ class CrossEncoderReranker:
     more accurate relevance scores than bi-encoders, but are too slow
     for first-stage retrieval over thousands of docs.
 
-    Uses: cross-encoder/ms-marco-MiniLM-L-6-v2 (fast, accurate)
+    Default: BAAI/bge-reranker-v2-m3 (high quality for scientific text)
     Fallback: simple keyword overlap scoring if model unavailable
     """
 
-    def __init__(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
+    def __init__(self, model_name: str = RERANKER_MODEL):
         self.model = None
         self.model_name = model_name
         self._load_model()
@@ -235,8 +405,8 @@ class CrossEncoderReranker:
 class HybridRetriever:
     """
     Three-stage hybrid retriever:
-    1. BM25 (sparse) -> top 50 candidates
-    2. Dense (BGE via ChromaDB) -> top 50 candidates
+    1. BM25 (sparse) -> top candidates
+    2. Dense (BGE via ChromaDB) -> top candidates
     3. Reciprocal Rank Fusion -> merged candidates
     4. Cross-encoder reranking -> final top-k
 
@@ -245,23 +415,26 @@ class HybridRetriever:
         results = retriever.query("How does attention work?", top_k=5)
     """
 
+    # BGE query instruction prefix for improved retrieval accuracy
+    BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+
     def __init__(
         self,
         embedding_model: str = "BAAI/bge-base-en-v1.5",
-        reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        reranker_model: str = RERANKER_MODEL,
         chroma_path: str | Path = "./chroma_db",
         collection_name: str = "ai_ml_papers",
-        bm25_weight: float = 0.4,
-        dense_weight: float = 0.6,
+        bm25_weight: float = BM25_WEIGHT,
+        dense_weight: float = DENSE_WEIGHT,
     ):
         # Dense retriever (BGE + ChromaDB)
         logger.info("Initializing dense retriever...")
         self.embed_model = _load_embedding_model(embedding_model)
-        chroma_path = Path(chroma_path)
-        self.chroma_client = chromadb.PersistentClient(path=str(chroma_path))
-        self.collection = self.chroma_client.get_collection(name=collection_name)
+        self._chroma_path = Path(chroma_path)
+        self.chroma_client = chromadb.PersistentClient(path=str(self._chroma_path))
+        self.collection = self.chroma_client.get_or_create_collection(name=collection_name)
 
-        # BM25 retriever
+        # BM25 retriever (with disk cache)
         logger.info("Building BM25 index...")
         self.bm25 = BM25()
         self._build_bm25_index()
@@ -280,34 +453,64 @@ class HybridRetriever:
         )
 
     def _build_bm25_index(self):
-        """Load all chunks from ChromaDB and build the BM25 index."""
+        """Load BM25 index from cache, or build from ChromaDB and cache."""
         count = self.collection.count()
         if count == 0:
             logger.warning("Collection is empty — BM25 index will be empty")
             return
 
-        # Fetch all documents from ChromaDB
-        all_data = self.collection.get(
-            limit=count,
-            include=["documents", "metadatas"],
-        )
+        cache_path = self._chroma_path / "bm25_cache.pkl"
 
-        chunks = []
-        for i in range(len(all_data["ids"])):
-            chunks.append(
-                {
-                    "chunk_id": all_data["ids"][i],
-                    "text": all_data["documents"][i],
-                    "metadata": all_data["metadatas"][i],
-                }
+        # Try loading from cache
+        if cache_path.exists():
+            t0 = time.monotonic()
+            if self.bm25.load_from_cache(cache_path) and self.bm25.doc_count == count:
+                elapsed = time.monotonic() - t0
+                logger.info(
+                    f"BM25 index loaded from cache in {elapsed:.1f}s ({count} chunks, {len(self.bm25.idf)} terms)"
+                )
+                return
+            logger.info("BM25 cache stale (chunk count changed), rebuilding...")
+
+        # Build from ChromaDB
+        logger.info(f"Loading {count} chunks for BM25 indexing (with batching)...")
+        all_chunks = []
+        batch_size = 50000
+
+        for offset in range(0, count, batch_size):
+            batch_limit = min(batch_size, count - offset)
+            batch_data = self.collection.get(
+                offset=offset,
+                limit=batch_limit,
+                include=["documents", "metadatas"],
             )
 
-        self.bm25.index(chunks)
+            for i in range(len(batch_data["ids"])):
+                all_chunks.append(
+                    {
+                        "chunk_id": batch_data["ids"][i],
+                        "text": batch_data["documents"][i],
+                        "metadata": batch_data["metadatas"][i],
+                    }
+                )
+            logger.info(f"  Loaded {len(all_chunks)}/{count} chunks for BM25")
+
+        logger.info(f"Indexing {len(all_chunks)} chunks into BM25...")
+        self.bm25.index(all_chunks)
+
+        # Save cache for next startup
+        try:
+            self.bm25.save_to_cache(cache_path)
+        except Exception as e:
+            logger.warning(f"Could not save BM25 cache: {e}")
 
     def _dense_query(self, question: str, top_k: int = 50) -> list[dict]:
-        """Run dense retrieval via ChromaDB."""
+        """Run dense retrieval via ChromaDB with BGE query instruction prefix."""
+        # BGE models use an instruction prefix on queries (not documents) for
+        # improved retrieval accuracy
+        prefixed_query = self.BGE_QUERY_PREFIX + question
         raw_embedding = self.embed_model.encode(
-            question,
+            prefixed_query,
             normalize_embeddings=True,
         )
         query_embedding = np.array(raw_embedding).flatten().tolist()
@@ -391,7 +594,7 @@ class HybridRetriever:
         self,
         question: str,
         top_k: int = 10,
-        first_stage_k: int = 50,
+        first_stage_k: int = FIRST_STAGE_K,
         relevance_threshold: float = 0.0,
     ) -> list[dict]:
         """
@@ -417,7 +620,7 @@ class HybridRetriever:
         fused = self._reciprocal_rank_fusion(bm25_results, dense_results)
 
         # Take top candidates for reranking (reranker is expensive)
-        rerank_candidates = fused[: min(len(fused), first_stage_k)]
+        rerank_candidates = fused[: min(len(fused), RERANK_CANDIDATES)]
 
         # Stage 3: Cross-encoder reranking
         reranked = self.reranker.rerank(question, rerank_candidates, top_k=top_k)

@@ -10,7 +10,7 @@ Exposes the RAG pipeline as a REST API with:
 - GET  /api/health      -> Health check
 
 Usage:
-    rag-serve                                     # After pip install -e .
+    rag-serve                                     # Runs on port 8001 (avoids Docker conflict)
     RAG_API_PORT=9000 python -m rag_bench.api.server  # Custom port
 """
 
@@ -76,12 +76,13 @@ _retriever: HybridRetriever | None = None
 _generator: RAGGenerator | None = None
 _llm_backend_name: str = ""
 _llm_model_name: str = ""
+_total_papers: int = 0  # Computed once at startup
 
 
 @asynccontextmanager
 async def lifespan(app):
     """Load the RAG pipeline at startup, clean up on shutdown."""
-    global _retriever, _generator, _llm_backend_name, _llm_model_name
+    global _retriever, _generator, _llm_backend_name, _llm_model_name, _total_papers
 
     logger.info("Loading RAG pipeline...")
     start = time.time()
@@ -105,6 +106,28 @@ async def lifespan(app):
         relevance_gate=gate,
         top_k=DEFAULT_TOP_K,
     )
+
+    # Count unique papers using sampling (much faster than scanning all chunks)
+    logger.info("Computing corpus statistics...")
+    total_chunks = _retriever.collection.count()
+
+    # Sample 10,000 chunks to estimate paper count
+    sample_size = min(10000, total_chunks)
+    sample = _retriever.collection.get(
+        limit=sample_size,
+        include=["metadatas"],
+    )
+
+    sampled_papers = set()
+    for meta in sample.get("metadatas", []):
+        if meta:
+            pid = meta.get("paper_id") or meta.get("arxiv_id") or meta.get("title", "")
+            if pid:
+                sampled_papers.add(pid)
+
+    # Use sampled count as approximation
+    _total_papers = len(sampled_papers)
+    logger.info(f"Corpus: ~{_total_papers} papers (sampled), {total_chunks} chunks")
 
     elapsed = time.time() - start
     logger.info(f"RAG pipeline loaded in {elapsed:.1f}s")
@@ -393,25 +416,13 @@ async def query_rag_stream(request: QueryRequest):
 
 @app.get("/api/stats", response_model=StatsResponse)
 async def get_stats():
-    """Return corpus and pipeline statistics."""
+    """Return corpus and pipeline statistics (computed at startup)."""
     if not _retriever:
         raise HTTPException(status_code=503, detail="Pipeline still loading")
 
-    total_chunks = _retriever.collection.count()
-
-    all_meta = _retriever.collection.get(
-        limit=total_chunks,
-        include=["metadatas"],
-    )
-    paper_ids = set()
-    for meta in all_meta.get("metadatas", []):
-        pid = meta.get("paper_id", meta.get("arxiv_id", meta.get("title", "")))
-        if pid:
-            paper_ids.add(pid)
-
     return StatsResponse(
-        total_chunks=total_chunks,
-        total_papers=len(paper_ids),
+        total_chunks=_retriever.collection.count(),
+        total_papers=_total_papers,
         collection_name=COLLECTION_NAME,
         embedding_model=EMBEDDING_MODEL,
         llm_backend=_llm_backend_name,
@@ -761,13 +772,18 @@ async def serve_frontend():
 
 def run():
     """Entry point for `rag-serve` CLI command."""
-    port = int(os.environ.get("RAG_API_PORT", 8080))
+    port = int(os.environ.get("RAG_API_PORT", 8001))
+    # Disable reload in Docker containers to prevent file-watcher infinite loops
+    # during model initialization. Enable only for local development if needed.
+    reload = os.environ.get("RELOAD", "").lower() in ("true", "1", "yes")
+    log_level = os.environ.get("LOG_LEVEL", "info")
+
     uvicorn.run(
         "rag_bench.api.server:app",
         host="0.0.0.0",
         port=port,
-        reload=True,
-        log_level="info",
+        reload=reload,
+        log_level=log_level,
     )
 
 

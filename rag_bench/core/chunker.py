@@ -6,6 +6,7 @@ Handles AI/ML-specific challenges:
 - Keeps table rows with their headers
 - Expands acronyms on first occurrence per chunk
 - Attaches rich metadata for citation formatting
+- Filters noisy sections (references, acknowledgments) that degrade retrieval
 """
 
 import logging
@@ -13,6 +14,7 @@ import re
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from rag_bench.config import MIN_CHUNK_LENGTH, SECTION_BLOCKLIST
 from rag_bench.utils.text import format_authors
 
 logger = logging.getLogger(__name__)
@@ -40,13 +42,15 @@ class PaperChunker:
     - Equation-aware: never splits inside math blocks
     - Table-aware: keeps table rows with column headers
     - Acronym expansion: expands first occurrence per chunk
+    - Section filtering: skips references, acknowledgments, and other noise
+    - Contextual prefix: prepends paper title + section for embedding quality
     - Rich metadata: every chunk carries citation-ready metadata
     """
 
     def __init__(
         self,
-        chunk_size: int = 2048,
-        chunk_overlap: int = 200,
+        chunk_size: int = 1024,
+        chunk_overlap: int = 128,
         min_section_length: int = 50,
     ):
         self.chunk_size = chunk_size
@@ -79,7 +83,7 @@ class PaperChunker:
         Returns:
             List of chunk dicts, each with:
             - chunk_id, doc_id, text, section
-            - metadata (source_display, title, year, arxiv_id)
+            - metadata (source_display, title, year, arxiv_id, topic, categories)
         """
         chunks = []
         acronyms = doc.get("acronyms", {})
@@ -93,6 +97,10 @@ class PaperChunker:
             sections = {"full_text": doc.get("full_text", "")}
 
         for section_name, section_text in sections.items():
+            # Skip noisy sections that degrade retrieval at scale
+            if section_name.lower() in SECTION_BLOCKLIST:
+                continue
+
             if not section_text or len(section_text.strip()) < self.min_section_length:
                 continue
 
@@ -115,8 +123,18 @@ class PaperChunker:
                 # Clean up whitespace
                 chunk_text = self._clean_text(chunk_text)
 
-                if len(chunk_text.strip()) < 20:
+                if len(chunk_text.strip()) < MIN_CHUNK_LENGTH:
                     continue  # skip trivially small chunks
+
+                # Prepend contextual prefix for better embedding quality
+                section_label = section_name.replace("_", " ").title()
+                prefix = f"{doc['title']} — {section_label}\n\n"
+                chunk_text = prefix + chunk_text
+
+                # Flatten categories for ChromaDB (requires scalar values)
+                categories = doc.get("categories", [])
+                if isinstance(categories, list):
+                    categories = ",".join(categories)
 
                 chunk = {
                     "chunk_id": f"{doc['doc_id']}_{section_name}_{i:03d}",
@@ -129,6 +147,8 @@ class PaperChunker:
                         "year": doc["year"],
                         "arxiv_id": doc.get("arxiv_id", ""),
                         "section": section_name,
+                        "topic": doc.get("topic", ""),
+                        "categories": categories,
                     },
                 }
                 chunks.append(chunk)
@@ -236,8 +256,8 @@ class PaperChunker:
 
 def chunk_all_papers(
     docs: list[dict],
-    chunk_size: int = 2048,
-    chunk_overlap: int = 200,
+    chunk_size: int = 1024,
+    chunk_overlap: int = 128,
     min_section_length: int = 50,
 ) -> list[dict]:
     """

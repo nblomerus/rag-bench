@@ -29,7 +29,6 @@ from rag_bench.config import (
     COLLECTION_NAME,
     DATA_DIR,
     DATASET_NAME,
-    DATASET_SPLIT,
     DISTANCE_METRIC,
     EMBEDDING_BATCH_SIZE,
     EMBEDDING_MODEL,
@@ -39,7 +38,6 @@ from rag_bench.config import (
 )
 from rag_bench.core.chunker import chunk_all_papers
 from rag_bench.core.embedder import Embedder
-from rag_bench.core.ingest import ingest_dataset
 from rag_bench.core.retriever import HybridRetriever
 
 
@@ -65,25 +63,23 @@ def step_ingest() -> list[dict]:
 
     start = time.time()
 
-    # Try HuggingFace first; fall back to local seed data
-    seed_path = DATA_DIR / "seed_papers.json"
-    try:
-        docs = ingest_dataset(
-            dataset_name=DATASET_NAME,
-            split=DATASET_SPLIT,
-            save_path=DATA_DIR / "parsed_papers.json",
-        )
-    except Exception as e:
-        logger.warning(f"Could not load from HuggingFace: {e}")
-        logger.info(f"Falling back to local seed data: {seed_path}")
-        if seed_path.exists():
-            with open(seed_path) as f:
-                docs = json.load(f)
-            with open(DATA_DIR / "parsed_papers.json", "w") as f:
-                json.dump(docs, f, indent=2, default=str)
-        else:
-            logger.error("No seed data found. Please provide data/seed_papers.json")
-            sys.exit(1)
+    # Load scraped papers only
+    scraped_path = DATA_DIR / "scraped_papers.json"
+
+    if not scraped_path.exists():
+        logger.error(f"Scraped papers not found: {scraped_path}")
+        logger.error("Please run: python scripts/scrape_arxiv.py --mode extended")
+        sys.exit(1)
+
+    logger.info(f"Loading scraped papers from {scraped_path}")
+    with open(scraped_path) as f:
+        docs = json.load(f)
+
+    # Save as parsed_papers.json for consistency
+    with open(DATA_DIR / "parsed_papers.json", "w") as f:
+        json.dump(docs, f, indent=2, default=str)
+
+    logger.info(f"Loaded {len(docs)} papers from local scrape")
 
     elapsed = time.time() - start
 

@@ -29,10 +29,12 @@ def sample_paper():
         "year": 2024,
         "arxiv_id": "1234.5678",
         "sections": {
-            "introduction": "This paper introduces machine learning concepts. We explore supervised learning methods.",
+            "introduction": "This paper introduces machine learning concepts. We explore supervised learning "
+            "methods including deep neural networks, random forests, and gradient boosting for classification tasks.",
             "methods": "We use various ML algorithms including neural networks. "
-            "The training process involves backpropagation.",
-            "results": "Our experiments show significant improvements. The model achieves 95% accuracy on the test set.",
+            "The training process involves backpropagation with stochastic gradient descent and adaptive learning rates.",
+            "results": "Our experiments show significant improvements over baseline approaches. "
+            "The proposed architecture achieves 95% accuracy on the test set and 92% on the validation set.",
         },
         "acronyms": {"ML": "Machine Learning", "NN": "Neural Network"},
     }
@@ -117,8 +119,8 @@ class TestPaperChunkerInit:
     def test_default_initialization(self):
         """Test default parameters."""
         chunker = PaperChunker()
-        assert chunker.chunk_size == 2048
-        assert chunker.chunk_overlap == 200
+        assert chunker.chunk_size == 1024
+        assert chunker.chunk_overlap == 128
         assert chunker.min_section_length == 50
 
     def test_custom_initialization(self):
@@ -145,7 +147,7 @@ class TestChunkPaper:
 
     def test_chunk_simple_paper(self, sample_paper):
         """Test chunking a simple paper."""
-        chunker = PaperChunker(chunk_size=100, chunk_overlap=20)
+        chunker = PaperChunker(chunk_size=300, chunk_overlap=30)
         chunks = chunker.chunk_paper(sample_paper)
 
         assert len(chunks) > 0
@@ -178,6 +180,8 @@ class TestChunkPaper:
             assert "year" in metadata
             assert "arxiv_id" in metadata
             assert "section" in metadata
+            assert "topic" in metadata
+            assert "categories" in metadata
             assert metadata["title"] == "A Study on Machine Learning"
             assert metadata["year"] == 2024
             assert "2024" in metadata["source_display"]
@@ -381,7 +385,9 @@ class TestEdgeCases:
             "year": 2024,
             "arxiv_id": "test.001",
             "sections": {},
-            "full_text": "This is the full text content of the paper.",
+            "full_text": "This is the full text content of the paper. It discusses the application of "
+            "transformer architectures to various natural language processing tasks and evaluates "
+            "performance on standard benchmarks including GLUE and SuperGLUE.",
             "acronyms": {},
         }
 
@@ -389,7 +395,7 @@ class TestEdgeCases:
         chunks = chunker.chunk_paper(paper)
 
         # Should chunk the full_text as fallback
-        assert len(chunks) >= 1 or len(chunks) == 0  # Depends on min_section_length
+        assert len(chunks) >= 1
 
     def test_small_sections_filtered(self):
         """Test that sections smaller than min_section_length are skipped."""
@@ -419,12 +425,12 @@ class TestEdgeCases:
 
     def test_chunk_text_minimum_length(self, large_paper):
         """Test that trivially small chunks are filtered."""
-        chunker = PaperChunker(chunk_size=50, chunk_overlap=10)
+        chunker = PaperChunker(chunk_size=200, chunk_overlap=20)
         chunks = chunker.chunk_paper(large_paper)
 
-        # All chunks should have reasonable content
+        # All chunks should have reasonable content (includes contextual prefix)
         for chunk in chunks:
-            assert len(chunk["text"].strip()) >= 20
+            assert len(chunk["text"].strip()) >= 100
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -474,8 +480,9 @@ class TestChunkerEdgeCasesAndCoverage:
             "year": 2024,
             "arxiv_id": "1234.1234",
             "sections": {
-                "intro": "Hi",  # Less than 20 characters after processing
-                "method": "This is a proper section with enough content to pass the minimum length requirement.",
+                "intro": "Hi",  # Less than min_section_length
+                "method": "This is a proper section with enough content to pass the minimum length requirement. "
+                "We implement a novel approach using transformer architectures and evaluate on standard benchmarks.",
             },
             "acronyms": {},
         }
@@ -519,7 +526,8 @@ class TestChunkerEdgeCasesAndCoverage:
             "year": 2024,
             "arxiv_id": "1234.1234",
             "sections": {
-                "intro": "ML is important. This stands for Machine Learning. ML algorithms are useful.",
+                "intro": "ML is important. This stands for Machine Learning. ML algorithms are useful. "
+                "We apply ML techniques to solve complex problems in natural language processing and computer vision.",
             },
             "acronyms": {"ML": "Machine Learning"},
         }
@@ -559,7 +567,8 @@ class TestChunkerEdgeCasesAndCoverage:
             "year": 2024,
             "arxiv_id": "1234.1234",
             "sections": {
-                "intro": "This paper discusses various important topics and methods used in modern research.",
+                "intro": "This paper discusses various important topics and methods used in modern research. "
+                "We explore several novel architectures and evaluate their performance on standard benchmarks.",
             },
             # No 'acronyms' field
         }
@@ -587,3 +596,158 @@ class TestChunkerEdgeCasesAndCoverage:
 
         restored = chunker._restore_equations(protected)
         assert restored == text
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Section Blocklist Tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSectionBlocklist:
+    """Tests for section blocklist filtering."""
+
+    def test_references_section_filtered(self):
+        """Test that references section is excluded from chunks."""
+        paper = {
+            "doc_id": "arxiv_1234.1234",
+            "title": "Test Paper",
+            "authors": ["Author"],
+            "year": 2024,
+            "arxiv_id": "1234.1234",
+            "sections": {
+                "introduction": "This paper presents a novel approach to neural machine translation. "
+                "We propose a transformer-based architecture that significantly improves upon existing baselines.",
+                "references": "[1] Smith et al. 2023. A survey on neural networks. "
+                "Proceedings of the International Conference on Machine Learning.",
+            },
+            "acronyms": {},
+        }
+        chunker = PaperChunker()
+        chunks = chunker.chunk_paper(paper)
+
+        # References should be filtered out
+        assert all(c["section"] != "references" for c in chunks)
+        assert any(c["section"] == "introduction" for c in chunks)
+
+    def test_acknowledgments_section_filtered(self):
+        """Test that acknowledgments section is excluded."""
+        paper = {
+            "doc_id": "arxiv_1234.1234",
+            "title": "Test Paper",
+            "authors": ["Author"],
+            "year": 2024,
+            "arxiv_id": "1234.1234",
+            "sections": {
+                "methods": "We implement our approach using PyTorch and evaluate on the WMT benchmark datasets. "
+                "Training is performed on 8 A100 GPUs with a batch size of 4096 tokens.",
+                "acknowledgments": "We thank the reviewers for their helpful feedback and suggestions.",
+            },
+            "acronyms": {},
+        }
+        chunker = PaperChunker()
+        chunks = chunker.chunk_paper(paper)
+
+        assert all(c["section"] != "acknowledgments" for c in chunks)
+
+    def test_preamble_section_filtered(self):
+        """Test that preamble section is excluded."""
+        paper = {
+            "doc_id": "arxiv_1234.1234",
+            "title": "Test Paper",
+            "authors": ["Author"],
+            "year": 2024,
+            "arxiv_id": "1234.1234",
+            "sections": {
+                "preamble": "arXiv:1234.1234v1 [cs.CL] 1 Jan 2024",
+                "abstract": "We present a novel approach to neural machine translation using transformer architectures. "
+                "Our experiments on WMT benchmarks demonstrate state-of-the-art results.",
+            },
+            "acronyms": {},
+        }
+        chunker = PaperChunker()
+        chunks = chunker.chunk_paper(paper)
+
+        assert all(c["section"] != "preamble" for c in chunks)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Metadata Enrichment Tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestMetadataEnrichment:
+    """Tests for topic and categories metadata in chunks."""
+
+    def test_topic_in_metadata(self):
+        """Test that topic field is carried into chunk metadata."""
+        paper = {
+            "doc_id": "arxiv_1234.1234",
+            "title": "RAG Paper",
+            "authors": ["Author"],
+            "year": 2024,
+            "arxiv_id": "1234.1234",
+            "topic": "rag_retrieval",
+            "categories": ["cs.CL", "cs.IR"],
+            "sections": {
+                "intro": "Retrieval-augmented generation combines neural language models with external knowledge. "
+                "This approach significantly improves factual accuracy on knowledge-intensive benchmarks.",
+            },
+            "acronyms": {},
+        }
+        chunker = PaperChunker()
+        chunks = chunker.chunk_paper(paper)
+
+        assert len(chunks) > 0
+        assert chunks[0]["metadata"]["topic"] == "rag_retrieval"
+        assert chunks[0]["metadata"]["categories"] == "cs.CL,cs.IR"
+
+    def test_missing_topic_defaults_to_empty(self):
+        """Test that missing topic defaults to empty string."""
+        paper = {
+            "doc_id": "arxiv_1234.1234",
+            "title": "Test Paper",
+            "authors": ["Author"],
+            "year": 2024,
+            "arxiv_id": "1234.1234",
+            "sections": {
+                "intro": "This is a paper about machine learning methods and their application to various tasks. "
+                "We evaluate our approach on standard benchmarks and demonstrate competitive performance.",
+            },
+            "acronyms": {},
+        }
+        chunker = PaperChunker()
+        chunks = chunker.chunk_paper(paper)
+
+        assert len(chunks) > 0
+        assert chunks[0]["metadata"]["topic"] == ""
+        assert chunks[0]["metadata"]["categories"] == ""
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Contextual Prefix Tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestContextualPrefix:
+    """Tests for contextual prefix prepended to chunks."""
+
+    def test_chunk_has_title_prefix(self):
+        """Test that chunks are prefixed with paper title and section."""
+        paper = {
+            "doc_id": "arxiv_1234.1234",
+            "title": "Attention Is All You Need",
+            "authors": ["Vaswani, A."],
+            "year": 2017,
+            "arxiv_id": "1234.1234",
+            "sections": {
+                "abstract": "We propose a new network architecture based entirely on attention mechanisms. "
+                "The Transformer dispenses with recurrence and convolutions and relies entirely on self-attention.",
+            },
+            "acronyms": {},
+        }
+        chunker = PaperChunker()
+        chunks = chunker.chunk_paper(paper)
+
+        assert len(chunks) > 0
+        # Chunk text should start with the title prefix
+        assert chunks[0]["text"].startswith("Attention Is All You Need")

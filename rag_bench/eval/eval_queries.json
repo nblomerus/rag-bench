@@ -1,234 +1,852 @@
 [
-  {
-    "id": "eval_001",
-    "question": "What is the scaled dot-product attention formula?",
-    "relevant_doc": "arxiv_1706.03762",
-    "expected_section": "attention",
-    "difficulty": "easy",
-    "answer_type": "factual"
-  },
-  {
-    "id": "eval_002",
-    "question": "How many trainable parameters does LoRA reduce compared to full fine-tuning on GPT-3?",
-    "relevant_doc": "arxiv_2106.09685",
-    "expected_section": "abstract",
-    "difficulty": "easy",
-    "answer_type": "numerical"
-  },
-  {
-    "id": "eval_003",
-    "question": "What BLEU score did the Transformer achieve on English-to-German translation?",
-    "relevant_doc": "arxiv_1706.03762",
-    "expected_section": "results",
-    "difficulty": "easy",
-    "answer_type": "numerical"
-  },
-  {
-    "id": "eval_004",
-    "question": "What is the forward diffusion process in DDPM?",
-    "relevant_doc": "arxiv_2006.11239",
-    "expected_section": "forward_process",
-    "difficulty": "easy",
-    "answer_type": "conceptual"
-  },
-  {
-    "id": "eval_005",
-    "question": "How many demonstration prompts were used to train the InstructGPT SFT model?",
-    "relevant_doc": "arxiv_2203.02155",
-    "expected_section": "method_sft",
-    "difficulty": "easy",
-    "answer_type": "numerical"
-  },
-  {
-    "id": "eval_006",
-    "question": "What retriever does the RAG model use?",
-    "relevant_doc": "arxiv_2005.11401",
-    "expected_section": "retriever",
-    "difficulty": "easy",
-    "answer_type": "factual"
-  },
-  {
-    "id": "eval_007",
-    "question": "What is the difference between RAG-Sequence and RAG-Token?",
-    "relevant_doc": "arxiv_2005.11401",
-    "expected_section": "model_rag_sequence",
-    "difficulty": "easy",
-    "answer_type": "comparison"
-  },
-  {
-    "id": "eval_008",
-    "question": "Why does the Transformer need positional encoding?",
-    "relevant_doc": "arxiv_1706.03762",
-    "expected_section": "positional_encoding",
-    "difficulty": "easy",
-    "answer_type": "conceptual"
-  },
-  {
-    "id": "eval_009",
-    "question": "What rank value does LoRA typically use for adaptation?",
-    "relevant_doc": "arxiv_2106.09685",
-    "expected_section": "application_to_transformers",
-    "difficulty": "easy",
-    "answer_type": "numerical"
-  },
-  {
-    "id": "eval_010",
-    "question": "What neural network architecture does DDPM use?",
-    "relevant_doc": "arxiv_2006.11239",
-    "expected_section": "architecture",
-    "difficulty": "easy",
-    "answer_type": "factual"
-  },
-  {
-    "id": "eval_011",
-    "question": "Walk me through the complete three-stage RLHF training process used for InstructGPT.",
-    "relevant_docs": ["arxiv_2203.02155"],
-    "expected_sections": ["method_sft", "method_reward_model", "method_rl"],
-    "difficulty": "medium",
-    "answer_type": "multi_section_synthesis"
-  },
-  {
-    "id": "eval_012",
-    "question": "How does the Transformer handle both attention computation and sequence ordering?",
-    "relevant_docs": ["arxiv_1706.03762"],
-    "expected_sections": ["attention", "multi_head_attention", "positional_encoding"],
-    "difficulty": "medium",
-    "answer_type": "multi_section_synthesis"
-  },
-  {
-    "id": "eval_013",
-    "question": "What are the practical benefits of LoRA over full fine-tuning for deployment?",
-    "relevant_docs": ["arxiv_2106.09685"],
-    "expected_sections": ["method", "results", "abstract"],
-    "difficulty": "medium",
-    "answer_type": "multi_section_synthesis"
-  },
-  {
-    "id": "eval_014",
-    "question": "Explain the training and sampling process of diffusion models end-to-end.",
-    "relevant_docs": ["arxiv_2006.11239"],
-    "expected_sections": ["forward_process", "reverse_process", "training_objective"],
-    "difficulty": "medium",
-    "answer_type": "multi_section_synthesis"
-  },
-  {
-    "id": "eval_015",
-    "question": "How does the RAG system retrieve and use external documents during generation?",
-    "relevant_docs": ["arxiv_2005.11401"],
-    "expected_sections": ["retriever", "generator", "model_rag_sequence"],
-    "difficulty": "medium",
-    "answer_type": "multi_section_synthesis"
-  },
-  {
-    "id": "eval_016",
-    "question": "What are the known limitations of RLHF-trained models?",
-    "relevant_docs": ["arxiv_2203.02155"],
-    "expected_sections": ["limitations", "results"],
-    "difficulty": "medium",
-    "answer_type": "nuanced"
-  },
-  {
-    "id": "eval_017",
-    "question": "Why does LoRA use zero initialization for B and random initialization for A?",
-    "relevant_docs": ["arxiv_2106.09685"],
-    "expected_sections": ["method", "analysis"],
-    "difficulty": "medium",
-    "answer_type": "reasoning"
-  },
-  {
-    "id": "eval_018",
-    "question": "What role does the scaling factor sqrt(d_k) play in the attention mechanism?",
-    "relevant_docs": ["arxiv_1706.03762"],
-    "expected_sections": ["attention"],
-    "difficulty": "medium",
-    "answer_type": "reasoning"
-  },
-  {
-    "id": "eval_019",
-    "question": "How does the reward model in RLHF learn from human preferences?",
-    "relevant_docs": ["arxiv_2203.02155"],
-    "expected_sections": ["method_reward_model"],
-    "difficulty": "medium",
-    "answer_type": "technical_detail"
-  },
-  {
-    "id": "eval_020",
-    "question": "What makes the DDPM training objective a simplified version of the variational bound?",
-    "relevant_docs": ["arxiv_2006.11239"],
-    "expected_sections": ["training_objective", "forward_process"],
-    "difficulty": "medium",
-    "answer_type": "mathematical"
-  },
-  {
-    "id": "eval_021",
-    "question": "Compare how RAG and RLHF each address the problem of factual accuracy in LLMs.",
-    "relevant_docs": ["arxiv_2005.11401", "arxiv_2203.02155"],
-    "difficulty": "hard",
-    "answer_type": "cross_paper_comparison"
-  },
-  {
-    "id": "eval_022",
-    "question": "Both LoRA and RLHF modify pre-trained models. How do their approaches to adaptation differ fundamentally?",
-    "relevant_docs": ["arxiv_2106.09685", "arxiv_2203.02155"],
-    "difficulty": "hard",
-    "answer_type": "cross_paper_comparison"
-  },
-  {
-    "id": "eval_023",
-    "question": "The Transformer paper and DDPM paper were both foundational. Compare their impact on how we think about sequence modeling vs image generation.",
-    "relevant_docs": ["arxiv_1706.03762", "arxiv_2006.11239"],
-    "difficulty": "hard",
-    "answer_type": "cross_paper_analysis"
-  },
-  {
-    "id": "eval_024",
-    "question": "If you wanted to build a system that can answer questions accurately using external knowledge, which techniques from these papers would you combine and why?",
-    "relevant_docs": ["arxiv_2005.11401", "arxiv_1706.03762", "arxiv_2106.09685"],
-    "difficulty": "hard",
-    "answer_type": "system_design"
-  },
-  {
-    "id": "eval_025",
-    "question": "How has the attention mechanism from the original Transformer been adapted or used differently in RAG, RLHF, LoRA, and diffusion models?",
-    "relevant_docs": ["arxiv_1706.03762", "arxiv_2005.11401", "arxiv_2203.02155", "arxiv_2106.09685", "arxiv_2006.11239"],
-    "difficulty": "hard",
-    "answer_type": "cross_paper_synthesis"
-  },
-  {
-    "id": "eval_026",
-    "question": "What specific hardware was used to train GPT-4?",
-    "should_deflect": true,
-    "reason": "GPT-4 training hardware not detailed in any included paper",
-    "difficulty": "deflection"
-  },
-  {
-    "id": "eval_027",
-    "question": "What is the Mamba architecture's selective state space mechanism?",
-    "relevant_doc": "mamba_paper",
-    "expected_section": "selective_state_space",
-    "difficulty": "easy",
-    "answer_type": "conceptual",
-    "note": "Originally a deflection query, but ArXiv scraper added the Mamba paper to corpus"
-  },
-  {
-    "id": "eval_028",
-    "question": "How much revenue does OpenAI generate from ChatGPT?",
-    "should_deflect": true,
-    "reason": "Business/financial question, no research paper coverage",
-    "difficulty": "deflection"
-  },
-  {
-    "id": "eval_029",
-    "question": "According to the LoRA paper, what were the results of applying LoRA to diffusion models?",
-    "should_deflect": true,
-    "reason": "LoRA paper (2021) did not study diffusion models. Tests if model avoids fabricating results.",
-    "difficulty": "adversarial"
-  },
-  {
-    "id": "eval_030",
-    "question": "The original Transformer paper showed that their model outperformed all models on ImageNet. What accuracy did they achieve?",
-    "should_deflect": true,
-    "reason": "The Transformer paper is about machine translation, not ImageNet. Tests if model catches false premise.",
-    "difficulty": "adversarial"
-  }
+    {
+        "id": "eval_001",
+        "question": "What is the scaled dot-product attention formula?",
+        "relevant_doc": "arxiv_1706.03762",
+        "expected_section": "attention",
+        "difficulty": "easy",
+        "answer_type": "factual",
+        "category": "transformers"
+    },
+    {
+        "id": "eval_002",
+        "question": "How many trainable parameters does LoRA reduce compared to full fine-tuning on GPT-3?",
+        "relevant_doc": "arxiv_2106.09685",
+        "expected_section": "abstract",
+        "difficulty": "easy",
+        "answer_type": "numerical",
+        "category": "efficient_finetuning"
+    },
+    {
+        "id": "eval_003",
+        "question": "What BLEU score did the Transformer achieve on English-to-German translation?",
+        "relevant_doc": "arxiv_1706.03762",
+        "expected_section": "results",
+        "difficulty": "easy",
+        "answer_type": "numerical",
+        "category": "transformers"
+    },
+    {
+        "id": "eval_004",
+        "question": "What is the forward diffusion process in DDPM?",
+        "relevant_doc": "arxiv_2006.11239",
+        "expected_section": "forward_process",
+        "difficulty": "easy",
+        "answer_type": "conceptual",
+        "category": "diffusion"
+    },
+    {
+        "id": "eval_005",
+        "question": "How many demonstration prompts were used to train the InstructGPT SFT model?",
+        "relevant_doc": "arxiv_2203.02155",
+        "expected_section": "method_sft",
+        "difficulty": "easy",
+        "answer_type": "numerical",
+        "category": "alignment_rlhf"
+    },
+    {
+        "id": "eval_006",
+        "question": "What retriever does the RAG model use?",
+        "relevant_doc": "arxiv_2005.11401",
+        "expected_section": "retriever",
+        "difficulty": "easy",
+        "answer_type": "factual",
+        "category": "rag_retrieval"
+    },
+    {
+        "id": "eval_007",
+        "question": "What is the difference between RAG-Sequence and RAG-Token?",
+        "relevant_doc": "arxiv_2005.11401",
+        "expected_section": "model_rag_sequence",
+        "difficulty": "easy",
+        "answer_type": "comparison",
+        "category": "rag_retrieval"
+    },
+    {
+        "id": "eval_008",
+        "question": "Why does the Transformer need positional encoding?",
+        "relevant_doc": "arxiv_1706.03762",
+        "expected_section": "positional_encoding",
+        "difficulty": "easy",
+        "answer_type": "conceptual",
+        "category": "transformers"
+    },
+    {
+        "id": "eval_009",
+        "question": "What rank value does LoRA typically use for adaptation?",
+        "relevant_doc": "arxiv_2106.09685",
+        "expected_section": "application_to_transformers",
+        "difficulty": "easy",
+        "answer_type": "numerical",
+        "category": "efficient_finetuning"
+    },
+    {
+        "id": "eval_010",
+        "question": "What neural network architecture does DDPM use?",
+        "relevant_doc": "arxiv_2006.11239",
+        "expected_section": "architecture",
+        "difficulty": "easy",
+        "answer_type": "factual",
+        "category": "diffusion"
+    },
+    {
+        "id": "eval_011",
+        "question": "Walk me through the complete three-stage RLHF training process used for InstructGPT.",
+        "relevant_docs": [
+            "arxiv_2203.02155"
+        ],
+        "expected_sections": [
+            "method_sft",
+            "method_reward_model",
+            "method_rl"
+        ],
+        "difficulty": "medium",
+        "answer_type": "multi_section_synthesis",
+        "category": "alignment_rlhf"
+    },
+    {
+        "id": "eval_012",
+        "question": "How does the Transformer handle both attention computation and sequence ordering?",
+        "relevant_docs": [
+            "arxiv_1706.03762"
+        ],
+        "expected_sections": [
+            "attention",
+            "multi_head_attention",
+            "positional_encoding"
+        ],
+        "difficulty": "medium",
+        "answer_type": "multi_section_synthesis",
+        "category": "transformers"
+    },
+    {
+        "id": "eval_013",
+        "question": "What are the practical benefits of LoRA over full fine-tuning for deployment?",
+        "relevant_docs": [
+            "arxiv_2106.09685"
+        ],
+        "expected_sections": [
+            "method",
+            "results",
+            "abstract"
+        ],
+        "difficulty": "medium",
+        "answer_type": "multi_section_synthesis",
+        "category": "efficient_finetuning"
+    },
+    {
+        "id": "eval_014",
+        "question": "Explain the training and sampling process of diffusion models end-to-end.",
+        "relevant_docs": [
+            "arxiv_2006.11239"
+        ],
+        "expected_sections": [
+            "forward_process",
+            "reverse_process",
+            "training_objective"
+        ],
+        "difficulty": "medium",
+        "answer_type": "multi_section_synthesis",
+        "category": "diffusion"
+    },
+    {
+        "id": "eval_015",
+        "question": "How does the RAG system retrieve and use external documents during generation?",
+        "relevant_docs": [
+            "arxiv_2005.11401"
+        ],
+        "expected_sections": [
+            "retriever",
+            "generator",
+            "model_rag_sequence"
+        ],
+        "difficulty": "medium",
+        "answer_type": "multi_section_synthesis",
+        "category": "rag_retrieval"
+    },
+    {
+        "id": "eval_016",
+        "question": "What are the known limitations of RLHF-trained models?",
+        "relevant_docs": [
+            "arxiv_2203.02155"
+        ],
+        "expected_sections": [
+            "limitations",
+            "results"
+        ],
+        "difficulty": "medium",
+        "answer_type": "nuanced",
+        "category": "alignment_rlhf"
+    },
+    {
+        "id": "eval_017",
+        "question": "Why does LoRA use zero initialization for B and random initialization for A?",
+        "relevant_docs": [
+            "arxiv_2106.09685"
+        ],
+        "expected_sections": [
+            "method",
+            "analysis"
+        ],
+        "difficulty": "medium",
+        "answer_type": "reasoning",
+        "category": "efficient_finetuning"
+    },
+    {
+        "id": "eval_018",
+        "question": "What role does the scaling factor sqrt(d_k) play in the attention mechanism?",
+        "relevant_docs": [
+            "arxiv_1706.03762"
+        ],
+        "expected_sections": [
+            "attention"
+        ],
+        "difficulty": "medium",
+        "answer_type": "reasoning",
+        "category": "transformers"
+    },
+    {
+        "id": "eval_019",
+        "question": "How does the reward model in RLHF learn from human preferences?",
+        "relevant_docs": [
+            "arxiv_2203.02155"
+        ],
+        "expected_sections": [
+            "method_reward_model"
+        ],
+        "difficulty": "medium",
+        "answer_type": "technical_detail",
+        "category": "alignment_rlhf"
+    },
+    {
+        "id": "eval_020",
+        "question": "What makes the DDPM training objective a simplified version of the variational bound?",
+        "relevant_docs": [
+            "arxiv_2006.11239"
+        ],
+        "expected_sections": [
+            "training_objective",
+            "forward_process"
+        ],
+        "difficulty": "medium",
+        "answer_type": "mathematical",
+        "category": "diffusion"
+    },
+    {
+        "id": "eval_021",
+        "question": "Compare how RAG and RLHF each address the problem of factual accuracy in LLMs.",
+        "relevant_docs": [
+            "arxiv_2005.11401",
+            "arxiv_2203.02155"
+        ],
+        "difficulty": "hard",
+        "answer_type": "cross_paper_comparison",
+        "category": "rag_retrieval"
+    },
+    {
+        "id": "eval_022",
+        "question": "Both LoRA and RLHF modify pre-trained models. How do their approaches to adaptation differ fundamentally?",
+        "relevant_docs": [
+            "arxiv_2106.09685",
+            "arxiv_2203.02155"
+        ],
+        "difficulty": "hard",
+        "answer_type": "cross_paper_comparison",
+        "category": "efficient_finetuning"
+    },
+    {
+        "id": "eval_023",
+        "question": "The Transformer paper and DDPM paper were both foundational. Compare their impact on how we think about sequence modeling vs image generation.",
+        "relevant_docs": [
+            "arxiv_1706.03762",
+            "arxiv_2006.11239"
+        ],
+        "difficulty": "hard",
+        "answer_type": "cross_paper_analysis",
+        "category": "transformers"
+    },
+    {
+        "id": "eval_024",
+        "question": "If you wanted to build a system that can answer questions accurately using external knowledge, which techniques from these papers would you combine and why?",
+        "relevant_docs": [
+            "arxiv_2005.11401",
+            "arxiv_1706.03762",
+            "arxiv_2106.09685"
+        ],
+        "difficulty": "hard",
+        "answer_type": "system_design",
+        "category": "rag_retrieval"
+    },
+    {
+        "id": "eval_025",
+        "question": "How has the attention mechanism from the original Transformer been adapted or used differently in RAG, RLHF, LoRA, and diffusion models?",
+        "relevant_docs": [
+            "arxiv_1706.03762",
+            "arxiv_2005.11401",
+            "arxiv_2203.02155",
+            "arxiv_2106.09685",
+            "arxiv_2006.11239"
+        ],
+        "difficulty": "hard",
+        "answer_type": "cross_paper_synthesis",
+        "category": "transformers"
+    },
+    {
+        "id": "eval_026",
+        "question": "What specific hardware was used to train GPT-4?",
+        "should_deflect": true,
+        "reason": "GPT-4 training hardware not detailed in any included paper",
+        "difficulty": "deflection",
+        "category": "deflection"
+    },
+    {
+        "id": "eval_027",
+        "question": "What is the Mamba architecture's selective state space mechanism?",
+        "relevant_doc": "arxiv_2312.00752",
+        "expected_section": "selective_state_space",
+        "difficulty": "easy",
+        "answer_type": "conceptual",
+        "category": "long_context"
+    },
+    {
+        "id": "eval_028",
+        "question": "How much revenue does OpenAI generate from ChatGPT?",
+        "should_deflect": true,
+        "reason": "Business/financial question, no research paper coverage",
+        "difficulty": "deflection",
+        "category": "deflection"
+    },
+    {
+        "id": "eval_029",
+        "question": "According to the LoRA paper, what were the results of applying LoRA to diffusion models?",
+        "should_deflect": true,
+        "reason": "LoRA paper (2021) did not study diffusion models. Tests if model avoids fabricating results.",
+        "difficulty": "adversarial",
+        "category": "adversarial"
+    },
+    {
+        "id": "eval_030",
+        "question": "The original Transformer paper showed that their model outperformed all models on ImageNet. What accuracy did they achieve?",
+        "should_deflect": true,
+        "reason": "The Transformer paper is about machine translation, not ImageNet. Tests if model catches false premise.",
+        "difficulty": "adversarial",
+        "category": "adversarial"
+    },
+    {
+        "id": "eval_031",
+        "question": "How does DPO avoid the need for a separate reward model compared to standard RLHF?",
+        "relevant_doc": "arxiv_2305.18290",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "alignment_rlhf"
+    },
+    {
+        "id": "eval_032",
+        "question": "What is the key difference between DPO and KTO in terms of training data requirements?",
+        "relevant_docs": [
+            "arxiv_2305.18290",
+            "arxiv_2402.01306"
+        ],
+        "difficulty": "medium",
+        "answer_type": "comparison",
+        "category": "alignment_rlhf"
+    },
+    {
+        "id": "eval_033",
+        "question": "What contrastive learning objective does CLIP use to connect text and images?",
+        "relevant_doc": "arxiv_2103.00020",
+        "expected_section": "method",
+        "difficulty": "easy",
+        "answer_type": "factual",
+        "category": "multimodal"
+    },
+    {
+        "id": "eval_034",
+        "question": "How does LLaVA convert visual information into tokens that an LLM can process?",
+        "relevant_doc": "arxiv_2304.08485",
+        "expected_section": "architecture",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "multimodal"
+    },
+    {
+        "id": "eval_035",
+        "question": "What routing mechanism does the Switch Transformer use for expert selection?",
+        "relevant_doc": "arxiv_2101.03961",
+        "expected_section": "method",
+        "difficulty": "easy",
+        "answer_type": "factual",
+        "category": "mixture_of_experts"
+    },
+    {
+        "id": "eval_036",
+        "question": "How does Mixtral differ from the original Switch Transformer in its expert architecture?",
+        "relevant_docs": [
+            "arxiv_2401.04088",
+            "arxiv_2101.03961"
+        ],
+        "difficulty": "medium",
+        "answer_type": "comparison",
+        "category": "mixture_of_experts"
+    },
+    {
+        "id": "eval_037",
+        "question": "Describe the ReAct framework for combining reasoning and acting in LLMs.",
+        "relevant_doc": "arxiv_2210.03629",
+        "expected_section": "method",
+        "difficulty": "easy",
+        "answer_type": "conceptual",
+        "category": "agents_reasoning"
+    },
+    {
+        "id": "eval_038",
+        "question": "How does Chain-of-Thought prompting improve mathematical reasoning in LLMs?",
+        "relevant_doc": "arxiv_2201.11903",
+        "expected_section": "method",
+        "difficulty": "easy",
+        "answer_type": "conceptual",
+        "category": "agents_reasoning"
+    },
+    {
+        "id": "eval_039",
+        "question": "What is the Codex model and how was HumanEval used to evaluate it?",
+        "relevant_doc": "arxiv_2107.03374",
+        "expected_section": "evaluation",
+        "difficulty": "easy",
+        "answer_type": "factual",
+        "category": "code_generation"
+    },
+    {
+        "id": "eval_040",
+        "question": "How does Code Llama extend the base Llama 2 architecture for code tasks?",
+        "relevant_doc": "arxiv_2308.12950",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "code_generation"
+    },
+    {
+        "id": "eval_041",
+        "question": "What is the SWE-bench benchmark and what does it measure?",
+        "relevant_doc": "arxiv_2310.06770",
+        "expected_section": "abstract",
+        "difficulty": "easy",
+        "answer_type": "factual",
+        "category": "code_generation"
+    },
+    {
+        "id": "eval_042",
+        "question": "What is the GCG (Greedy Coordinate Gradient) attack on LLMs?",
+        "relevant_doc": "arxiv_2307.15043",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "safety"
+    },
+    {
+        "id": "eval_043",
+        "question": "How do sleeper agents in LLMs behave during training vs deployment?",
+        "relevant_doc": "arxiv_2401.05566",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "safety"
+    },
+    {
+        "id": "eval_044",
+        "question": "What is representation engineering and how does it differ from RLHF for safety?",
+        "relevant_doc": "arxiv_2310.01405",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "safety"
+    },
+    {
+        "id": "eval_045",
+        "question": "How does FlashAttention reduce the memory complexity of standard attention?",
+        "relevant_doc": "arxiv_2205.14135",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "technical_detail",
+        "category": "inference_optimization"
+    },
+    {
+        "id": "eval_046",
+        "question": "What is speculative decoding and how does it speed up LLM inference?",
+        "relevant_doc": "arxiv_2211.17192",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "inference_optimization"
+    },
+    {
+        "id": "eval_047",
+        "question": "How does PagedAttention in vLLM manage KV cache memory?",
+        "relevant_doc": "arxiv_2309.06180",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "technical_detail",
+        "category": "inference_optimization"
+    },
+    {
+        "id": "eval_048",
+        "question": "Compare AWQ and GPTQ as post-training quantization methods for LLMs.",
+        "relevant_docs": [
+            "arxiv_2306.00978",
+            "arxiv_2210.17323"
+        ],
+        "difficulty": "hard",
+        "answer_type": "comparison",
+        "category": "inference_optimization"
+    },
+    {
+        "id": "eval_049",
+        "question": "What is the core finding of the 'Textbooks Are All You Need' paper about data quality?",
+        "relevant_doc": "arxiv_2306.11644",
+        "expected_section": "abstract",
+        "difficulty": "easy",
+        "answer_type": "conceptual",
+        "category": "small_models"
+    },
+    {
+        "id": "eval_050",
+        "question": "How does the LIMA paper challenge the assumption that large-scale instruction tuning is necessary?",
+        "relevant_doc": "arxiv_2305.11206",
+        "expected_section": "abstract",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "synthetic_data"
+    },
+    {
+        "id": "eval_051",
+        "question": "What is Self-Instruct and how does it generate training data without human annotators?",
+        "relevant_doc": "arxiv_2212.10560",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "synthetic_data"
+    },
+    {
+        "id": "eval_052",
+        "question": "How does RoPE (Rotary Position Embedding) encode positional information differently from sinusoidal embeddings?",
+        "relevant_doc": "arxiv_2104.09864",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "technical_detail",
+        "category": "long_context"
+    },
+    {
+        "id": "eval_053",
+        "question": "What is the YaRN method for extending context window length?",
+        "relevant_doc": "arxiv_2309.00071",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "long_context"
+    },
+    {
+        "id": "eval_054",
+        "question": "How does Mamba achieve linear-time sequence modeling compared to quadratic attention?",
+        "relevant_doc": "arxiv_2312.00752",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "technical_detail",
+        "category": "long_context"
+    },
+    {
+        "id": "eval_055",
+        "question": "What is the MMLU benchmark and what capabilities does it measure?",
+        "relevant_doc": "arxiv_2009.03300",
+        "expected_section": "abstract",
+        "difficulty": "easy",
+        "answer_type": "factual",
+        "category": "evaluation"
+    },
+    {
+        "id": "eval_056",
+        "question": "How does the Chatbot Arena's Elo rating system work for comparing LLMs?",
+        "relevant_doc": "arxiv_2403.04132",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "evaluation"
+    },
+    {
+        "id": "eval_057",
+        "question": "What is the process reward model approach described in 'Let's Verify Step by Step'?",
+        "relevant_doc": "arxiv_2305.20050",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "reasoning"
+    },
+    {
+        "id": "eval_058",
+        "question": "How does DeepSeek-R1 use reinforcement learning to incentivize reasoning?",
+        "relevant_doc": "arxiv_2501.12948",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "reasoning"
+    },
+    {
+        "id": "eval_059",
+        "question": "What is Quiet-STaR and how does it teach language models to reason internally?",
+        "relevant_doc": "arxiv_2403.09629",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "reasoning"
+    },
+    {
+        "id": "eval_060",
+        "question": "How does latent diffusion reduce the computational cost compared to pixel-space diffusion?",
+        "relevant_doc": "arxiv_2112.10752",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "diffusion"
+    },
+    {
+        "id": "eval_061",
+        "question": "What is the DiT (Diffusion Transformer) architecture and why replace U-Net with a transformer?",
+        "relevant_doc": "arxiv_2212.09748",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "diffusion"
+    },
+    {
+        "id": "eval_062",
+        "question": "How does flow matching differ from score-based diffusion models?",
+        "relevant_doc": "arxiv_2210.02747",
+        "expected_section": "method",
+        "difficulty": "hard",
+        "answer_type": "comparison",
+        "category": "diffusion"
+    },
+    {
+        "id": "eval_063",
+        "question": "What is DPR (Dense Passage Retrieval) and how does it improve over BM25 for open-domain QA?",
+        "relevant_doc": "arxiv_2004.04906",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "comparison",
+        "category": "rag_retrieval"
+    },
+    {
+        "id": "eval_064",
+        "question": "How does ColBERT's late interaction architecture balance efficiency and effectiveness?",
+        "relevant_doc": "arxiv_2004.12832",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "technical_detail",
+        "category": "rag_retrieval"
+    },
+    {
+        "id": "eval_065",
+        "question": "What is Self-RAG and how does it decide when to retrieve vs generate from memory?",
+        "relevant_doc": "arxiv_2310.11511",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "rag_retrieval"
+    },
+    {
+        "id": "eval_066",
+        "question": "How does GraphRAG use knowledge graphs to improve retrieval-augmented generation?",
+        "relevant_doc": "arxiv_2404.16130",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "rag_retrieval"
+    },
+    {
+        "id": "eval_067",
+        "question": "What approach does Whisper take to achieve robust speech recognition across languages?",
+        "relevant_doc": "arxiv_2212.04356",
+        "expected_section": "method",
+        "difficulty": "easy",
+        "answer_type": "conceptual",
+        "category": "speech_audio"
+    },
+    {
+        "id": "eval_068",
+        "question": "How does VALL-E frame text-to-speech as a language modeling problem?",
+        "relevant_doc": "arxiv_2301.02111",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "speech_audio"
+    },
+    {
+        "id": "eval_069",
+        "question": "What knowledge distillation approach does DistilBERT use to compress BERT?",
+        "relevant_doc": "arxiv_1910.01108",
+        "expected_section": "method",
+        "difficulty": "easy",
+        "answer_type": "factual",
+        "category": "distillation"
+    },
+    {
+        "id": "eval_070",
+        "question": "How does the original knowledge distillation paper by Hinton use temperature scaling in the softmax?",
+        "relevant_doc": "arxiv_1503.02531",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "technical_detail",
+        "category": "distillation"
+    },
+    {
+        "id": "eval_071",
+        "question": "What scaling law relationship did Kaplan et al. find between model size, data, and compute?",
+        "relevant_doc": "arxiv_2001.08361",
+        "expected_section": "results",
+        "difficulty": "medium",
+        "answer_type": "factual",
+        "category": "scaling_laws"
+    },
+    {
+        "id": "eval_072",
+        "question": "How does the Chinchilla paper revise the Kaplan scaling laws, and what is the key implication for training LLMs?",
+        "relevant_docs": [
+            "arxiv_2203.15556",
+            "arxiv_2001.08361"
+        ],
+        "difficulty": "hard",
+        "answer_type": "cross_paper_comparison",
+        "category": "scaling_laws"
+    },
+    {
+        "id": "eval_073",
+        "question": "What are emergent abilities of large language models, and at what scale do they typically appear?",
+        "relevant_doc": "arxiv_2206.07682",
+        "expected_section": "results",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "scaling_laws"
+    },
+    {
+        "id": "eval_074",
+        "question": "Compare how SWE-Agent and OpenHands approach automated software engineering with LLM agents.",
+        "relevant_docs": [
+            "arxiv_2405.15793",
+            "arxiv_2407.16741"
+        ],
+        "difficulty": "hard",
+        "answer_type": "cross_paper_comparison",
+        "category": "agents_reasoning"
+    },
+    {
+        "id": "eval_075",
+        "question": "How does the T5 paper frame all NLP tasks as text-to-text problems?",
+        "relevant_doc": "arxiv_1910.10683",
+        "expected_section": "method",
+        "difficulty": "easy",
+        "answer_type": "conceptual",
+        "category": "transformers"
+    },
+    {
+        "id": "eval_076",
+        "question": "How does QLoRA enable fine-tuning a 65B parameter model on a single 48GB GPU?",
+        "relevant_doc": "arxiv_2305.14314",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "technical_detail",
+        "category": "efficient_finetuning"
+    },
+    {
+        "id": "eval_077",
+        "question": "What is DoRA and how does it decompose weight updates differently from LoRA?",
+        "relevant_doc": "arxiv_2402.09353",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "comparison",
+        "category": "efficient_finetuning"
+    },
+    {
+        "id": "eval_078",
+        "question": "How does CRAG (Corrective RAG) improve retrieval quality compared to standard RAG?",
+        "relevant_doc": "arxiv_2401.15884",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "conceptual",
+        "category": "rag_retrieval"
+    },
+    {
+        "id": "eval_079",
+        "question": "What is the SmoothQuant technique for quantizing both weights and activations?",
+        "relevant_doc": "arxiv_2211.10438",
+        "expected_section": "method",
+        "difficulty": "medium",
+        "answer_type": "technical_detail",
+        "category": "inference_optimization"
+    },
+    {
+        "id": "eval_080",
+        "question": "Design a complete pipeline combining retrieval, generation, and safety for a production QA system. Which papers' techniques would you use at each stage?",
+        "relevant_docs": [
+            "arxiv_2005.11401",
+            "arxiv_2310.11511",
+            "arxiv_2312.06674",
+            "arxiv_2309.06180",
+            "arxiv_2106.09685"
+        ],
+        "difficulty": "hard",
+        "answer_type": "system_design",
+        "category": "rag_retrieval"
+    },
+    {
+        "id": "eval_081",
+        "question": "How has the evolution from RLHF (InstructGPT) to DPO to KTO simplified the preference learning pipeline?",
+        "relevant_docs": [
+            "arxiv_2203.02155",
+            "arxiv_2305.18290",
+            "arxiv_2402.01306"
+        ],
+        "difficulty": "hard",
+        "answer_type": "cross_paper_synthesis",
+        "category": "alignment_rlhf"
+    },
+    {
+        "id": "eval_082",
+        "question": "Trace the evolution of efficient attention from FlashAttention through state-space models (Mamba). What tradeoffs does each approach make?",
+        "relevant_docs": [
+            "arxiv_2205.14135",
+            "arxiv_2307.08691",
+            "arxiv_2312.00752",
+            "arxiv_2405.21060"
+        ],
+        "difficulty": "hard",
+        "answer_type": "cross_paper_synthesis",
+        "category": "long_context"
+    },
+    {
+        "id": "eval_083",
+        "question": "The DeepSeek-R1 paper claims reinforcement learning alone can incentivize reasoning. How does this compare to Chain-of-Thought prompting?",
+        "relevant_docs": [
+            "arxiv_2501.12948",
+            "arxiv_2201.11903"
+        ],
+        "difficulty": "hard",
+        "answer_type": "cross_paper_comparison",
+        "category": "reasoning"
+    },
+    {
+        "id": "eval_084",
+        "question": "According to the Llama Guard paper, how should Llama Guard be used to safeguard DALL-E image outputs?",
+        "should_deflect": true,
+        "reason": "Llama Guard is a text safety classifier for LLMs, not for image generation models. Tests false premise.",
+        "difficulty": "adversarial",
+        "category": "adversarial"
+    },
+    {
+        "id": "eval_085",
+        "question": "What loss function does StarCoder 2 use to generate images from code?",
+        "should_deflect": true,
+        "reason": "StarCoder 2 is a code generation model, not an image generation model. Tests false premise.",
+        "difficulty": "adversarial",
+        "category": "adversarial"
+    }
 ]
