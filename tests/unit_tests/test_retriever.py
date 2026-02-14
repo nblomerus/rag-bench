@@ -744,3 +744,71 @@ class TestRetrieverPrintResults:
         assert "No sufficiently relevant results" in output_str
         assert result is not None
         assert not result["is_relevant"]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Additional Coverage Tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestBM25Coverage:
+    """Additional tests for BM25 coverage."""
+
+    def test_tokenize_with_none_text(self):
+        """Test _tokenize handles None input."""
+        bm25 = BM25(k1=1.5, b=0.75)
+        result = bm25._tokenize(None)
+        assert result == []
+
+    @patch("rag_bench.core.retriever.Path")
+    def test_load_from_cache_failure(self, mock_path_class):
+        """Test BM25 cache load failure."""
+        mock_path = MagicMock()
+        mock_path.exists.return_value = True
+        mock_path.open.side_effect = Exception("Read error")
+
+        bm25 = BM25()
+        result = bm25.load_from_cache(mock_path)
+
+        assert result is False
+
+
+class TestRetrieverBranchCoverage:
+    """Additional tests for branch coverage in retriever module."""
+
+    @patch("rag_bench.core.retriever.chromadb.PersistentClient")
+    @patch("rag_bench.core.retriever.CrossEncoderReranker")
+    @patch("rag_bench.core.retriever._load_embedding_model")
+    def test_build_bm25_cache_save_failure(self, mock_load_model, mock_reranker_class, mock_chroma_class):
+        """Test BM25 build when cache save fails."""
+        # Setup mocks
+        mock_model = MagicMock()
+        mock_model.get_sentence_embedding_dimension.return_value = 768
+        mock_load_model.return_value = mock_model
+
+        mock_reranker = MagicMock()
+        mock_reranker_class.return_value = mock_reranker
+
+        mock_client = MagicMock()
+        mock_collection = MagicMock()
+        mock_collection.count.return_value = 10
+        mock_collection.get.return_value = {
+            "ids": [f"chunk_{i}" for i in range(10)],
+            "documents": [f"text {i}" for i in range(10)],
+            "metadatas": [{"doc_id": "doc1"} for _ in range(10)],
+        }
+        mock_client.get_or_create_collection.return_value = mock_collection
+        mock_chroma_class.return_value = mock_client
+
+        # Create retriever
+        retriever = HybridRetriever()
+
+        # Mock cache save to fail
+        with patch.object(retriever.bm25, "save_to_cache") as mock_save:
+            mock_save.side_effect = Exception("Write error")
+
+            # Build BM25 - should handle save failure gracefully
+            retriever._build_bm25_index()
+
+            # Should complete without raising exception
+            assert retriever.bm25.doc_count == 10

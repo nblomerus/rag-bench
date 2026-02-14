@@ -646,3 +646,83 @@ More content."""
         assert "BERT" in acronyms
         assert "MLM" in acronyms
         assert "NSP" in acronyms
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Branch Coverage Tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestBranchCoverage:
+    """Additional tests to improve branch coverage."""
+
+    def test_format_authors_with_empty_author_list(self):
+        """Test format_authors when authors list becomes empty after filtering."""
+        # Empty string authors get filtered out, resulting in empty list
+        result = format_authors("")
+        assert result == "Unknown"
+
+    def test_format_authors_three_exactly(self):
+        """Test format_authors with exactly 3 authors (no et al)."""
+        authors = ["Alice Smith", "Bob Jones", "Carol White"]
+        result = format_authors(authors, max_authors=3)
+        # Should show all three without "et al"
+        assert "et al" not in result
+        assert "Smith" in result
+
+    def test_build_acronym_dict_lowercase_start(self):
+        """Test build_acronym_dict with lowercase words in full form."""
+        text = "We discuss natural language processing (NLP) techniques."
+        acronyms = build_acronym_dict(text)
+        # Should extract NLP even with lowercase 'language' and 'processing'
+        assert "NLP" in acronyms
+        assert acronyms["NLP"] == "natural language processing"
+
+    def test_extract_sections_final_section_too_short(self):
+        """Test extract_sections when final section is too short."""
+        text = """# Introduction
+
+This is a normal introduction with enough content to be included.
+
+# Conclusion
+
+Short
+"""
+        sections = extract_sections(text)
+        # Check that sections were extracted (note: section name normalization may alter keys)
+        assert len(sections) >= 1
+        # Verify at least one section has content
+        assert any(len(v) > 20 for v in sections.values())
+
+    def test_extract_sections_no_content_between_headers(self):
+        """Test extract_sections with consecutive headers."""
+        text = """# Introduction
+
+Some content here.
+
+# Empty Section
+# Another Section
+
+More content.
+"""
+        sections = extract_sections(text)
+        # Should handle consecutive headers gracefully
+        assert len(sections) >= 1
+        # Check that at least some content was extracted
+        assert any(len(v) > 5 for v in sections.values())
+
+    def test_extract_sections_from_pdf_with_filtering(self):
+        """Test PDF section extraction with length filtering."""
+        text = """INTRODUCTION
+
+This is the introduction with sufficient content for inclusion in the extraction.
+
+CONCLUSION
+
+Very brief.
+"""
+        sections = extract_sections_from_pdf(text)
+        # Should either have sections or fallback to full_text
+        assert len(sections) > 0
+        # Check that content was extracted
+        assert any(len(v) > 20 for v in sections.values())

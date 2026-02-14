@@ -1078,3 +1078,56 @@ class TestEdgeCasesAndErrors:
 
         # Should call get() 1 time: ceil(2500/5000) = 1
         assert mock_collection.get.call_count == 1
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Additional Coverage Tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestLoadEmbeddingModelCoverage:
+    """Additional tests for _load_embedding_model coverage."""
+
+    @patch("rag_bench.core.embedder.torch.cuda.is_available")
+    @patch("rag_bench.core.embedder.torch.cuda.device_count")
+    @patch("rag_bench.core.embedder.torch.cuda.get_device_name")
+    @patch("rag_bench.core.embedder.SentenceTransformer")
+    @patch("rag_bench.core.embedder.logger")
+    def test_load_model_with_cuda_available(
+        self, mock_logger, mock_st_class, mock_device_name, mock_device_count, mock_cuda_available
+    ):
+        """Test loading model when CUDA is available."""
+        mock_cuda_available.return_value = True
+        mock_device_count.return_value = 1
+        mock_device_name.return_value = "NVIDIA GeForce RTX 3090"
+        mock_model = MagicMock()
+        mock_st_class.return_value = mock_model
+
+        result = _load_embedding_model("test-model")
+
+        assert result == mock_model
+        # Verify CUDA info was logged
+        cuda_info_logged = any("CUDA available" in str(call) for call in mock_logger.info.call_args_list)
+        assert cuda_info_logged
+        # Verify device was set to "cuda"
+        call_kwargs = mock_st_class.call_args[1]
+        assert call_kwargs["device"] == "cuda"
+
+    @patch("rag_bench.core.embedder.torch.cuda.is_available")
+    @patch("rag_bench.core.embedder.SentenceTransformer")
+    @patch("rag_bench.core.embedder.logger")
+    def test_load_model_with_cuda_unavailable(self, mock_logger, mock_st_class, mock_cuda_available):
+        """Test loading model when CUDA is not available."""
+        mock_cuda_available.return_value = False
+        mock_model = MagicMock()
+        mock_st_class.return_value = mock_model
+
+        result = _load_embedding_model("test-model")
+
+        assert result == mock_model
+        # Verify warning about CUDA was logged
+        cuda_warning_logged = any("CUDA not available" in str(call) for call in mock_logger.warning.call_args_list)
+        assert cuda_warning_logged
+        # Verify device was set to "cpu"
+        call_kwargs = mock_st_class.call_args[1]
+        assert call_kwargs["device"] == "cpu"
