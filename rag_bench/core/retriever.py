@@ -324,10 +324,10 @@ class CrossEncoderReranker:
         self._load_model()
 
     def _load_model(self):
-        """Try to load the cross-encoder model."""
+        """Try to load the cross-encoder model on CPU to avoid GPU OOM."""
         try:
-            self.model = CrossEncoder(self.model_name)
-            logger.info(f"Loaded cross-encoder: {self.model_name}")
+            self.model = CrossEncoder(self.model_name, device="cpu")
+            logger.info(f"Loaded cross-encoder: {self.model_name} (on CPU)")
         except Exception as e:
             logger.warning(f"Could not load cross-encoder ({e}). Falling back to keyword overlap scoring.")
             self.model = None
@@ -590,12 +590,74 @@ class HybridRetriever:
         fused = sorted(chunk_map.values(), key=lambda x: x["rrf_score"], reverse=True)
         return fused
 
+    def fetch_paper_chunks(
+        self,
+        arxiv_id: str,
+        max_chunks: int = 3,
+        preferred_sections: list[str] | None = None,
+    ) -> list[dict]:
+        """
+        Fetch chunks for a specific paper directly from ChromaDB.
+
+        Used for foundational paper injection — bypasses BM25/dense retrieval
+        to guarantee the paper appears in the candidate pool.
+        """
+        if preferred_sections is None:
+            preferred_sections = ["abstract", "introduction", "background", "model", "architecture", "method"]
+
+        try:
+            data = self.collection.get(
+                where={"arxiv_id": arxiv_id},
+                limit=50,
+                include=["documents", "metadatas"],
+            )
+        except Exception as e:
+            logger.warning(f"Failed to fetch chunks for arxiv_id={arxiv_id}: {e}")
+            return []
+
+        if not data or not data.get("ids"):
+            logger.debug(f"No chunks found for arxiv_id={arxiv_id}")
+            return []
+
+        chunks = []
+        for i in range(len(data["ids"])):
+            chunks.append(
+                {
+                    "chunk_id": data["ids"][i],
+                    "text": data["documents"][i],
+                    "metadata": data["metadatas"][i],
+                    "score": 0.0,
+                    "source": "injection",
+                    "sources": ["injection"],
+                    "rrf_score": 0.0,
+                    "bm25_score": 0.0,
+                    "dense_score": 0.0,
+                }
+            )
+
+        # Prioritize preferred sections
+        section_priority = {s: idx for idx, s in enumerate(preferred_sections)}
+
+        def sort_key(chunk):
+            section = chunk["metadata"].get("section", "").lower()
+            return section_priority.get(section, len(preferred_sections))
+
+        chunks.sort(key=sort_key)
+        selected = chunks[:max_chunks]
+
+        logger.debug(
+            f"Fetched {len(selected)} chunks for arxiv_id={arxiv_id} "
+            f"(sections: {[c['metadata'].get('section', '?') for c in selected]})"
+        )
+        return selected
+
     def query(
         self,
         question: str,
         top_k: int = 10,
         first_stage_k: int = FIRST_STAGE_K,
         relevance_threshold: float = 0.0,
+        inject_chunks: list[dict] | None = None,
     ) -> list[dict]:
         """
         Full hybrid retrieval pipeline.
@@ -620,18 +682,42 @@ class HybridRetriever:
         fused = self._reciprocal_rank_fusion(bm25_results, dense_results)
 
         # Take top candidates for reranking (reranker is expensive)
-        rerank_candidates = fused[: min(len(fused), RERANK_CANDIDATES)]
+        rerank_limit = min(len(fused), RERANK_CANDIDATES)
+        rerank_candidates = fused[:rerank_limit]
+
+        # Stage 2.5: Inject foundational paper chunks into the rerank pool
+        if inject_chunks:
+            existing_ids = {r["chunk_id"] for r in rerank_candidates}
+            new_injections = [c for c in inject_chunks if c["chunk_id"] not in existing_ids]
+            if new_injections:
+                # Replace bottom-ranked candidates to keep pool size constant
+                n_inject = min(len(new_injections), rerank_limit // 4)  # Max 25% of slots
+                if n_inject > 0:
+                    rerank_candidates = rerank_candidates[: rerank_limit - n_inject] + new_injections[:n_inject]
+                    logger.debug(
+                        f"Injected {n_inject} foundational chunks into rerank pool (pool size: {len(rerank_candidates)})"
+                    )
 
         # Stage 3: Cross-encoder reranking
         reranked = self.reranker.rerank(question, rerank_candidates, top_k=top_k)
+
+        # Ensure injected chunks survive reranking regardless of rank.
+        # The reranker sorts candidates in-place, so rerank_candidates still
+        # has all entries with their rerank_score — we just re-add any
+        # injected chunks that fell below the top_k cut.
+        if inject_chunks:
+            returned_ids = {r["chunk_id"] for r in reranked}
+            for c in rerank_candidates:
+                if c.get("source") == "injection" and c["chunk_id"] not in returned_ids:
+                    reranked.append(c)
 
         # Use rerank_score as the final score
         for r in reranked:
             r["score"] = r.get("rerank_score", r.get("rrf_score", 0.0))
 
-        # Apply threshold
+        # Apply threshold (injected chunks bypass — they were intentionally added)
         if relevance_threshold > 0:
-            reranked = [r for r in reranked if r["score"] >= relevance_threshold]
+            reranked = [r for r in reranked if r["score"] >= relevance_threshold or r.get("source") == "injection"]
 
         return reranked
 

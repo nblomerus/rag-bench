@@ -187,33 +187,20 @@ class Embedder:
         Returns:
             Number of newly indexed chunks
         """
-        # Filter out already-indexed chunks if requested
-        if skip_existing:
-            existing_count = self.collection.count()
-            if existing_count > 0:
-                logger.info(f"Checking for duplicate chunks (DB has {existing_count} existing chunks)...")
-                existing_ids = set()
-                # Check in larger batches for speed
-                for i in range(0, len(chunks), 5000):
-                    batch_ids = [c["chunk_id"] for c in chunks[i : i + 5000]]
-                    try:
-                        result = self.collection.get(ids=batch_ids)
-                        existing_ids.update(result["ids"])
-                    except Exception:
-                        pass  # IDs not found, that's fine
-
-                original_count = len(chunks)
-                chunks = [c for c in chunks if c["chunk_id"] not in existing_ids]
-                if original_count != len(chunks):
-                    logger.info(f"Skipping {original_count - len(chunks)} already-indexed chunks")
-            else:
-                logger.info("Database is empty, skipping duplicate check")
+        # Use upsert mode - let ChromaDB handle duplicates efficiently at database level
+        # This avoids loading existing chunks into memory for comparison
+        if not skip_existing:
+            logger.info(f"Indexing {len(chunks)} chunks (upsert mode - no duplicate check)")
+        else:
+            logger.info(f"Indexing {len(chunks)} chunks (upsert mode - DB will skip duplicates)")
 
         if not chunks:
-            logger.info("No new chunks to index")
+            logger.info("No chunks to index")
             return 0
 
         indexed = 0
+
+        # Process in batches for embedding and indexing
         for i in tqdm(range(0, len(chunks), batch_size), desc="Indexing", unit="batch"):
             batch = chunks[i : i + batch_size]
 
@@ -245,8 +232,8 @@ class Embedder:
                 batch_size=batch_size,  # Use specified batch size for embedding computation
             )
 
-            # Add to ChromaDB
-            self.collection.add(
+            # Upsert to ChromaDB (adds new, updates existing)
+            self.collection.upsert(
                 documents=texts,
                 embeddings=embeddings.tolist(),
                 ids=ids,

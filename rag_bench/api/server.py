@@ -45,7 +45,9 @@ from rag_bench.config import (
     DEFAULT_TOP_K,
     EMBEDDING_MODEL,
     PROJECT_ROOT,
+    RERANKER_MODEL,
 )
+from rag_bench.core.citation_boost import CitationBooster
 from rag_bench.core.generator import (
     DEFLECTION_PHRASES,
     RAGGenerator,
@@ -64,7 +66,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 LLM_BACKEND = os.environ.get("RAG_LLM_BACKEND", "ollama")
 LLM_MODEL = os.environ.get("RAG_LLM_MODEL", "mistral:7b-instruct-q4_K_M")
 LLM_BASE_URL = os.environ.get("RAG_LLM_BASE_URL", "http://localhost:11434")
-RERANKER_MODEL = os.environ.get("RAG_RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+RERANKER_MODEL_OVERRIDE = os.environ.get("RAG_RERANKER_MODEL", RERANKER_MODEL)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -74,6 +76,7 @@ RERANKER_MODEL = os.environ.get("RAG_RERANKER_MODEL", "cross-encoder/ms-marco-Mi
 # Global pipeline instances (loaded once at startup)
 _retriever: HybridRetriever | None = None
 _generator: RAGGenerator | None = None
+_citation_booster: CitationBooster | None = None
 _llm_backend_name: str = ""
 _llm_model_name: str = ""
 _total_papers: int = 0  # Computed once at startup
@@ -82,17 +85,24 @@ _total_papers: int = 0  # Computed once at startup
 @asynccontextmanager
 async def lifespan(app):
     """Load the RAG pipeline at startup, clean up on shutdown."""
-    global _retriever, _generator, _llm_backend_name, _llm_model_name, _total_papers
+    global _retriever, _generator, _citation_booster, _llm_backend_name, _llm_model_name, _total_papers
 
     logger.info("Loading RAG pipeline...")
     start = time.time()
 
     _retriever = HybridRetriever(
         embedding_model=EMBEDDING_MODEL,
-        reranker_model=RERANKER_MODEL,
+        reranker_model=RERANKER_MODEL_OVERRIDE,
         chroma_path=CHROMA_DIR,
         collection_name=COLLECTION_NAME,
     )
+
+    # Initialize citation booster for improved citation quality
+    _citation_booster = CitationBooster(
+        enable_age_boost=True,
+        enable_query_adaptive=True,
+    )
+    logger.info("Citation booster initialized with %d foundational papers", len(_citation_booster.foundational_papers))
 
     _llm_backend_name = LLM_BACKEND
     _llm_model_name = LLM_MODEL
@@ -105,6 +115,7 @@ async def lifespan(app):
         llm_backend=llm,
         relevance_gate=gate,
         top_k=DEFAULT_TOP_K,
+        citation_booster=_citation_booster,
     )
 
     # Count unique papers using sampling (much faster than scanning all chunks)
@@ -262,14 +273,26 @@ async def query_rag(request: QueryRequest):
             request.model or "",
             "",
         )
+        # Create temporary generator with citation booster if enabled
+        booster = _citation_booster if request.enable_citation_boost else None
         generator = RAGGenerator(
             retriever=_retriever,
             llm_backend=llm,
             relevance_gate=RelevanceGate(),
             top_k=request.top_k,
+            citation_booster=booster,
         )
         backend_name = request.backend
         model_name = request.model or ""
+    elif not request.enable_citation_boost:
+        # Create generator without booster if disabled
+        generator = RAGGenerator(
+            retriever=_retriever,
+            llm_backend=_generator.llm_backend,
+            relevance_gate=RelevanceGate(),
+            top_k=request.top_k,
+            citation_booster=None,
+        )
 
     start = time.time()
     result = generator.answer(request.question, top_k=request.top_k)
@@ -358,7 +381,20 @@ async def query_rag_stream(request: QueryRequest):
                     return _STOP
 
             loop = asyncio.get_event_loop()
-            gen = _generator.answer_stream(request.question, top_k=request.top_k)
+
+            # Use appropriate generator based on citation boost setting
+            generator = _generator
+            if not request.enable_citation_boost:
+                # Create temporary generator without booster
+                generator = RAGGenerator(
+                    retriever=_retriever,
+                    llm_backend=_generator.llm,
+                    relevance_gate=RelevanceGate(),
+                    top_k=request.top_k,
+                    citation_booster=None,
+                )
+
+            gen = generator.answer_stream(request.question, top_k=request.top_k)
 
             while True:
                 evt = await loop.run_in_executor(None, _next_or_stop, gen)
