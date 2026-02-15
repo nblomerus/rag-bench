@@ -1260,12 +1260,14 @@ class RAGGenerator:
         relevance_gate: RelevanceGate | None = None,
         system_prompt: str = SYSTEM_PROMPT,
         top_k: int = 5,
+        citation_booster=None,
     ):
         self.retriever = retriever
         self.llm = llm_backend or TemplateFallbackBackend()
         self.gate = relevance_gate or RelevanceGate()
         self.system_prompt = system_prompt
         self.top_k = top_k
+        self.citation_booster = citation_booster
 
         backend_name = type(self.llm).__name__
         logger.info(f"RAGGenerator ready (backend: {backend_name}, top_k={top_k})")
@@ -1351,7 +1353,7 @@ class RAGGenerator:
             if (top_score - score) > max_drop:
                 continue
             filtered.append(r)
-            if len(filtered) >= 4:
+            if len(filtered) >= 5:
                 break
 
         if not filtered and results:
@@ -1378,8 +1380,58 @@ class RAGGenerator:
             k = min(k + 5, 15)  # Retrieve 5 more passages, max 15
             logger.debug(f"Multi-document query detected, increased top_k to {k}")
 
+        # Step 0.5: Identify foundational papers to inject
+        inject_chunks = []
+        if self.citation_booster:
+            relevant_ids = self.citation_booster.identify_relevant_papers(question)
+            if relevant_ids:
+                for arxiv_id in relevant_ids:
+                    inject_chunks.extend(self.retriever.fetch_paper_chunks(arxiv_id, max_chunks=5))
+                if inject_chunks:
+                    logger.info(f"Foundational injection: {len(inject_chunks)} chunks from {len(relevant_ids)} paper(s)")
+
         # Step 1: Retrieve
-        retrieval = self.retriever.query(question, top_k=k)
+        # For citation boosting, we need MORE candidates to ensure foundational papers are included
+        boost_candidates = k * 5 if self.citation_booster else k  # 5x candidates for boosting
+        boost_candidates = min(boost_candidates, 50)  # Cap at 50
+
+        retrieval = self.retriever.query(
+            question,
+            top_k=boost_candidates,
+            inject_chunks=inject_chunks or None,
+        )
+
+        # Step 1.5: Apply citation boosting (if enabled)
+        if self.citation_booster:
+            # Check if we have foundational papers before boosting
+            if logger.isEnabledFor(logging.DEBUG):
+                foundational_found = []
+                for r in retrieval[:20]:
+                    arxiv_id = r.get("metadata", {}).get("arxiv_id", "").replace("arxiv_", "").replace("_", ".")
+                    if arxiv_id in self.citation_booster.foundational_papers:
+                        title = self.citation_booster.foundational_papers[arxiv_id]["title"]
+                        rank = next(i for i, x in enumerate(retrieval, 1) if x == r)
+                        foundational_found.append(f"{title} at rank {rank}")
+                if foundational_found:
+                    logger.debug(f"Foundational papers before boosting: {', '.join(foundational_found)}")
+                else:
+                    logger.warning(f"No foundational papers found in top-20 results for query: {question[:50]}...")
+
+            retrieval = self.citation_booster.boost_results(
+                retrieval,
+                query=question,
+                top_k=None,  # Don't truncate; let diversify_results handle selection
+            )
+
+            # Apply diversification to ensure foundational papers are included
+            retrieval = self.citation_booster.diversify_results(
+                retrieval,
+                top_k=k,
+                max_per_paper=1,
+                require_foundational=True,
+            )
+
+            logger.debug(f"Citation boosting applied: {len(retrieval)} results after boost+diversity")
 
         # Step 2: Relevance gate
         should_deflect, reason = self.gate.should_deflect(retrieval, question=question)
@@ -1438,6 +1490,21 @@ class RAGGenerator:
             logger.debug(
                 f"Source filtering: {len(retrieval)} -> {len(relevant)} (dropped {n_filtered} low-relevance sources)"
             )
+
+        # Step 3.5: Ensure foundational paper survives source filtering
+        if self.citation_booster and relevant:
+            has_foundational = any(
+                r.get("metadata", {}).get("arxiv_id", "").replace("arxiv_", "").replace("_", ".")
+                in self.citation_booster.foundational_papers
+                for r in relevant
+            )
+            if not has_foundational:
+                for r in retrieval:
+                    aid = r.get("metadata", {}).get("arxiv_id", "").replace("arxiv_", "").replace("_", ".")
+                    if aid in self.citation_booster.foundational_papers:
+                        relevant[-1] = r
+                        logger.debug(f"Foundational paper preserved after filtering: {aid}")
+                        break
 
         # Step 4: Build prompt with filtered sources
         sources_block = self._build_sources_block(relevant)
@@ -1512,8 +1579,74 @@ class RAGGenerator:
         """
         k = top_k or self.top_k
 
-        retrieval = self.retriever.query(question, top_k=k)
+        # Identify foundational papers to inject
+        inject_chunks = []
+        if self.citation_booster:
+            relevant_ids = self.citation_booster.identify_relevant_papers(question)
+            if relevant_ids:
+                for arxiv_id in relevant_ids:
+                    inject_chunks.extend(self.retriever.fetch_paper_chunks(arxiv_id, max_chunks=5))
+                if inject_chunks:
+                    logger.info(f"Foundational injection: {len(inject_chunks)} chunks from {len(relevant_ids)} paper(s)")
+
+        # For citation boosting, we need MORE candidates to ensure foundational papers are included
+        boost_candidates = k * 5 if self.citation_booster else k  # 5x candidates for boosting
+        boost_candidates = min(boost_candidates, 50)  # Cap at 50
+
+        retrieval = self.retriever.query(
+            question,
+            top_k=boost_candidates,
+            inject_chunks=inject_chunks or None,
+        )
+
+        # Apply citation boosting (if enabled)
+        if self.citation_booster:
+            # Check if we have foundational papers before boosting
+            if logger.isEnabledFor(logging.DEBUG):
+                foundational_found = []
+                for r in retrieval[:20]:
+                    arxiv_id = r.get("metadata", {}).get("arxiv_id", "").replace("arxiv_", "").replace("_", ".")
+                    if arxiv_id in self.citation_booster.foundational_papers:
+                        title = self.citation_booster.foundational_papers[arxiv_id]["title"]
+                        rank = next(i for i, x in enumerate(retrieval, 1) if x == r)
+                        foundational_found.append(f"{title} at rank {rank}")
+                if foundational_found:
+                    logger.debug(f"Foundational papers before boosting: {', '.join(foundational_found)}")
+                else:
+                    logger.warning(f"No foundational papers found in top-20 results for query: {question[:50]}...")
+
+            retrieval = self.citation_booster.boost_results(
+                retrieval,
+                query=question,
+                top_k=None,  # Don't truncate; let diversify_results handle selection
+            )
+
+            # Apply diversification to ensure foundational papers are included
+            retrieval = self.citation_booster.diversify_results(
+                retrieval,
+                top_k=k,
+                max_per_paper=1,
+                require_foundational=True,
+            )
+
+            logger.debug(f"Citation boosting applied: {len(retrieval)} results after boost+diversity")
+
         relevant = self._filter_relevant_sources(retrieval)
+
+        # Ensure foundational paper survives source filtering
+        if self.citation_booster and relevant:
+            has_foundational = any(
+                r.get("metadata", {}).get("arxiv_id", "").replace("arxiv_", "").replace("_", ".")
+                in self.citation_booster.foundational_papers
+                for r in relevant
+            )
+            if not has_foundational:
+                for r in retrieval:
+                    aid = r.get("metadata", {}).get("arxiv_id", "").replace("arxiv_", "").replace("_", ".")
+                    if aid in self.citation_booster.foundational_papers:
+                        relevant[-1] = r
+                        logger.debug(f"Foundational paper preserved after filtering: {aid}")
+                        break
 
         yield {
             "event": "sources",

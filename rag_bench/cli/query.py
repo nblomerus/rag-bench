@@ -33,7 +33,9 @@ from rag_bench.config import (  # noqa: E402
     DEFAULT_TOP_K,
     EMBEDDING_MODEL,
     EVAL_DIR,
+    RERANKER_MODEL,
 )
+from rag_bench.core.citation_boost import CitationBooster  # noqa: E402
 from rag_bench.core.generator import (  # noqa: E402
     OllamaBackend,
     OpenAICompatibleBackend,
@@ -52,6 +54,10 @@ def setup_logging(verbose: bool = False):
         level=level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+
+    # Suppress verbose HTTP logs from httpx and httpcore
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 def build_llm_backend(backend: str, model: str = "", base_url: str = ""):
@@ -260,8 +266,8 @@ def main():
     parser.add_argument(
         "--reranker",
         type=str,
-        default="cross-encoder/ms-marco-MiniLM-L-6-v2",
-        help="Cross-encoder model for reranking",
+        default=RERANKER_MODEL,
+        help=f"Cross-encoder model for reranking (default: {RERANKER_MODEL})",
     )
     parser.add_argument(
         "--threshold",
@@ -291,7 +297,11 @@ def main():
         action="store_true",
         help="Enable debug logging",
     )
-
+    parser.add_argument(
+        "--no-citation-boost",
+        action="store_true",
+        help="Disable citation quality boosting for foundational papers",
+    )
     args = parser.parse_args()
     setup_logging(args.verbose)
 
@@ -308,11 +318,21 @@ def main():
     llm = build_llm_backend(args.backend, args.model, args.base_url)
     gate = RelevanceGate(min_top_score=args.threshold)
 
+    # Initialize citation booster (unless disabled)
+    citation_booster = None
+    if not args.no_citation_boost:
+        citation_booster = CitationBooster(
+            enable_age_boost=True,
+            enable_query_adaptive=True,
+        )
+        logger.info("Citation booster enabled (%d foundational papers)", len(citation_booster.foundational_papers))
+
     generator = RAGGenerator(
         retriever=retriever,
         llm_backend=llm,
         relevance_gate=gate,
         top_k=args.top_k,
+        citation_booster=citation_booster,
     )
 
     # Eval mode, single query, or interactive

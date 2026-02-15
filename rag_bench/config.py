@@ -67,7 +67,7 @@ SECTION_BLOCKLIST = frozenset(
 # ── Retrieval ──
 DEFAULT_TOP_K = 10
 RELEVANCE_THRESHOLD = 0.3  # minimum cosine similarity to consider relevant
-FIRST_STAGE_K = 150  # candidates per first-stage retriever (BM25 + dense)
+FIRST_STAGE_K = 200  # candidates per first-stage retriever (BM25 + dense)
 RERANK_CANDIDATES = 100  # candidates passed to cross-encoder reranker
 BM25_WEIGHT = 0.3  # RRF fusion weight for BM25 (reduced at scale)
 DENSE_WEIGHT = 0.7  # RRF fusion weight for dense retrieval

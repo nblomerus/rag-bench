@@ -2,18 +2,19 @@
 pipeline.py — RAG-Bench Data Ingestion & Indexing Pipeline.
 
 Runs the complete pipeline:
-1. Load AI/ML papers from HuggingFace
+1. Load AI/ML papers from scraped PDFs and/or HuggingFace
 2. Parse papers into structured documents
 3. Chunk with equation/table/acronym awareness
 4. Embed with BGE and index in ChromaDB
 5. Run test queries to verify the index
 
 Usage:
-    rag-pipeline                    # Run full pipeline
-    rag-pipeline --step ingest      # Run only ingestion
-    rag-pipeline --step chunk       # Run only chunking (requires ingest first)
-    rag-pipeline --step index       # Run only indexing (requires chunk first)
-    rag-pipeline --step test        # Run only test queries (requires index first)
+    rag-pipeline                          # Run full pipeline (scraped papers only)
+    rag-pipeline --hybrid                 # Run with hybrid ingestion (scraped + HF dataset)
+    rag-pipeline --step ingest --hybrid   # Run only hybrid ingestion
+    rag-pipeline --step chunk             # Run only chunking (requires ingest first)
+    rag-pipeline --step index             # Run only indexing (requires chunk first)
+    rag-pipeline --step test              # Run only test queries (requires index first)
 """
 
 import argparse
@@ -38,6 +39,7 @@ from rag_bench.config import (
 )
 from rag_bench.core.chunker import chunk_all_papers
 from rag_bench.core.embedder import Embedder
+from rag_bench.core.hybrid_ingest import hybrid_ingest
 from rag_bench.core.retriever import HybridRetriever
 
 
@@ -54,8 +56,13 @@ def setup_logging():
     )
 
 
-def step_ingest() -> list[dict]:
-    """Step 1: Load and parse papers."""
+def step_ingest(use_hybrid: bool = False) -> list[dict]:
+    """
+    Step 1: Load and parse papers.
+
+    Args:
+        use_hybrid: If True, merge scraped papers with HuggingFace dataset
+    """
     logger = logging.getLogger("pipeline.ingest")
     logger.info("=" * 60)
     logger.info("STEP 1: Ingesting papers")
@@ -63,23 +70,43 @@ def step_ingest() -> list[dict]:
 
     start = time.time()
 
-    # Load scraped papers only
     scraped_path = DATA_DIR / "scraped_papers.json"
 
-    if not scraped_path.exists():
-        logger.error(f"Scraped papers not found: {scraped_path}")
-        logger.error("Please run: python scripts/scrape_arxiv.py --mode extended")
-        sys.exit(1)
+    if use_hybrid:
+        # Hybrid mode: merge scraped + HuggingFace dataset
+        logger.info("🔄 Using HYBRID ingestion mode")
+        logger.info("   Combining scraped papers + HuggingFace ai-arxiv2 dataset")
 
-    logger.info(f"Loading scraped papers from {scraped_path}")
-    with open(scraped_path) as f:
-        docs = json.load(f)
+        if not scraped_path.exists():
+            logger.warning(f"Scraped papers not found: {scraped_path}")
+            logger.warning("Proceeding with HuggingFace dataset only")
 
-    # Save as parsed_papers.json for consistency
-    with open(DATA_DIR / "parsed_papers.json", "w") as f:
-        json.dump(docs, f, indent=2, default=str)
+        docs = hybrid_ingest(
+            scraped_path=scraped_path,
+            dataset_name=DATASET_NAME,
+            split="train",
+            save_path=DATA_DIR / "parsed_papers.json",
+            prefer_scraped=True,
+        )
+    else:
+        # Original mode: scraped papers only
+        logger.info("📄 Using scraped papers only")
 
-    logger.info(f"Loaded {len(docs)} papers from local scrape")
+        if not scraped_path.exists():
+            logger.error(f"Scraped papers not found: {scraped_path}")
+            logger.error("Please run: python scripts/scrape_arxiv.py --mode extended")
+            logger.error("Or use --hybrid flag to include HuggingFace dataset")
+            sys.exit(1)
+
+        logger.info(f"Loading scraped papers from {scraped_path}")
+        with open(scraped_path) as f:
+            docs = json.load(f)
+
+        # Save as parsed_papers.json for consistency
+        with open(DATA_DIR / "parsed_papers.json", "w") as f:
+            json.dump(docs, f, indent=2, default=str)
+
+        logger.info(f"Loaded {len(docs)} papers from local scrape")
 
     elapsed = time.time() - start
 
@@ -224,6 +251,11 @@ def main():
         default="all",
         help="Which pipeline step to run (default: all)",
     )
+    parser.add_argument(
+        "--hybrid",
+        action="store_true",
+        help="Use hybrid ingestion (merge scraped papers + HuggingFace ai-arxiv2 dataset)",
+    )
     args = parser.parse_args()
 
     setup_logging()
@@ -238,7 +270,7 @@ def main():
     overall_start = time.time()
 
     if args.step in ("ingest", "all"):
-        docs = step_ingest()
+        docs = step_ingest(use_hybrid=args.hybrid)
     else:
         docs_path = DATA_DIR / "parsed_papers.json"
         if docs_path.exists():

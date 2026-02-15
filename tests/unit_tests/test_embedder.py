@@ -616,7 +616,7 @@ class TestEmbedderIndexChunks:
         indexed_count = embedder.index_chunks(sample_chunks, skip_existing=False)
 
         assert indexed_count == len(sample_chunks)
-        mock_collection.add.assert_called_once()
+        mock_collection.upsert.assert_called_once()
 
     @patch("rag_bench.core.embedder.chromadb.PersistentClient")
     @patch("rag_bench.core.embedder._load_embedding_model")
@@ -635,12 +635,12 @@ class TestEmbedderIndexChunks:
         indexed_count = embedder.index_chunks([])
 
         assert indexed_count == 0
-        mock_collection.add.assert_not_called()
+        mock_collection.upsert.assert_not_called()
 
     @patch("rag_bench.core.embedder.chromadb.PersistentClient")
     @patch("rag_bench.core.embedder._load_embedding_model")
     def test_index_chunks_skip_existing_all_new(self, mock_load_model, mock_chroma, sample_chunks):
-        """Test skip_existing when all chunks are new."""
+        """Test skip_existing when all chunks are new (upsert mode)."""
         mock_model = MagicMock()
         mock_model.get_sentence_embedding_dimension.return_value = 768
         mock_model.encode.return_value = np.array([[0.1] * 768] * len(sample_chunks))
@@ -656,15 +656,15 @@ class TestEmbedderIndexChunks:
         indexed_count = embedder.index_chunks(sample_chunks, skip_existing=True)
 
         assert indexed_count == len(sample_chunks)
-        mock_collection.add.assert_called_once()
+        mock_collection.upsert.assert_called_once()
 
     @patch("rag_bench.core.embedder.chromadb.PersistentClient")
     @patch("rag_bench.core.embedder._load_embedding_model")
     def test_index_chunks_skip_existing_some_exist(self, mock_load_model, mock_chroma, sample_chunks):
-        """Test skip_existing when some chunks already exist."""
+        """Test skip_existing when some chunks already exist (upsert mode handles duplicates)."""
         mock_model = MagicMock()
         mock_model.get_sentence_embedding_dimension.return_value = 768
-        mock_model.encode.return_value = np.array([[0.1] * 768])
+        mock_model.encode.return_value = np.array([[0.1] * 768] * len(sample_chunks))
         mock_load_model.return_value = mock_model
 
         mock_client, mock_collection = MagicMock(), MagicMock()
@@ -677,16 +677,17 @@ class TestEmbedderIndexChunks:
         embedder = Embedder()
         indexed_count = embedder.index_chunks(sample_chunks, skip_existing=True)
 
-        # Only one new chunk should be indexed
-        assert indexed_count == 1
-        mock_collection.add.assert_called_once()
+        # All chunks are processed (upsert mode)
+        assert indexed_count == len(sample_chunks)
+        mock_collection.upsert.assert_called_once()
 
     @patch("rag_bench.core.embedder.chromadb.PersistentClient")
     @patch("rag_bench.core.embedder._load_embedding_model")
     def test_index_chunks_skip_existing_all_exist(self, mock_load_model, mock_chroma, sample_chunks):
-        """Test skip_existing when all chunks already exist."""
+        """Test skip_existing when all chunks already exist (upsert mode handles duplicates)."""
         mock_model = MagicMock()
         mock_model.get_sentence_embedding_dimension.return_value = 768
+        mock_model.encode.return_value = np.array([[0.1] * 768] * len(sample_chunks))
         mock_load_model.return_value = mock_model
 
         mock_client, mock_collection = MagicMock(), MagicMock()
@@ -699,8 +700,9 @@ class TestEmbedderIndexChunks:
         embedder = Embedder()
         indexed_count = embedder.index_chunks(sample_chunks, skip_existing=True)
 
-        assert indexed_count == 0
-        mock_collection.add.assert_not_called()
+        # All chunks are processed (upsert mode)
+        assert indexed_count == len(sample_chunks)
+        mock_collection.upsert.assert_called_once()
 
     @patch("rag_bench.core.embedder.chromadb.PersistentClient")
     @patch("rag_bench.core.embedder._load_embedding_model")
@@ -747,7 +749,7 @@ class TestEmbedderIndexChunks:
 
         assert indexed_count == 5
         # Should be called 3 times: ceil(5/2) = 3 batches
-        assert mock_collection.add.call_count == 3
+        assert mock_collection.upsert.call_count == 3
 
     @patch("rag_bench.core.embedder.chromadb.PersistentClient")
     @patch("rag_bench.core.embedder._load_embedding_model")
@@ -786,8 +788,8 @@ class TestEmbedderIndexChunks:
         embedder = Embedder()
         embedder.index_chunks(chunks, skip_existing=False)
 
-        # Check metadata passed to add()
-        call_args = mock_collection.add.call_args
+        # Check metadata passed to upsert()
+        call_args = mock_collection.upsert.call_args
         metadatas = call_args[1]["metadatas"]
 
         assert len(metadatas) == 1
@@ -839,7 +841,7 @@ class TestEmbedderIndexChunks:
         indexed_count = embedder.index_chunks(chunks, skip_existing=False)
 
         assert indexed_count == 1
-        mock_collection.add.assert_called_once()
+        mock_collection.upsert.assert_called_once()
 
     @patch("rag_bench.core.embedder.chromadb.PersistentClient")
     @patch("rag_bench.core.embedder._load_embedding_model")
@@ -1057,7 +1059,7 @@ class TestEdgeCasesAndErrors:
     @patch("rag_bench.core.embedder.chromadb.PersistentClient")
     @patch("rag_bench.core.embedder._load_embedding_model")
     def test_index_chunks_large_batch_check(self, mock_load_model, mock_chroma):
-        """Test that large chunk lists are checked in batches of 5000."""
+        """Test that large chunk lists are processed in batches (upsert mode doesn't call get)."""
         mock_model = MagicMock()
         mock_model.get_sentence_embedding_dimension.return_value = 768
         mock_model.encode.return_value = np.array([[0.1] * 768])
@@ -1075,10 +1077,12 @@ class TestEdgeCasesAndErrors:
         ]
 
         embedder = Embedder()
-        embedder.index_chunks(chunks, skip_existing=True)
+        indexed_count = embedder.index_chunks(chunks, skip_existing=True, batch_size=256)
 
-        # Should call get() 1 time: ceil(2500/5000) = 1
-        assert mock_collection.get.call_count == 1
+        # Verify all chunks were processed
+        assert indexed_count == 2500
+        # Should call upsert() ceil(2500/256) = 10 times
+        assert mock_collection.upsert.call_count == 10
 
 
 # ══════════════════════════════════════════════════════════════════════════════

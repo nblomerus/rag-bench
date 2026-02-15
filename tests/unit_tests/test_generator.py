@@ -637,7 +637,7 @@ class TestRAGGenerator:
         generator.answer("test question")
 
         # Check that retriever was called with correct top_k
-        mock_retriever.query.assert_called_with("test question", top_k=2)
+        mock_retriever.query.assert_called_with("test question", top_k=2, inject_chunks=None)
 
     def test_answer_checks_keyword_overlap(self, mock_retriever):
         """Test that low keyword overlap triggers deflection."""
@@ -998,7 +998,7 @@ class TestRAGGeneratorAdvanced:
         generator.answer("test", top_k=3)
 
         # Should call with custom top_k=3, not the default top_k=10
-        mock_retriever.query.assert_called_with("test", top_k=3)
+        mock_retriever.query.assert_called_with("test", top_k=3, inject_chunks=None)
 
     def test_answer_detects_entity_mismatch(self, mock_retriever):
         """Test that answer detects when entity is missing."""
@@ -2301,8 +2301,8 @@ class TestDeepBranchCoverage:
 
         filtered = generator._filter_relevant_sources(results)
 
-        # Should stop at 4 (line 1343 break)
-        assert len(filtered) == 4
+        # Should stop at 5
+        assert len(filtered) == 5
 
     def test_answer_with_filtered_sources_logging(self, mock_retriever):
         """Test answer generation with source filtering."""

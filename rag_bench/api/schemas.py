@@ -10,6 +10,9 @@ class QueryRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=20, description="Number of sources to retrieve")
     backend: str | None = Field(default=None, description="Override LLM backend (ollama/openai/template)")
     model: str | None = Field(default=None, description="Override model name")
+    enable_citation_boost: bool = Field(
+        default=True, description="Enable citation quality boosting for foundational papers"
+    )
 
 
 class SourceResult(BaseModel):
