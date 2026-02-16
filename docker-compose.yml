@@ -1,0 +1,74 @@
+# Docker Compose for RAG-Bench (Development)
+# Run with: docker compose up -d
+
+services:
+  # Backend API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ragbench-api
+    environment:
+      - RAG_LLM_BACKEND=${RAG_LLM_BACKEND:-ollama}
+      - RAG_LLM_MODEL=${RAG_LLM_MODEL:-mistral:7b-instruct-q4_K_M}
+      - RAG_LLM_BASE_URL=${RAG_LLM_BASE_URL:-http://ollama:11434}
+      - RAG_API_PORT=8000
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./chroma_db:/app/chroma_db
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - ragbench
+    depends_on:
+      - ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend UI
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ragbench-frontend
+    ports:
+      - "3000:80"
+    networks:
+      - ragbench
+    depends_on:
+      - api
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Ollama LLM service (optional - comment out if using external LLM)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ragbench-ollama
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - ragbench
+    restart: unless-stopped
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+
+networks:
+  ragbench:
+    driver: bridge
+
+volumes:
+  ollama-models:

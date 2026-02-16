@@ -1,0 +1,106 @@
+# Docker Compose for RAG-Bench (Production with Nginx + Let's Encrypt)
+# Run with: docker compose -f docker-compose.prod.yml up -d
+
+services:
+  # Backend API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ragbench-api-prod
+    environment:
+      - RAG_LLM_BACKEND=${RAG_LLM_BACKEND:-ollama}
+      - RAG_LLM_MODEL=${RAG_LLM_MODEL:-mistral:7b-instruct-q4_K_M}
+      - RAG_LLM_BASE_URL=${RAG_LLM_BASE_URL:-http://ollama:11434}
+      - RAG_API_PORT=${RAG_API_PORT:-8000}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./chroma_db:/app/chroma_db
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - ragbench
+    depends_on:
+      - ollama
+    restart: always
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    expose:
+      - "8000"
+
+  # Frontend UI with Nginx
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ragbench-frontend-prod
+    networks:
+      - ragbench
+    depends_on:
+      - api
+    restart: always
+    expose:
+      - "80"
+
+  # Nginx Reverse Proxy with SSL/TLS
+  nginx:
+    image: nginx:alpine
+    container_name: ragbench-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx-prod.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - nginx-cache:/var/cache/nginx
+    networks:
+      - ragbench
+    depends_on:
+      - frontend
+      - api
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Certbot for Let's Encrypt SSL certificates
+  certbot:
+    image: certbot/certbot:latest
+    container_name: ragbench-certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done;'
+    networks:
+      - ragbench
+    restart: always
+
+  # Ollama LLM service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ragbench-ollama-prod
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - ragbench
+    restart: always
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    expose:
+      - "11434"
+
+networks:
+  ragbench:
+    driver: bridge
+
+volumes:
+  ollama-models:
+  nginx-cache:
