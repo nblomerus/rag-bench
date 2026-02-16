@@ -7,8 +7,19 @@ __pycache__/
 .pyenv/
 .python-version
 
+# Environment files (keep templates only)
+.env
+.env.*
+!.env.example
+!.env.production.template
+
+# Local testing files
+.env.prod.local
+.current_env
+
 # Logs
 logs/
+*.log
 
 # OS
 .DS_Store
@@ -25,9 +36,31 @@ logs/
 coverage.xml
 htmlcov/
 .coverage
+report/
 
 # ChromaDB
 chroma_db/
+chroma_db.backup/
+*.restore-backup/
 
 # Node modules
 node_modules/
+
+# Experiments
+experiments/
+
+# Backups
+backups/
+*.tar.gz
+*.backup
+
+# SSL Certificates (Let's Encrypt)
+certbot/conf/
+certbot/www/
+
+# Deployment specific
+.env.prod
+.env.staging
+
+# Systemd
+*.service
