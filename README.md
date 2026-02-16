@@ -15,17 +15,17 @@ docker compose up -d
 # Open http://localhost (frontend) or http://localhost:8000/docs (API)
 ```
 
-See [QUICKSTART.md](QUICKSTART.md) for the full 5-minute guide.
+See [QUICKSTART.md](docs/QUICKSTART.md) for the full 5-minute guide.
 
 ## Documentation
 
 | Document | Purpose |
 |----------|---------|
-| [QUICKSTART.md](QUICKSTART.md) | Get running in 5 minutes |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Production deployment & operations |
-| [RUNBOOK.md](RUNBOOK.md) | Daily ops, troubleshooting, emergencies |
-| [DEV_ENVIRONMENT.md](DEV_ENVIRONMENT.md) | Local development setup & workflow |
-| [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md) | Interactive deployment checklist |
+| [QUICKSTART.md](docs/QUICKSTART.md) | Get running in 5 minutes |
+| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production deployment & operations |
+| [RUNBOOK.md](docs/RUNBOOK.md) | Daily ops, troubleshooting, emergencies |
+| [DEV_ENVIRONMENT.md](docs/DEV_ENVIRONMENT.md) | Local development setup & workflow |
+| [DEPLOYMENT_CHECKLIST.md](docs/DEPLOYMENT_CHECKLIST.md) | Interactive deployment checklist |
 
 ## Architecture
 
@@ -102,7 +102,7 @@ cd /opt/ragbench
 make deploy          # Guided deployment with SSL setup
 ```
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for full instructions.
+See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for full instructions.
 
 ## Data Pipeline
 
