@@ -15,7 +15,7 @@ fixable = ["ALL"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-v"
+addopts = "--cov --cov-config pyproject.toml --cov-report term --cov-report xml:report/cov.xml --cov-branch --junitxml=report/xunit.xml --show-capture=all -vvv -ra"
 filterwarnings = [
     "ignore::UserWarning:torch.cuda",
     "ignore:CUDA initialization:UserWarning",
