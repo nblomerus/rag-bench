@@ -64,3 +64,7 @@ certbot/www/
 
 # Systemd
 *.service
+
+# Evaluation results
+results/
+eval_results/
