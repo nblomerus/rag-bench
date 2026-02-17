@@ -180,6 +180,12 @@ def step_index(chunks: list[dict]) -> Embedder:
     embedder.index_chunks(chunks, batch_size=EMBEDDING_BATCH_SIZE)
     elapsed = time.time() - start
 
+    # Invalidate the paper count cache so the API recomputes it on next startup
+    cache_file = CHROMA_DIR / ".paper_count"
+    if cache_file.exists():
+        cache_file.unlink()
+        logger.info("Paper count cache invalidated")
+
     stats = embedder.get_collection_stats()
     logger.info(f"Indexing complete in {elapsed:.1f}s")
     logger.info(f"Collection stats: {stats}")

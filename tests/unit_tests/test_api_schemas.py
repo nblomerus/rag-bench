@@ -137,6 +137,7 @@ class TestStatsResponse:
         stats = StatsResponse(
             total_chunks=1000,
             total_papers=50,
+            papers_counting=False,
             collection_name="arxiv",
             embedding_model="all-MiniLM-L6-v2",
             llm_backend="ollama",
@@ -144,6 +145,7 @@ class TestStatsResponse:
         )
         assert stats.total_chunks == 1000
         assert stats.total_papers == 50
+        assert stats.papers_counting is False
         assert stats.collection_name == "arxiv"
 
 

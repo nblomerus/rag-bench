@@ -88,6 +88,24 @@ _total_papers: int = 0  # Updated by background task
 _papers_counting: bool = True  # False once the full scan completes
 
 
+_PAPER_COUNT_CACHE = CHROMA_DIR / ".paper_count"
+
+
+def _load_cached_paper_count() -> int | None:
+    """Return the cached paper count, or None if the cache doesn't exist."""
+    try:
+        return int(_PAPER_COUNT_CACHE.read_text().strip())
+    except Exception:
+        return None
+
+
+def _save_cached_paper_count(count: int) -> None:
+    try:
+        _PAPER_COUNT_CACHE.write_text(str(count))
+    except Exception as e:
+        logger.warning(f"Could not write paper count cache: {e}")
+
+
 async def _count_papers_background():
     """Scan all ChromaDB chunks to get the exact unique paper count. Runs after startup."""
     global _total_papers, _papers_counting
@@ -116,6 +134,7 @@ async def _count_papers_background():
         _total_papers = len(unique_papers)
 
     _papers_counting = False
+    _save_cached_paper_count(_total_papers)
     logger.info(f"Paper count complete: {_total_papers:,} unique papers across {total_chunks:,} chunks")
 
 
@@ -156,8 +175,14 @@ async def lifespan(app):
     )
 
     total_chunks = _retriever.collection.count()
-    logger.info(f"Corpus: {total_chunks:,} chunks — starting background paper count")
-    asyncio.create_task(_count_papers_background())
+    cached = _load_cached_paper_count()
+    if cached is not None:
+        _total_papers = cached
+        _papers_counting = False
+        logger.info(f"Corpus: {total_chunks:,} chunks, {_total_papers:,} papers (cached)")
+    else:
+        logger.info(f"Corpus: {total_chunks:,} chunks — no cache, starting background paper count")
+        asyncio.create_task(_count_papers_background())
 
     elapsed = time.time() - start
     logger.info(f"RAG pipeline loaded in {elapsed:.1f}s")
