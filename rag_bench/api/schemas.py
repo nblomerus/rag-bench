@@ -26,6 +26,19 @@ class SourceResult(BaseModel):
     relevance: str = ""
 
 
+class QualityMetrics(BaseModel):
+    retrieval_confidence: str = "unknown"
+    citation_coverage: float = 0.0
+    citation_density: float = 0.0
+    unsupported_claims: int = 0
+    sources_cited: int = 0
+    sources_provided: int = 0
+    top_retrieval_score: float = 0.0
+    score_spread: dict = {}
+    source_diversity: dict = {}
+    per_source_cited: list[dict] = []
+
+
 class QueryResponse(BaseModel):
     answer: str
     sources: list[SourceResult]
@@ -35,6 +48,7 @@ class QueryResponse(BaseModel):
     latency_ms: float
     backend: str
     model: str
+    quality: QualityMetrics = QualityMetrics()
 
 
 class StatsResponse(BaseModel):
@@ -93,3 +107,94 @@ class PaperDetail(BaseModel):
     source_display: str = ""
     chunks: list[PaperChunk] = []
     sections: list[str] = []
+
+
+# ── Full Eval Request/Response ──
+
+
+class FullEvalRequest(BaseModel):
+    retrieval_only: bool = Field(default=False, description="Only run retrieval metrics, skip generation")
+    topic: str | None = Field(default=None, description="Filter by topic")
+    query_type: str | None = Field(default=None, description="Filter by query type")
+    difficulty: str | None = Field(default=None, description="Filter by difficulty")
+
+
+class RetrievalMetrics(BaseModel):
+    precision_at_k: float = 0.0
+    recall_at_k: float = 0.0
+    mrr: float = 0.0
+    ndcg_at_k: float = 0.0
+    hit_rate: float = 0.0
+    retrieved_papers: list[str] = []
+    expected_papers: list[str] = []
+    k: int = 5
+
+
+class FaithfulnessMetrics(BaseModel):
+    score: float = 0.0
+    reasoning: str = ""
+
+
+class CitationMetrics(BaseModel):
+    precision: float = 0.0
+    recall: float = 0.0
+    source_coverage: float = 0.0
+    density: float = 0.0
+    unsupported_claims: int = 0
+    hallucination_flags: list[str] = []
+
+
+class CompletenessMetrics(BaseModel):
+    expected_keywords_found: int = 0
+    expected_keywords_total: int = 0
+    score: float = 0.0
+    missing_keywords: list[str] = []
+
+
+class DeflectionMetrics(BaseModel):
+    expected: bool = False
+    actual: bool = False
+    correct: bool = False
+
+
+class FullEvalResult(BaseModel):
+    id: str
+    question: str
+    query_type: str = ""
+    topic: str = ""
+    difficulty: str = ""
+    retrieval: RetrievalMetrics = RetrievalMetrics()
+    citation: CitationMetrics = CitationMetrics()
+    completeness: CompletenessMetrics = CompletenessMetrics()
+    faithfulness: FaithfulnessMetrics = FaithfulnessMetrics()
+    relevance: FaithfulnessMetrics = FaithfulnessMetrics()
+    deflection: DeflectionMetrics = DeflectionMetrics()
+    latency_ms: float = 0.0
+    answer_preview: str = ""
+    error: str | None = None
+
+
+class EvalSummary(BaseModel):
+    total_queries: int = 0
+    retrieval_mrr: float = 0.0
+    retrieval_precision_at_5: float = 0.0
+    retrieval_recall_at_5: float = 0.0
+    retrieval_ndcg_at_5: float = 0.0
+    retrieval_hit_rate: float = 0.0
+    avg_faithfulness: float = 0.0
+    avg_relevance: float = 0.0
+    avg_citation_precision: float = 0.0
+    avg_citation_recall: float = 0.0
+    avg_citation_density: float = 0.0
+    avg_completeness: float = 0.0
+    deflection_accuracy: float = 0.0
+    avg_latency_ms: float = 0.0
+
+
+class FullEvalResponse(BaseModel):
+    summary: EvalSummary
+    by_topic: dict = {}
+    by_query_type: dict = {}
+    by_difficulty: dict = {}
+    results: list[FullEvalResult]
+    metadata: dict = {}

@@ -324,13 +324,21 @@ class CrossEncoderReranker:
         self._load_model()
 
     def _load_model(self):
-        """Try to load the cross-encoder model on CPU to avoid GPU OOM."""
+        """Load cross-encoder model, preferring GPU when available."""
+        import torch
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
         try:
-            self.model = CrossEncoder(self.model_name, device="cpu")
-            logger.info(f"Loaded cross-encoder: {self.model_name} (on CPU)")
-        except Exception as e:
-            logger.warning(f"Could not load cross-encoder ({e}). Falling back to keyword overlap scoring.")
-            self.model = None
+            self.model = CrossEncoder(self.model_name, device=device)
+            logger.info(f"Loaded cross-encoder: {self.model_name} (on {device})")
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower() and device == "cuda":
+                logger.warning("GPU OOM loading cross-encoder, falling back to CPU")
+                self.model = CrossEncoder(self.model_name, device="cpu")
+                logger.info(f"Loaded cross-encoder: {self.model_name} (on CPU, OOM fallback)")
+            else:
+                logger.warning(f"Could not load cross-encoder ({e}). Falling back to keyword overlap scoring.")
+                self.model = None
 
     def rerank(
         self,

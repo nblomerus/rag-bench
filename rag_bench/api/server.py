@@ -31,9 +31,14 @@ from rag_bench.api.schemas import (
     EvalRequest,
     EvalResponse,
     EvalResult,
+    EvalSummary,
+    FullEvalRequest,
+    FullEvalResponse,
+    FullEvalResult,
     PaperChunk,
     PaperDetail,
     PaperSummary,
+    QualityMetrics,
     QueryRequest,
     QueryResponse,
     SourceResult,
@@ -206,6 +211,114 @@ def _format_sources(results: list[dict]) -> list[SourceResult]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Per-response quality metrics (fast, deterministic — no LLM calls)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _compute_quality_metrics(answer: str, all_results: list[dict], filtered_results: list[dict]) -> QualityMetrics:
+    """Compute inline quality metrics for a single query response."""
+    from rag_bench.eval.metrics import (
+        citation_density,
+        count_unsupported_claims,
+        extract_cited_source_numbers,
+        source_coverage,
+    )
+
+    sources_for_metrics = filtered_results if filtered_results else all_results[:5]
+    num_provided = len(sources_for_metrics)
+    cited = extract_cited_source_numbers(answer)
+
+    return QualityMetrics(
+        retrieval_confidence=_compute_retrieval_confidence(all_results),
+        citation_coverage=round(source_coverage(answer, num_provided), 4) if num_provided else 0.0,
+        citation_density=round(citation_density(answer), 2),
+        unsupported_claims=count_unsupported_claims(answer),
+        sources_cited=len(cited),
+        sources_provided=num_provided,
+        top_retrieval_score=round(all_results[0].get("score", 0.0), 4) if all_results else 0.0,
+        score_spread=_compute_score_spread(all_results),
+        source_diversity=_compute_source_diversity(sources_for_metrics),
+        per_source_cited=_compute_per_source_cited(answer, sources_for_metrics),
+    )
+
+
+def _compute_retrieval_confidence(results: list[dict]) -> str:
+    """Classify retrieval confidence as high/medium/low."""
+    if not results:
+        return "low"
+    top_score = results[0].get("score", 0.0)
+    above_half = sum(1 for r in results if r.get("score", 0.0) >= top_score / 2)
+
+    # Cross-encoder scores are typically > 1.0, cosine < 1.0
+    if top_score > 2.0:  # cross-encoder range
+        if top_score > 6.0 and above_half >= 3:
+            return "high"
+        elif top_score > 3.0 or above_half >= 1:
+            return "medium"
+    else:  # cosine range
+        if top_score > 0.7 and above_half >= 3:
+            return "high"
+        elif top_score > 0.5 or above_half >= 1:
+            return "medium"
+    return "low"
+
+
+def _compute_score_spread(results: list[dict]) -> dict:
+    """Return min/max/mean/std of retrieval scores."""
+    if not results:
+        return {"min": 0.0, "max": 0.0, "mean": 0.0, "std": 0.0}
+    scores = [r.get("score", 0.0) for r in results]
+    mean = sum(scores) / len(scores)
+    variance = sum((s - mean) ** 2 for s in scores) / len(scores)
+    return {
+        "min": round(min(scores), 4),
+        "max": round(max(scores), 4),
+        "mean": round(mean, 4),
+        "std": round(variance**0.5, 4),
+    }
+
+
+def _compute_source_diversity(results: list[dict]) -> dict:
+    """Return unique papers and sections from results."""
+    papers = set()
+    sections = set()
+    for r in results:
+        meta = r.get("metadata", {})
+        pid = meta.get("paper_id") or meta.get("arxiv_id") or meta.get("doc_id") or ""
+        if pid:
+            papers.add(pid)
+        sec = meta.get("section", "")
+        if sec:
+            sections.add(sec)
+    return {
+        "unique_papers": len(papers),
+        "unique_sections": len(sections),
+        "papers": sorted(papers),
+    }
+
+
+def _compute_per_source_cited(answer: str, results: list[dict]) -> list[dict]:
+    """For each source, check if it was cited in the answer and how many times."""
+    import re
+
+    per_source = []
+    for i, r in enumerate(results, 1):
+        meta = r.get("metadata", {})
+        count = len(re.findall(rf"\[Source\s+{i}\]", answer))
+        per_source.append(
+            {
+                "source_number": i,
+                "paper_id": meta.get("paper_id") or meta.get("arxiv_id") or meta.get("doc_id", ""),
+                "title": meta.get("title", "Unknown"),
+                "cited": count > 0,
+                "citation_count": count,
+                "score": round(r.get("score", 0.0), 4),
+            }
+        )
+    return per_source
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Endpoints
 # ═══════════════════════════════════════════════════════════════════════════
 @app.get("/api/health")
@@ -300,6 +413,18 @@ async def query_rag(request: QueryRequest):
 
     display_results = result.get("filtered_results", result.get("results", []))
 
+    # Compute per-response quality metrics (fast, no LLM)
+    quality = QualityMetrics()
+    if not result["deflected"]:
+        try:
+            quality = _compute_quality_metrics(
+                result["answer"],
+                result.get("results", []),
+                result.get("filtered_results", []),
+            )
+        except Exception as e:
+            logger.warning(f"Quality metrics computation failed: {e}")
+
     return QueryResponse(
         answer=result["answer"],
         sources=_format_sources(display_results),
@@ -309,6 +434,7 @@ async def query_rag(request: QueryRequest):
         latency_ms=round(latency, 1),
         backend=backend_name,
         model=model_name,
+        quality=quality,
     )
 
 
@@ -538,6 +664,59 @@ async def run_evaluation(request: EvalRequest):
             }
             for k, v in sorted(by_difficulty.items())
         },
+    )
+
+
+@app.post("/api/eval/full", response_model=FullEvalResponse)
+async def run_full_evaluation(request: FullEvalRequest):
+    """Run the comprehensive evaluation suite with retrieval, citation, and faithfulness metrics."""
+    if not _generator or not _retriever:
+        raise HTTPException(status_code=503, detail="Pipeline still loading")
+
+    from rag_bench.eval.judge import JudgeLLM
+    from rag_bench.eval.runner import EvalRunner
+
+    # Create judge from existing LLM backend (skip if retrieval_only)
+    judge = None
+    if not request.retrieval_only:
+        judge = JudgeLLM(_generator.llm)
+
+    runner = EvalRunner(
+        retriever=_retriever,
+        generator=_generator,
+        judge=judge,
+    )
+
+    report = runner.run_all(
+        filter_topic=request.topic,
+        filter_type=request.query_type,
+        filter_difficulty=request.difficulty,
+        retrieval_only=request.retrieval_only,
+    )
+
+    # Convert to response schema
+    results = []
+    for r in report.results:
+        results.append(
+            FullEvalResult(
+                id=r.id,
+                question=r.question,
+                query_type=r.query_type,
+                topic=r.topic,
+                difficulty=r.difficulty,
+                latency_ms=r.latency_ms,
+                answer_preview=r.answer_preview,
+                error=r.error,
+            )
+        )
+
+    return FullEvalResponse(
+        summary=EvalSummary(**report.summary) if report.summary else EvalSummary(),
+        by_topic=report.by_topic,
+        by_query_type=report.by_query_type,
+        by_difficulty=report.by_difficulty,
+        results=results,
+        metadata=report.metadata,
     )
 
 

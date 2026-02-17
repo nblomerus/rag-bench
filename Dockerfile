@@ -17,8 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 
 # Install Python dependencies into a virtual environment
+# Install CUDA-enabled torch first so sentence-transformers uses GPU
 RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --upgrade pip && \
+    /opt/venv/bin/pip install --no-cache-dir torch==2.10.0 --index-url https://download.pytorch.org/whl/cu128 && \
     /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # Stage 2: Runtime
