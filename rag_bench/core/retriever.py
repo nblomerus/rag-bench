@@ -331,8 +331,8 @@ class CrossEncoderReranker:
         try:
             self.model = CrossEncoder(self.model_name, device=device)
             logger.info(f"Loaded cross-encoder: {self.model_name} (on {device})")
-        except RuntimeError as e:
-            if "out of memory" in str(e).lower() and device == "cuda":
+        except Exception as e:
+            if isinstance(e, RuntimeError) and "out of memory" in str(e).lower() and device == "cuda":
                 logger.warning("GPU OOM loading cross-encoder, falling back to CPU")
                 self.model = CrossEncoder(self.model_name, device="cpu")
                 logger.info(f"Loaded cross-encoder: {self.model_name} (on CPU, OOM fallback)")

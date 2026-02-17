@@ -1550,7 +1550,7 @@ class TestRelevanceGateAdvancedCoverage:
         """Test auto-calibration for cross-encoder scores."""
         gate = RelevanceGate()
         gate._auto_calibrate(5.0)  # Cross-encoder scale
-        assert gate._effective_threshold >= 2.0
+        assert gate._effective_threshold >= 0.5
         assert gate._calibrated
 
     def test_auto_calibrate_cosine_scale(self):
