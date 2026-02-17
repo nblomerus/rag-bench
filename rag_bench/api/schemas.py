@@ -54,6 +54,7 @@ class QueryResponse(BaseModel):
 class StatsResponse(BaseModel):
     total_chunks: int
     total_papers: int
+    papers_counting: bool
     collection_name: str
     embedding_model: str
     llm_backend: str

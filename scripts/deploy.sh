@@ -3,6 +3,7 @@
 # Usage: ./deploy.sh
 
 set -e
+trap 'docker rm -f ragbench-nginx-bootstrap 2>/dev/null || true' EXIT
 
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║  RAG-Bench Production Deployment                           ║"
@@ -71,7 +72,7 @@ if [ ! -d ".git" ]; then
     git clone https://github.com/nblomerus/rag-bench.git .
 else
     echo "Updating repository..."
-    git pull origin main
+    git pull origin master
 fi
 
 echo -e "${GREEN}✓ Repository synced${NC}"
@@ -112,7 +113,17 @@ echo -e "${GREEN}✓ Volumes created${NC}"
 # 6. Start services
 # ════════════════════════════════════════════════════════════════
 
-echo -e "\n${YELLOW}[6/6]${NC} Starting services..."
+echo -e "\n${YELLOW}[6/7]${NC} Tearing down any existing containers..."
+
+docker compose -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+
+echo -e "${GREEN}✓ Clean slate${NC}"
+
+# ════════════════════════════════════════════════════════════════
+# 7. Build and start
+# ════════════════════════════════════════════════════════════════
+
+echo -e "\n${YELLOW}[7/7]${NC} Building and starting services..."
 
 # Load environment
 export $(cat .env.prod | grep -v '^#' | xargs)
@@ -121,13 +132,41 @@ export $(cat .env.prod | grep -v '^#' | xargs)
 echo "Building Docker images..."
 docker compose -f docker-compose.prod.yml build
 
-# Start services
-echo "Starting services..."
+# Use renewal config as the cert-exists signal (world-readable, unlike live/ which is root 700)
+CERT_RENEWAL="$DEPLOYMENT_PATH/certbot/conf/renewal/$DOMAIN.conf"
+
+if [ ! -f "$CERT_RENEWAL" ]; then
+    echo -e "\n${YELLOW}SSL certificates not found. Running initial cert bootstrap...${NC}"
+
+    # Start all services except nginx (it requires certs to start)
+    docker compose -f docker-compose.prod.yml up -d api frontend ollama certbot
+
+    echo "Waiting for services to initialize..."
+    sleep 15
+
+    echo "Requesting Let's Encrypt certificate for $DOMAIN (standalone mode)..."
+
+    # set -e ensures we exit if certbot fails
+    docker run --rm \
+        -p 80:80 \
+        -v "$DEPLOYMENT_PATH/certbot/conf:/etc/letsencrypt" \
+        certbot/certbot certonly \
+        --standalone \
+        --email "$DOMAIN_EMAIL" \
+        --agree-tos \
+        --no-eff-email \
+        -d "$DOMAIN" \
+        -d "www.$DOMAIN"
+
+    echo -e "${GREEN}✓ Certificate issued${NC}"
+fi
+
+# Start (or restart) the full stack
+echo "Starting full stack..."
 docker compose -f docker-compose.prod.yml up -d
 
-# Wait for services to start
 echo "Waiting for services to initialize..."
-sleep 10
+sleep 15
 
 # Check status
 echo "Checking service status..."
@@ -154,6 +193,6 @@ echo "- Environment: $DEPLOYMENT_PATH/.env.prod"
 echo "- Nginx config: $DEPLOYMENT_PATH/nginx/"
 echo "- Data: $DEPLOYMENT_PATH/chroma_db/, $DEPLOYMENT_PATH/data/"
 echo ""
-echo "For SSL certificates, the certbot service will renew them automatically."
+echo "For SSL renewals, the certbot service handles them automatically."
 echo "Check certbot logs: docker compose -f docker-compose.prod.yml logs certbot"
 echo ""
