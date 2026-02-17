@@ -85,21 +85,8 @@ echo -e "\n${YELLOW}[4/6]${NC} Setting up environment configuration..."
 if [ ! -f ".env.prod" ]; then
     echo "Creating .env.prod..."
     cp .env.example .env.prod
-    
-    echo ""
-    echo -e "${YELLOW}⚠ Please edit .env.prod with your settings:${NC}"
-    echo "  - RAG_LLM_MODEL: Choose your LLM model"
-    echo "  - DOMAIN: ${DOMAIN}"
-    echo "  - LETSENCRYPT_EMAIL: ${DOMAIN_EMAIL}"
-    echo ""
-    
-    if command -v nano &> /dev/null; then
-        read -p "Edit .env.prod now? (y/n) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            nano .env.prod
-        fi
-    fi
+    echo -e "${GREEN}✓ Created .env.prod from .env.example${NC}"
+    echo -e "${YELLOW}  Edit .env.prod to override defaults if needed${NC}"
 fi
 
 echo -e "${GREEN}✓ Environment configured${NC}"
@@ -132,11 +119,11 @@ export $(cat .env.prod | grep -v '^#' | xargs)
 
 # Build images
 echo "Building Docker images..."
-docker compose -f docker compose.prod.yml build
+docker compose -f docker-compose.prod.yml build
 
 # Start services
 echo "Starting services..."
-docker compose -f docker compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 
 # Wait for services to start
 echo "Waiting for services to initialize..."
@@ -144,7 +131,7 @@ sleep 10
 
 # Check status
 echo "Checking service status..."
-docker compose -f docker compose.prod.yml ps
+docker compose -f docker-compose.prod.yml ps
 
 # ════════════════════════════════════════════════════════════════
 # Summary
@@ -158,7 +145,7 @@ echo ""
 echo "Your RAG-Bench instance is starting up..."
 echo ""
 echo -e "${GREEN}Next steps:${NC}"
-echo "1. Monitor logs: docker compose -f docker compose.prod.yml logs -f"
+echo "1. Monitor logs: docker compose -f docker-compose.prod.yml logs -f"
 echo "2. Check health: curl https://${DOMAIN}/health"
 echo "3. Access UI: https://${DOMAIN}"
 echo ""
@@ -168,5 +155,5 @@ echo "- Nginx config: $DEPLOYMENT_PATH/nginx/"
 echo "- Data: $DEPLOYMENT_PATH/chroma_db/, $DEPLOYMENT_PATH/data/"
 echo ""
 echo "For SSL certificates, the certbot service will renew them automatically."
-echo "Check certbot logs: docker compose -f docker compose.prod.yml logs certbot"
+echo "Check certbot logs: docker compose -f docker-compose.prod.yml logs certbot"
 echo ""

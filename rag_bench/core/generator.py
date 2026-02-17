@@ -531,7 +531,7 @@ class RelevanceGate:
         """
         Auto-detect the scoring scale and set an effective threshold.
 
-        Cross-encoder scores: roughly -10 to +10, good matches > 5
+        Cross-encoder scores: roughly -10 to +10, good matches typically 0.5+
         Cosine similarity: 0 to 1, good matches > 0.5
         BM25/RRF: 0 to ~0.02, varied
         """
@@ -539,7 +539,8 @@ class RelevanceGate:
             return
 
         if top_score > 2.0:
-            self._effective_threshold = max(self.min_top_score, 2.0)
+            # Cross-encoder scale: scores can range widely, 0.5+ indicates relevance
+            self._effective_threshold = max(self.min_top_score, 0.5)
             logger.debug(f"Auto-calibrated to cross-encoder scale: threshold={self._effective_threshold}")
         elif top_score > 0.05:
             self._effective_threshold = max(self.min_top_score, 0.3)

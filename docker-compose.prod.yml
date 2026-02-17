@@ -8,12 +8,14 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ragbench-api-prod
+    runtime: nvidia
     environment:
       - RAG_LLM_BACKEND=${RAG_LLM_BACKEND:-ollama}
       - RAG_LLM_MODEL=${RAG_LLM_MODEL:-mistral:7b-instruct-q4_K_M}
       - RAG_LLM_BASE_URL=${RAG_LLM_BASE_URL:-http://ollama:11434}
       - RAG_API_PORT=${RAG_API_PORT:-8000}
       - PYTHONUNBUFFERED=1
+      - NVIDIA_VISIBLE_DEVICES=all
     volumes:
       - ./chroma_db:/app/chroma_db
       - ./data:/app/data
@@ -87,6 +89,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: ragbench-ollama-prod
+    runtime: nvidia
     volumes:
       - ollama-models:/root/.ollama
     networks:
@@ -94,6 +97,7 @@ services:
     restart: always
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
+      - NVIDIA_VISIBLE_DEVICES=all
     expose:
       - "11434"
 
