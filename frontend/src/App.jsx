@@ -351,18 +351,26 @@ function StatsPanel({ stats, onClose }) {
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {[
-          { label: 'Papers', value: stats.total_papers, icon: BookOpen },
+          {
+            label: 'Papers',
+            value: stats.total_papers?.toLocaleString(),
+            icon: BookOpen,
+            counting: stats.papers_counting,
+          },
           { label: 'Chunks', value: stats.total_chunks?.toLocaleString(), icon: Database },
           { label: 'Embedding', value: stats.embedding_model?.split('/')[1], icon: Cpu },
           { label: 'LLM Backend', value: stats.llm_backend, icon: Activity },
           { label: 'Model', value: stats.llm_model?.split(':')[0], icon: Zap },
           { label: 'Collection', value: stats.collection_name, icon: Search },
-        ].map(({ label, value, icon: Icon }) => (
+        ].map(({ label, value, icon: Icon, counting }) => (
           <div key={label} className="bg-gray-900 rounded-lg p-2">
             <div className="flex items-center gap-1.5 text-gray-500 text-xs mb-1">
               <Icon size={12} /> {label}
             </div>
-            <p className="text-sm font-medium text-gray-200">{value}</p>
+            <p className="text-sm font-medium text-gray-200 flex items-center gap-1">
+              {value}
+              {counting && <span className="text-xs text-gray-500 font-normal">counting…</span>}
+            </p>
           </div>
         ))}
       </div>

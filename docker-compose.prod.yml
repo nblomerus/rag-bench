@@ -68,7 +68,7 @@ services:
       - api
     restart: always
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -98,6 +98,13 @@ services:
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
       - NVIDIA_VISIBLE_DEVICES=all
+    entrypoint: >
+      /bin/sh -c "
+        ollama serve &
+        until ollama list 2>/dev/null; do sleep 1; done &&
+        ollama pull ${RAG_LLM_MODEL:-mistral:7b-instruct-q4_K_M} &&
+        wait
+      "
     expose:
       - "11434"
 

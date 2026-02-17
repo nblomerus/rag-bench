@@ -84,13 +84,45 @@ _generator: RAGGenerator | None = None
 _citation_booster: CitationBooster | None = None
 _llm_backend_name: str = ""
 _llm_model_name: str = ""
-_total_papers: int = 0  # Computed once at startup
+_total_papers: int = 0  # Updated by background task
+_papers_counting: bool = True  # False once the full scan completes
+
+
+async def _count_papers_background():
+    """Scan all ChromaDB chunks to get the exact unique paper count. Runs after startup."""
+    global _total_papers, _papers_counting
+    if not _retriever:
+        return
+
+    collection = _retriever.collection
+    total_chunks = collection.count()
+    batch_size = 50_000
+    offset = 0
+    unique_papers: set[str] = set()
+
+    while offset < total_chunks:
+        batch = await asyncio.to_thread(
+            collection.get,
+            limit=batch_size,
+            offset=offset,
+            include=["metadatas"],
+        )
+        for meta in batch.get("metadatas", []):
+            if meta:
+                pid = meta.get("paper_id") or meta.get("arxiv_id") or meta.get("doc_id") or meta.get("title", "")
+                if pid:
+                    unique_papers.add(pid)
+        offset += batch_size
+        _total_papers = len(unique_papers)
+
+    _papers_counting = False
+    logger.info(f"Paper count complete: {_total_papers:,} unique papers across {total_chunks:,} chunks")
 
 
 @asynccontextmanager
 async def lifespan(app):
     """Load the RAG pipeline at startup, clean up on shutdown."""
-    global _retriever, _generator, _citation_booster, _llm_backend_name, _llm_model_name, _total_papers
+    global _retriever, _generator, _citation_booster, _llm_backend_name, _llm_model_name, _total_papers, _papers_counting
 
     logger.info("Loading RAG pipeline...")
     start = time.time()
@@ -123,27 +155,9 @@ async def lifespan(app):
         citation_booster=_citation_booster,
     )
 
-    # Count unique papers using sampling (much faster than scanning all chunks)
-    logger.info("Computing corpus statistics...")
     total_chunks = _retriever.collection.count()
-
-    # Sample 10,000 chunks to estimate paper count
-    sample_size = min(10000, total_chunks)
-    sample = _retriever.collection.get(
-        limit=sample_size,
-        include=["metadatas"],
-    )
-
-    sampled_papers = set()
-    for meta in sample.get("metadatas", []):
-        if meta:
-            pid = meta.get("paper_id") or meta.get("arxiv_id") or meta.get("title", "")
-            if pid:
-                sampled_papers.add(pid)
-
-    # Use sampled count as approximation
-    _total_papers = len(sampled_papers)
-    logger.info(f"Corpus: ~{_total_papers} papers (sampled), {total_chunks} chunks")
+    logger.info(f"Corpus: {total_chunks:,} chunks — starting background paper count")
+    asyncio.create_task(_count_papers_background())
 
     elapsed = time.time() - start
     logger.info(f"RAG pipeline loaded in {elapsed:.1f}s")
@@ -585,6 +599,7 @@ async def get_stats():
     return StatsResponse(
         total_chunks=_retriever.collection.count(),
         total_papers=_total_papers,
+        papers_counting=_papers_counting,
         collection_name=COLLECTION_NAME,
         embedding_model=EMBEDDING_MODEL,
         llm_backend=_llm_backend_name,

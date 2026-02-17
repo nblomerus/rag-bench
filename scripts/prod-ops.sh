@@ -4,7 +4,15 @@
 
 set -e
 
+DEPLOYMENT_PATH="${RAGBENCH_DEPLOY_PATH:-/opt/ragbench}"
 COMPOSE_FILE="docker-compose.prod.yml"
+
+# Always run compose against the production deployment directory so the
+# project name and volume paths resolve correctly regardless of CWD.
+dc() {
+    docker compose --project-directory "$DEPLOYMENT_PATH" \
+        -f "$DEPLOYMENT_PATH/$COMPOSE_FILE" "$@"
+}
 
 show_help() {
     echo "RAG-Bench Production Operations"
@@ -44,9 +52,9 @@ show_help() {
 }
 
 check_running() {
-    if ! docker compose -f "$COMPOSE_FILE" ps | grep -q "Up"; then
+    if ! dc ps | grep -q "Up"; then
         echo "❌ Production is not running!"
-        echo "Start with: docker compose -f $COMPOSE_FILE up -d"
+        echo "Start with: make deploy"
         exit 1
     fi
 }
@@ -60,14 +68,14 @@ cmd_query() {
     
     check_running
     echo "🔍 Querying production..."
-    docker compose -f "$COMPOSE_FILE" exec -T api \
+    dc exec -T api \
         python -m rag_bench.cli.query "$question"
 }
 
 cmd_ingest() {
     check_running
     echo "📥 Ingesting papers into production ChromaDB..."
-    docker compose -f "$COMPOSE_FILE" exec api \
+    dc exec api \
         python -m rag_bench.cli.pipeline --ingest
     echo "✅ Ingestion complete"
 }
@@ -76,14 +84,14 @@ cmd_shell() {
     check_running
     echo "🐚 Opening shell in production API container..."
     echo "Type 'exit' to return"
-    docker compose -f "$COMPOSE_FILE" exec api bash
+    dc exec api bash
 }
 
 cmd_python() {
     check_running
     echo "🐍 Opening Python REPL in production..."
     echo "Try: from rag_bench.core.retriever import Retriever"
-    docker compose -f "$COMPOSE_FILE" exec api python
+    dc exec api python
 }
 
 cmd_add_pdf() {
@@ -96,7 +104,7 @@ cmd_add_pdf() {
     
     check_running
     
-    local container_id=$(docker compose -f "$COMPOSE_FILE" ps -q api)
+    local container_id=$(dc ps -q api)
     local filename=$(basename "$pdf_file")
     
     echo "📄 Copying $filename to production..."
@@ -104,7 +112,7 @@ cmd_add_pdf() {
     docker cp "$pdf_file" "$container_id:/app/data/pdfs/$filename"
     
     echo "📥 Ingesting..."
-    docker compose -f "$COMPOSE_FILE" exec -T api \
+    dc exec -T api \
         python -m rag_bench.cli.pipeline --ingest
     
     echo "✅ $filename added and ingested"
@@ -112,7 +120,7 @@ cmd_add_pdf() {
 
 cmd_logs() {
     check_running
-    docker compose -f "$COMPOSE_FILE" logs -f --tail=100
+    dc logs -f --tail=100
 }
 
 cmd_status() {
@@ -120,13 +128,13 @@ cmd_status() {
     echo "===================="
     echo ""
     echo "Containers:"
-    docker compose -f "$COMPOSE_FILE" ps
+    dc ps
     echo ""
     echo "Resource Usage:"
-    docker stats --no-stream $(docker compose -f "$COMPOSE_FILE" ps -q)
+    docker stats --no-stream $(dc ps -q)
     echo ""
     echo "ChromaDB Size:"
-    du -sh chroma_db 2>/dev/null || echo "No ChromaDB data"
+    du -sh "$DEPLOYMENT_PATH/chroma_db" 2>/dev/null || echo "No ChromaDB data"
     echo ""
     echo "Health Check:"
     curl -s http://localhost/api/health || echo "API not responding"
@@ -140,12 +148,12 @@ cmd_exec() {
     fi
     
     check_running
-    docker compose -f "$COMPOSE_FILE" exec api $command
+    dc exec api $command
 }
 
 cmd_start() {
     echo "🚀 Starting production..."
-    docker compose -f "$COMPOSE_FILE" up -d
+    dc up -d
     sleep 5
     echo ""
     echo "✅ Production started"
@@ -155,13 +163,21 @@ cmd_start() {
 
 cmd_stop() {
     echo "⏹️  Stopping production..."
-    docker compose -f "$COMPOSE_FILE" down
+    dc down
+    # Stop any containers that were started outside this compose project context
+    # (e.g. via --no-deps or a different working directory)
+    for name in ragbench-api-prod ragbench-frontend-prod ragbench-nginx ragbench-ollama-prod ragbench-certbot; do
+        if docker inspect "$name" &>/dev/null; then
+            echo "Stopping straggler: $name"
+            docker stop "$name" 2>/dev/null && docker rm "$name" 2>/dev/null || true
+        fi
+    done
     echo "✅ Production stopped (resources freed for dev)"
 }
 
 cmd_restart() {
     echo "🔄 Restarting production..."
-    docker compose -f "$COMPOSE_FILE" restart
+    dc restart
     sleep 5
     echo "✅ Production restarted"
 }
@@ -169,11 +185,11 @@ cmd_restart() {
 cmd_rebuild() {
     echo "🔨 Rebuilding production (downtime: ~2 minutes)..."
     echo ""
-    docker compose -f "$COMPOSE_FILE" down
+    dc down
     echo "Building images..."
-    docker compose -f "$COMPOSE_FILE" build
+    dc build
     echo "Starting services..."
-    docker compose -f "$COMPOSE_FILE" up -d
+    dc up -d
     sleep 10
     echo ""
     echo "✅ Production rebuilt and running"
@@ -185,7 +201,7 @@ cmd_rebuild() {
 cmd_stats() {
     check_running
     echo "📊 Live Resource Usage (Ctrl+C to exit)"
-    docker stats $(docker compose -f "$COMPOSE_FILE" ps -q)
+    docker stats $(dc ps -q)
 }
 
 # Main command router
