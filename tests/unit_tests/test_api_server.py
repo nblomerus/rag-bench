@@ -6,6 +6,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from rag_bench.api.server import (
+    _compute_retrieval_confidence,
+    _compute_score_spread,
+    _compute_source_diversity,
     _extract_arxiv_id,
     _format_sources,
     app,
@@ -941,3 +944,139 @@ class TestApiServerErrorHandling:
             assert response.status_code == 200
             data = response.json()
             assert data["total_chunks"] == 42
+
+
+class TestComputeHelpers:
+    """Direct tests for private compute helper functions."""
+
+    def test_retrieval_confidence_high_cross_encoder(self):
+        results = [{"score": 7.5}, {"score": 7.0}, {"score": 6.8}]
+        assert _compute_retrieval_confidence(results) == "high"
+
+    def test_retrieval_confidence_medium_cross_encoder(self):
+        results = [{"score": 4.0}, {"score": 2.5}]
+        assert _compute_retrieval_confidence(results) == "medium"
+
+    def test_retrieval_confidence_medium_cross_encoder_above_half(self):
+        results = [{"score": 2.5}]
+        # top_score=2.5 > 2.0, not > 6.0, not > 3.0, but above_half=1 >= 1 → medium
+        assert _compute_retrieval_confidence(results) == "medium"
+
+    def test_retrieval_confidence_high_cosine(self):
+        results = [{"score": 0.8}, {"score": 0.75}, {"score": 0.72}]
+        assert _compute_retrieval_confidence(results) == "high"
+
+    def test_retrieval_confidence_medium_cosine(self):
+        results = [{"score": 0.6}]
+        assert _compute_retrieval_confidence(results) == "medium"
+
+    def test_retrieval_confidence_medium_cosine_low_score(self):
+        results = [{"score": 0.3}]
+        # top=0.3, above_half=1 >= 1 → medium
+        assert _compute_retrieval_confidence(results) == "medium"
+
+    def test_score_spread_multiple_values(self):
+        results = [{"score": 0.9}, {"score": 0.7}, {"score": 0.5}]
+        spread = _compute_score_spread(results)
+        assert spread["min"] == 0.5
+        assert spread["max"] == 0.9
+        assert spread["mean"] == pytest.approx(0.7, abs=0.001)
+        assert "std" in spread
+
+    def test_score_spread_single_value(self):
+        results = [{"score": 0.8}]
+        spread = _compute_score_spread(results)
+        assert spread["min"] == 0.8
+        assert spread["max"] == 0.8
+        assert spread["std"] == 0.0
+
+    def test_source_diversity_with_metadata(self):
+        results = [
+            {"metadata": {"paper_id": "1706.03762", "section": "abstract"}},
+            {"metadata": {"paper_id": "1706.03762", "section": "methods"}},
+            {"metadata": {"paper_id": "1810.04805", "section": "abstract"}},
+        ]
+        diversity = _compute_source_diversity(results)
+        assert diversity["unique_papers"] == 2
+        assert diversity["unique_sections"] == 2
+        assert "1706.03762" in diversity["papers"]
+
+    def test_source_diversity_empty_metadata(self):
+        results = [{"metadata": {}}]
+        diversity = _compute_source_diversity(results)
+        assert diversity["unique_papers"] == 0
+        assert diversity["unique_sections"] == 0
+
+
+class TestFullEvalEndpoint:
+    """Tests for the /api/eval/full endpoint."""
+
+    def test_full_eval_pipeline_not_loaded(self, client):
+        """Full eval returns 503 when pipeline not loaded."""
+        with (
+            patch("rag_bench.api.server._generator", None),
+            patch("rag_bench.api.server._retriever", None),
+        ):
+            response = client.post(
+                "/api/eval/full",
+                json={"retrieval_only": True},
+            )
+            assert response.status_code == 503
+
+    def test_full_eval_with_mock_pipeline(self, client):
+        """Full eval runs with mocked pipeline."""
+        from rag_bench.eval.runner import EvalReport, SingleEvalResult
+
+        mock_report = EvalReport(
+            results=[
+                SingleEvalResult(
+                    id="test1",
+                    question="What is attention?",
+                    query_type="definition",
+                    topic="transformers",
+                    difficulty="easy",
+                    retrieval={"mrr": 1.0},
+                    deflection={"expected": False, "actual": False, "correct": True},
+                )
+            ],
+            summary={
+                "total_queries": 1,
+                "retrieval_mrr": 1.0,
+                "retrieval_precision_at_5": 0.5,
+                "retrieval_recall_at_5": 1.0,
+                "retrieval_ndcg_at_5": 1.0,
+                "retrieval_hit_rate": 1.0,
+                "avg_faithfulness": 0.0,
+                "avg_relevance": 0.0,
+                "avg_citation_precision": 0.0,
+                "avg_citation_recall": 0.0,
+                "avg_citation_density": 0.0,
+                "avg_completeness": 0.0,
+                "deflection_accuracy": 1.0,
+                "avg_latency_ms": 100,
+            },
+            by_topic={"transformers": {"total_queries": 1, "retrieval_mrr": 1.0}},
+            by_query_type={"definition": {"total_queries": 1}},
+            by_difficulty={"easy": {"total_queries": 1}},
+            metadata={"timestamp": "2026-02-17 10:00:00", "total_queries": 1},
+        )
+
+        mock_runner = MagicMock()
+        mock_runner.run_all.return_value = mock_report
+
+        mock_generator = MagicMock()
+        mock_generator.llm = MagicMock()
+
+        with (
+            patch("rag_bench.api.server._generator", mock_generator),
+            patch("rag_bench.api.server._retriever", MagicMock()),
+            patch("rag_bench.eval.runner.EvalRunner") as mock_runner_class,
+        ):
+            mock_runner_class.return_value = mock_runner
+            response = client.post(
+                "/api/eval/full",
+                json={"retrieval_only": True},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["summary"]["total_queries"] == 1

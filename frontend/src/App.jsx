@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Send, Loader2, BookOpen, AlertTriangle, ChevronDown, ChevronUp,
-  Activity, Database, Cpu, BarChart3, Zap, Search, XCircle
+  Activity, Database, Cpu, BarChart3, Zap, Search, XCircle, Info, Clock
 } from 'lucide-react'
 
 const API_BASE = '/api'
@@ -84,9 +84,148 @@ function SourceCard({ source, index, isExpanded, onToggle }) {
   )
 }
 
+// ─── Quality Badges (inline, always visible) ────────────────────
+function QualityBadges({ quality }) {
+  if (!quality) return null
+
+  const confColor = quality.retrieval_confidence === 'high' ? 'bg-green-900/30 text-green-400 border-green-800' :
+                    quality.retrieval_confidence === 'medium' ? 'bg-yellow-900/30 text-yellow-400 border-yellow-800' :
+                    'bg-red-900/30 text-red-400 border-red-800'
+  const confDot = quality.retrieval_confidence === 'high' ? 'bg-green-400' :
+                  quality.retrieval_confidence === 'medium' ? 'bg-yellow-400' : 'bg-red-400'
+
+  const covColor = quality.citation_coverage > 0.8 ? 'bg-green-900/30 text-green-400 border-green-800' :
+                   quality.citation_coverage > 0.5 ? 'bg-yellow-900/30 text-yellow-400 border-yellow-800' :
+                   'bg-red-900/30 text-red-400 border-red-800'
+
+  const unsupColor = quality.unsupported_claims === 0 ? 'bg-green-900/30 text-green-400 border-green-800' :
+                     quality.unsupported_claims <= 2 ? 'bg-yellow-900/30 text-yellow-400 border-yellow-800' :
+                     'bg-red-900/30 text-red-400 border-red-800'
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <span className={`quality-badge border ${confColor}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${confDot}`}></span>
+        {quality.retrieval_confidence === 'unknown' ? 'N/A' :
+         quality.retrieval_confidence.charAt(0).toUpperCase() + quality.retrieval_confidence.slice(1)}
+      </span>
+      <span className={`quality-badge border ${covColor}`}>
+        {quality.sources_cited}/{quality.sources_provided} cited
+      </span>
+      <span className={`quality-badge border ${unsupColor}`}>
+        {quality.unsupported_claims} unsupported
+      </span>
+    </div>
+  )
+}
+
+// ─── Score Bar (mini visualization) ─────────────────────────────
+function ScoreBar({ value, max, color }) {
+  const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0
+  const barColor = color === 'green' ? 'bg-green-400' :
+                   color === 'yellow' ? 'bg-yellow-400' : 'bg-red-400'
+  return (
+    <div className="score-bar w-24">
+      <div className={`score-bar-fill ${barColor}`} style={{ width: `${pct}%` }}></div>
+    </div>
+  )
+}
+
+// ─── Quality Panel (expandable detail) ──────────────────────────
+function QualityPanel({ quality }) {
+  if (!quality) return null
+
+  const spread = quality.score_spread || {}
+  const diversity = quality.source_diversity || {}
+  const perSource = quality.per_source_cited || []
+  const maxScore = spread.max || 1
+
+  return (
+    <div className="quality-panel bg-gray-800/50 border border-gray-700 rounded-xl p-3 mt-2">
+      {/* Retrieval */}
+      <div className="mb-3">
+        <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Retrieval</h4>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <span className="text-gray-500">Confidence:</span>{' '}
+            <span className={
+              quality.retrieval_confidence === 'high' ? 'text-green-400' :
+              quality.retrieval_confidence === 'medium' ? 'text-yellow-400' : 'text-red-400'
+            }>
+              {quality.retrieval_confidence}
+            </span>
+            <span className="text-gray-600 ml-1">(top: {quality.top_retrieval_score?.toFixed(2)})</span>
+          </div>
+          <div>
+            <span className="text-gray-500">Diversity:</span>{' '}
+            <span className="text-gray-300">{diversity.unique_papers || 0} papers, {diversity.unique_sections || 0} sections</span>
+          </div>
+        </div>
+        {/* Score distribution */}
+        {perSource.length > 0 && (
+          <div className="mt-2 space-y-1">
+            {perSource.map((s, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs">
+                <span className="text-gray-500 w-4 text-right">{s.source_number}</span>
+                <ScoreBar
+                  value={s.score}
+                  max={maxScore}
+                  color={s.score >= maxScore * 0.7 ? 'green' : s.score >= maxScore * 0.4 ? 'yellow' : 'red'}
+                />
+                <span className="text-gray-500 font-mono w-10">{s.score?.toFixed(1)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Citations */}
+      <div className="mb-3">
+        <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Citations</h4>
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          <div>
+            <span className="text-gray-500">Coverage:</span>{' '}
+            <span className="text-gray-300">{(quality.citation_coverage * 100).toFixed(0)}%</span>
+          </div>
+          <div>
+            <span className="text-gray-500">Density:</span>{' '}
+            <span className="text-gray-300">{quality.citation_density?.toFixed(1)}/sentence</span>
+          </div>
+          <div>
+            <span className="text-gray-500">Unsupported:</span>{' '}
+            <span className={quality.unsupported_claims === 0 ? 'text-green-400' : 'text-yellow-400'}>
+              {quality.unsupported_claims}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Per-source verification */}
+      {perSource.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Source Verification</h4>
+          <div className="space-y-1">
+            {perSource.map((s, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs">
+                <span className="text-gray-500 w-4 text-right">{s.source_number}</span>
+                <span className="text-gray-400 truncate flex-1" title={s.title}>{s.title}</span>
+                <span className="text-gray-500 font-mono w-10">{s.score?.toFixed(2)}</span>
+                <span className={s.cited ? 'text-green-400' : 'text-gray-600'}>
+                  {s.cited ? `✓ ${s.citation_count}x` : '✗'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Message Bubble ──────────────────────────────────────────────
 function Message({ message }) {
   const [expandedSources, setExpandedSources] = useState({})
+  const [showQuality, setShowQuality] = useState(false)
 
   const toggleSource = (idx) => {
     setExpandedSources(prev => ({ ...prev, [idx]: !prev[idx] }))
@@ -104,6 +243,7 @@ function Message({ message }) {
 
   // Assistant message
   const { data } = message
+  const quality = data?.quality
 
   return (
     <div className="flex justify-start mb-6">
@@ -125,22 +265,43 @@ function Message({ message }) {
 
           {/* Metadata bar */}
           {data && (
-            <div className="flex items-center gap-3 mt-3 pt-2 border-t border-gray-700 text-xs text-gray-500">
-              <span className="flex items-center gap-1">
-                <Zap size={12} />
-                {data.latency_ms?.toFixed(0)}ms
-              </span>
-              <span className="flex items-center gap-1">
-                <Cpu size={12} />
-                {data.backend}/{data.model?.split(':')[0]}
-              </span>
-              <span className="flex items-center gap-1">
-                <Search size={12} />
-                {data.sources?.length || 0} sources
-              </span>
+            <div className="mt-3 pt-2 border-t border-gray-700 space-y-1.5">
+              <div className="flex items-center gap-3 text-xs text-gray-500">
+                <span className="flex items-center gap-1">
+                  <Zap size={12} />
+                  {data.latency_ms?.toFixed(0)}ms
+                </span>
+                <span className="flex items-center gap-1">
+                  <Cpu size={12} />
+                  {data.backend}/{data.model?.split(':')[0]}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Search size={12} />
+                  {data.sources?.length || 0} sources
+                </span>
+              </div>
+
+              {/* Quality badges + toggle */}
+              {quality && quality.retrieval_confidence !== 'unknown' && !data.deflected && (
+                <div className="flex items-center gap-2">
+                  <QualityBadges quality={quality} />
+                  <button
+                    onClick={() => setShowQuality(!showQuality)}
+                    className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-0.5 ml-auto"
+                  >
+                    {showQuality ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    <span>Details</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
+
+        {/* Quality panel (collapsible) */}
+        {showQuality && quality && (
+          <QualityPanel quality={quality} />
+        )}
 
         {/* Source cards */}
         {data?.sources?.length > 0 && !data.deflected && (
@@ -202,6 +363,85 @@ function StatsPanel({ stats, onClose }) {
               <Icon size={12} /> {label}
             </div>
             <p className="text-sm font-medium text-gray-200">{value}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Performance Notice ───────────────────────────────────────────
+function PerformanceNotice({ onDismiss }) {
+  return (
+    <div className="flex items-start gap-3 bg-amber-900/20 border border-amber-700/40 rounded-xl px-4 py-3 mb-4 text-sm">
+      <Clock size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
+      <div className="flex-1 text-amber-300/90">
+        <span className="font-semibold text-amber-300">Heads up — responses may be slow.</span>
+        {' '}This instance runs on a single GPU, so first responses can take 10–30 s while the model loads,
+        and subsequent queries may take several seconds depending on answer length.
+      </div>
+      <button onClick={onDismiss} className="text-amber-600 hover:text-amber-400 flex-shrink-0 mt-0.5">
+        <XCircle size={15} />
+      </button>
+    </div>
+  )
+}
+
+// ─── Metrics Info Panel ───────────────────────────────────────────
+const METRICS_INFO = [
+  {
+    group: 'Retrieval',
+    items: [
+      { name: 'Retrieval Confidence', desc: 'Rated high / medium / low from the top chunk similarity score. High means the best matching passage is very close to your question; low means the corpus may not cover the topic well.' },
+      { name: 'Precision@K', desc: 'Fraction of the top-K retrieved chunks that come from a relevant paper. High precision → less noise in the sources shown.' },
+      { name: 'Recall@K', desc: 'Fraction of the known-relevant papers that appear in the top-K results. High recall → fewer important sources missed.' },
+      { name: 'MRR (Mean Reciprocal Rank)', desc: 'Reciprocal of the rank position of the first relevant result. MRR = 1.0 means the best source is ranked #1; 0.5 means it is #2, etc.' },
+      { name: 'NDCG@K', desc: 'Normalized Discounted Cumulative Gain. Rewards finding relevant papers at higher ranks. Ranges 0–1; 1.0 is perfect ordering.' },
+      { name: 'Hit Rate', desc: '1 if at least one expected source appears in the top-K results, else 0. A quick sanity check for whether retrieval found anything useful.' },
+    ],
+  },
+  {
+    group: 'Citation Quality',
+    items: [
+      { name: 'Citation Coverage', desc: 'Percentage of the retrieved sources that the model actually cited inline with a [Source N] reference. Higher is better — unused sources may indicate off-topic retrieval.' },
+      { name: 'Citation Density', desc: 'Average number of [Source N] citations per sentence. A healthy answer typically cites 0.5–2× per sentence.' },
+      { name: 'Unsupported Claims', desc: 'Sentences that contain numbers, named entities, or technical terms but no citation. Flagged as potentially unverified statements; lower is better.' },
+      { name: 'Citation Precision', desc: 'Of all cited sources, the fraction that map back to an expected or acceptable paper. Low precision may indicate the model cited irrelevant chunks.' },
+      { name: 'Citation Recall', desc: 'Of all expected papers, the fraction that appear cited in the answer. Low recall means key references were retrieved but not used.' },
+      { name: 'Hallucination Flags', desc: 'Checks for known canary terms that should not appear in answers. Any matches are surfaced as potential hallucinations.' },
+    ],
+  },
+  {
+    group: 'Completeness',
+    items: [
+      { name: 'Keyword Score', desc: 'Fraction of expected topic keywords found in the answer (case-insensitive). Used in the evaluation suite to verify the answer covers required concepts.' },
+    ],
+  },
+]
+
+function MetricsInfoPanel({ onClose }) {
+  return (
+    <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
+          <Info size={16} /> Metrics Reference
+        </h3>
+        <button onClick={onClose} className="text-gray-500 hover:text-gray-300">
+          <XCircle size={16} />
+        </button>
+      </div>
+      <div className="space-y-4 max-h-96 overflow-y-auto pr-1">
+        {METRICS_INFO.map(({ group, items }) => (
+          <div key={group}>
+            <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{group}</h4>
+            <div className="space-y-2">
+              {items.map(({ name, desc }) => (
+                <div key={name} className="bg-gray-900 rounded-lg px-3 py-2">
+                  <p className="text-xs font-medium text-gray-200 mb-0.5">{name}</p>
+                  <p className="text-xs text-gray-500 leading-relaxed">{desc}</p>
+                </div>
+              ))}
+            </div>
           </div>
         ))}
       </div>
@@ -324,10 +564,19 @@ export default function App() {
   const [stats, setStats] = useState(null)
   const [showStats, setShowStats] = useState(false)
   const [showEval, setShowEval] = useState(false)
+  const [showMetrics, setShowMetrics] = useState(false)
   const [evalResults, setEvalResults] = useState(null)
   const [evalRunning, setEvalRunning] = useState(false)
   const [error, setError] = useState(null)
   const [pipelineReady, setPipelineReady] = useState(false)
+  const [showPerfNotice, setShowPerfNotice] = useState(
+    () => localStorage.getItem('rag-perf-notice-dismissed') !== '1'
+  )
+
+  const dismissPerfNotice = () => {
+    localStorage.setItem('rag-perf-notice-dismissed', '1')
+    setShowPerfNotice(false)
+  }
 
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
@@ -456,6 +705,15 @@ export default function App() {
               <BarChart3 size={12} className="inline mr-1" />
               Eval
             </button>
+            <button
+              onClick={() => setShowMetrics(!showMetrics)}
+              className={`text-xs px-3 py-1.5 rounded-md transition ${
+                showMetrics ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <Info size={12} className="inline mr-1" />
+              Metrics
+            </button>
             <div className={`w-2 h-2 rounded-full ${pipelineReady ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`} />
           </div>
         </div>
@@ -464,6 +722,8 @@ export default function App() {
       {/* Main content */}
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-4 flex flex-col">
         {/* Panels */}
+        {showPerfNotice && <PerformanceNotice onDismiss={dismissPerfNotice} />}
+        {showMetrics && <MetricsInfoPanel onClose={() => setShowMetrics(false)} />}
         {showStats && <StatsPanel stats={stats} onClose={() => setShowStats(false)} />}
         {showEval && (
           <EvalPanel
