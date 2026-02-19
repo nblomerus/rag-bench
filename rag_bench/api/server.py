@@ -115,7 +115,7 @@ async def _count_papers_background():
 
     collection = _retriever.collection
     total_chunks = collection.count()
-    batch_size = 50_000
+    batch_size = 200_000
     offset = 0
     unique_papers: set[str] = set()
 
