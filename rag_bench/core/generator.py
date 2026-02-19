@@ -1354,10 +1354,10 @@ class RAGGenerator:
         top_score = results[0].get("score", 0.0)
 
         if top_score > 2.0:  # cross-encoder range
-            # Source must score at least 60% of the top score
-            min_ratio = 0.6
+            # Source must score at least 35% of the top score
+            min_ratio = 0.35
         elif top_score > 0.05:  # cosine range
-            min_ratio = 0.7
+            min_ratio = 0.5
         else:
             return results[:1]
 

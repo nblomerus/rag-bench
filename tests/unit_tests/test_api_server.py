@@ -6,6 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from rag_bench.api.server import (
+    _compute_faithfulness_heuristic,
+    _compute_per_source_cited,
     _compute_retrieval_confidence,
     _compute_score_spread,
     _compute_source_diversity,
@@ -1020,6 +1022,178 @@ class TestComputeHelpers:
         diversity = _compute_source_diversity(results)
         assert diversity["unique_papers"] == 0
         assert diversity["unique_sections"] == 0
+
+
+class TestPerSourceCited:
+    """Tests for _compute_per_source_cited with multiple citation patterns."""
+
+    def _make_result(self, paper_id="paper_1", title="Paper One", score=5.0):
+        return {"metadata": {"paper_id": paper_id, "title": title}, "score": score}
+
+    def test_single_inline_citation(self):
+        answer = "Transformers use attention [Source 1]."
+        results = [self._make_result()]
+        per = _compute_per_source_cited(answer, results)
+        assert len(per) == 1
+        assert per[0]["cited"] is True
+        assert per[0]["citation_count"] == 1
+        assert per[0]["footer_only"] is False
+
+    def test_multiple_sources_all_cited(self):
+        answer = "Attention [Source 1] and masking [Source 2] and pretraining [Source 3]."
+        results = [
+            self._make_result("p1", "Paper 1"),
+            self._make_result("p2", "Paper 2"),
+            self._make_result("p3", "Paper 3"),
+        ]
+        per = _compute_per_source_cited(answer, results)
+        assert all(s["cited"] for s in per)
+        assert all(s["citation_count"] == 1 for s in per)
+
+    def test_same_source_cited_multiple_times(self):
+        answer = "First point [Source 1]. Second point also [Source 1]. Third [Source 1]."
+        results = [self._make_result()]
+        per = _compute_per_source_cited(answer, results)
+        assert per[0]["cited"] is True
+        assert per[0]["citation_count"] == 3
+
+    def test_mixed_citation_counts(self):
+        """Source 1 cited 3x, Source 2 cited 1x, Source 3 not cited."""
+        answer = "Point A [Source 1]. Point B [Source 1]. Point C [Source 2]. Point D [Source 1]."
+        results = [
+            self._make_result("p1", "Paper 1"),
+            self._make_result("p2", "Paper 2"),
+            self._make_result("p3", "Paper 3"),
+        ]
+        per = _compute_per_source_cited(answer, results)
+        assert per[0]["citation_count"] == 3
+        assert per[1]["citation_count"] == 1
+        assert per[2]["cited"] is False
+        assert per[2]["citation_count"] == 0
+
+    def test_bare_bracket_citations(self):
+        """Model uses [1] instead of [Source 1]."""
+        answer = "Attention mechanism [1] and masking approach [2]."
+        results = [
+            self._make_result("p1", "Paper 1"),
+            self._make_result("p2", "Paper 2"),
+        ]
+        per = _compute_per_source_cited(answer, results)
+        assert per[0]["cited"] is True
+        assert per[1]["cited"] is True
+
+    def test_footer_only_citations(self):
+        """Model only lists sources in footer block."""
+        answer = "Transformers use attention mechanisms.\n\nSources:\n[Source 1] Paper One\n[Source 2] Paper Two"
+        results = [
+            self._make_result("p1", "Paper 1"),
+            self._make_result("p2", "Paper 2"),
+        ]
+        per = _compute_per_source_cited(answer, results)
+        assert per[0]["cited"] is True
+        assert per[0]["footer_only"] is True
+        assert per[1]["cited"] is True
+        assert per[1]["footer_only"] is True
+
+    def test_inline_plus_footer(self):
+        """Source 1 inline, Source 2 footer-only."""
+        answer = "Attention is important [Source 1].\n\nSources:\n[Source 1] Paper 1\n[Source 2] Paper 2"
+        results = [
+            self._make_result("p1", "Paper 1"),
+            self._make_result("p2", "Paper 2"),
+        ]
+        per = _compute_per_source_cited(answer, results)
+        assert per[0]["cited"] is True
+        assert per[0]["footer_only"] is False
+        assert per[1]["cited"] is True
+        assert per[1]["footer_only"] is True
+
+    def test_five_sources_partial_citation(self):
+        """5 sources, only 2 and 4 cited."""
+        answer = "Point [Source 2]. Another point [Source 4]."
+        results = [self._make_result(f"p{i}", f"Paper {i}") for i in range(1, 6)]
+        per = _compute_per_source_cited(answer, results)
+        cited_nums = [s["source_number"] for s in per if s["cited"]]
+        assert cited_nums == [2, 4]
+        uncited = [s["source_number"] for s in per if not s["cited"]]
+        assert uncited == [1, 3, 5]
+
+    def test_no_citations_at_all(self):
+        answer = "The model uses attention mechanisms for sequence processing."
+        results = [
+            self._make_result("p1", "Paper 1"),
+            self._make_result("p2", "Paper 2"),
+        ]
+        per = _compute_per_source_cited(answer, results)
+        assert all(not s["cited"] for s in per)
+        assert all(s["citation_count"] == 0 for s in per)
+
+
+class TestFaithfulnessHeuristic:
+    """Tests for _compute_faithfulness_heuristic with various overlap scenarios."""
+
+    def test_perfect_overlap(self):
+        """Answer directly quotes source text → high faithfulness."""
+        source = "Transformers use multi-head self-attention mechanisms."
+        answer = "Transformers use multi-head self-attention mechanisms."
+        score = _compute_faithfulness_heuristic(answer, [source])
+        assert score >= 4.0
+
+    def test_no_overlap(self):
+        """Answer content words don't appear in sources → low faithfulness."""
+        source = "Photosynthesis converts sunlight into chemical energy in plants."
+        answer = "Transformers use multi-head self-attention mechanisms for processing."
+        score = _compute_faithfulness_heuristic(answer, [source])
+        assert score <= 2.0
+
+    def test_partial_overlap(self):
+        """Some keywords match → mid-range faithfulness."""
+        source = "The Transformer architecture uses attention mechanisms and feed-forward layers."
+        answer = "The Transformer architecture processes sequences using specialized computation layers."
+        score = _compute_faithfulness_heuristic(answer, [source])
+        assert 1.5 <= score <= 4.5
+
+    def test_multiple_sources_combined_overlap(self):
+        """Keywords spread across multiple source passages."""
+        sources = [
+            "The Transformer model uses multi-head attention.",
+            "Feed-forward layers apply nonlinear transformations.",
+            "Layer normalization stabilizes training dynamics.",
+        ]
+        answer = (
+            "The Transformer model uses multi-head attention with feed-forward layers. "
+            "Layer normalization helps stabilize training dynamics."
+        )
+        score = _compute_faithfulness_heuristic(answer, sources)
+        assert score >= 3.5
+
+    def test_empty_sources(self):
+        score = _compute_faithfulness_heuristic("Any answer text.", [])
+        assert score == 1.0
+
+    def test_empty_answer(self):
+        score = _compute_faithfulness_heuristic("", ["Some source text."])
+        assert score == 1.0
+
+    def test_sources_block_stripped(self):
+        """Sources block at end of answer should not count toward overlap."""
+        source = "Attention mechanisms compute weighted sums."
+        answer = "The method is novel.\n\nSources:\n[Source 1] Attention mechanisms compute weighted sums."
+        score = _compute_faithfulness_heuristic(answer, [source])
+        # The body "The method is novel." has low overlap; sources block excluded
+        assert score < 3.0
+
+    def test_multi_sentence_varying_overlap(self):
+        """Multiple answer sentences with different overlap levels."""
+        source = "BERT uses masked language modeling and next sentence prediction for pretraining."
+        answer = (
+            "BERT uses masked language modeling for pretraining. "
+            "The architecture consists of stacked encoder blocks. "
+            "Fine-tuning adapts the pretrained model to downstream tasks."
+        )
+        score = _compute_faithfulness_heuristic(answer, [source])
+        # First sentence has high overlap, others lower → moderate score
+        assert 2.0 <= score <= 4.5
 
 
 class TestFullEvalEndpoint:

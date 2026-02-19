@@ -81,7 +81,7 @@ def normalize_section_name(name: str) -> str:
     """Normalize a section header into a consistent key."""
     # Remove numbering like "3.1", "IV.", etc.
     name = re.sub(r"^[\d.]+\s*", "", name)
-    name = re.sub(r"^[IVXLC]+\.?\s*", "", name)
+    name = re.sub(r"^[IVXLC]+\.\s*", "", name)
 
     # Lowercase and strip
     name = name.lower().strip()
