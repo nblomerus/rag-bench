@@ -6,6 +6,34 @@ import {
 
 const API_BASE = '/api'
 
+// ─── Metric tooltip helper ──────────────────────────────────────
+const METRIC_TIPS = {
+  retrieval_confidence: 'How closely the top retrieved passage matches your question. High = strong match, Low = topic may not be in the corpus.',
+  sources_cited: 'How many of the retrieved sources the model referenced with [Source N] in its answer.',
+  unsupported_claims: 'Sentences containing facts, numbers, or technical terms with no citation. Lower is better.',
+  faithfulness: 'How closely the answer sticks to the source text, measured by keyword overlap. Scale: 1 (poor) to 5 (excellent).',
+  latency: 'Total time from question to completed answer, including retrieval and LLM generation.',
+  backend_model: 'The LLM provider and model used to generate this answer.',
+  sources_count: 'Number of passages retrieved from the corpus to help answer your question.',
+  top_score: 'Similarity score of the single best-matching passage. Higher means the retrieval found a very relevant chunk.',
+  diversity: 'How many different papers and sections the retrieved passages come from. More diversity = broader evidence.',
+  coverage: 'Percentage of retrieved sources that were actually cited in the answer. 100% means every source was used.',
+  density: 'Average number of [Source N] citations per sentence. A well-cited answer typically has 0.5–2 per sentence.',
+  score_bar: 'Retrieval score for this source. The bar shows relative strength compared to the top result.',
+  source_verification: 'Shows whether each retrieved source was cited in the answer and how many times.',
+}
+
+function Tip({ id, children }) {
+  const text = METRIC_TIPS[id]
+  if (!text) return children
+  return (
+    <span className="metric-tip">
+      {children}
+      <span className="tip-text">{text}</span>
+    </span>
+  )
+}
+
 // ─── API helpers ──────────────────────────────────────────────────
 async function queryRAG(question, topK = 5) {
   const res = await fetch(`${API_BASE}/query`, {
@@ -109,21 +137,29 @@ function QualityBadges({ quality }) {
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
-      <span className={`quality-badge border ${confColor}`}>
-        <span className={`w-1.5 h-1.5 rounded-full ${confDot}`}></span>
-        {quality.retrieval_confidence === 'unknown' ? 'N/A' :
-         quality.retrieval_confidence.charAt(0).toUpperCase() + quality.retrieval_confidence.slice(1)}
-      </span>
-      <span className={`quality-badge border ${covColor}`}>
-        {quality.sources_cited}/{quality.sources_provided} cited
-      </span>
-      <span className={`quality-badge border ${unsupColor}`}>
-        {quality.unsupported_claims} unsupported
-      </span>
-      {faithScore > 0 && (
-        <span className={`quality-badge border ${faithColor}`}>
-          Faith {faithScore.toFixed(1)}/5
+      <Tip id="retrieval_confidence">
+        <span className={`quality-badge border ${confColor}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${confDot}`}></span>
+          {quality.retrieval_confidence === 'unknown' ? 'N/A' :
+           quality.retrieval_confidence.charAt(0).toUpperCase() + quality.retrieval_confidence.slice(1)}
         </span>
+      </Tip>
+      <Tip id="sources_cited">
+        <span className={`quality-badge border ${covColor}`}>
+          {quality.sources_cited}/{quality.sources_provided} cited
+        </span>
+      </Tip>
+      <Tip id="unsupported_claims">
+        <span className={`quality-badge border ${unsupColor}`}>
+          {quality.unsupported_claims} unsupported
+        </span>
+      </Tip>
+      {faithScore > 0 && (
+        <Tip id="faithfulness">
+          <span className={`quality-badge border ${faithColor}`}>
+            Faith {faithScore.toFixed(1)}/5
+          </span>
+        </Tip>
       )}
     </div>
   )
@@ -157,33 +193,39 @@ function QualityPanel({ quality }) {
         <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Retrieval</h4>
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div>
-            <span className="text-gray-500">Confidence:</span>{' '}
-            <span className={
-              quality.retrieval_confidence === 'high' ? 'text-green-400' :
-              quality.retrieval_confidence === 'medium' ? 'text-yellow-400' : 'text-red-400'
-            }>
-              {quality.retrieval_confidence}
-            </span>
-            <span className="text-gray-600 ml-1">(top: {quality.top_retrieval_score?.toFixed(2)})</span>
+            <Tip id="retrieval_confidence">
+              <span className="text-gray-500">Confidence:</span>{' '}
+              <span className={
+                quality.retrieval_confidence === 'high' ? 'text-green-400' :
+                quality.retrieval_confidence === 'medium' ? 'text-yellow-400' : 'text-red-400'
+              }>
+                {quality.retrieval_confidence}
+              </span>
+              <span className="text-gray-600 ml-1">(top: {quality.top_retrieval_score?.toFixed(2)})</span>
+            </Tip>
           </div>
           <div>
-            <span className="text-gray-500">Diversity:</span>{' '}
-            <span className="text-gray-300">{diversity.unique_papers || 0} papers, {diversity.unique_sections || 0} sections</span>
+            <Tip id="diversity">
+              <span className="text-gray-500">Diversity:</span>{' '}
+              <span className="text-gray-300">{diversity.unique_papers || 0} papers, {diversity.unique_sections || 0} sections</span>
+            </Tip>
           </div>
         </div>
         {/* Score distribution */}
         {perSource.length > 0 && (
           <div className="mt-2 space-y-1">
             {perSource.map((s, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs">
-                <span className="text-gray-500 w-4 text-right">{s.source_number}</span>
-                <ScoreBar
-                  value={s.score}
-                  max={maxScore}
-                  color={s.score >= maxScore * 0.7 ? 'green' : s.score >= maxScore * 0.4 ? 'yellow' : 'red'}
-                />
-                <span className="text-gray-500 font-mono w-10">{s.score?.toFixed(1)}</span>
-              </div>
+              <Tip key={i} id="score_bar">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-gray-500 w-4 text-right">{s.source_number}</span>
+                  <ScoreBar
+                    value={s.score}
+                    max={maxScore}
+                    color={s.score >= maxScore * 0.7 ? 'green' : s.score >= maxScore * 0.4 ? 'yellow' : 'red'}
+                  />
+                  <span className="text-gray-500 font-mono w-10">{s.score?.toFixed(1)}</span>
+                </div>
+              </Tip>
             ))}
           </div>
         )}
@@ -194,18 +236,24 @@ function QualityPanel({ quality }) {
         <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Citations</h4>
         <div className="grid grid-cols-3 gap-2 text-xs">
           <div>
-            <span className="text-gray-500">Coverage:</span>{' '}
-            <span className="text-gray-300">{(quality.citation_coverage * 100).toFixed(0)}%</span>
+            <Tip id="coverage">
+              <span className="text-gray-500">Coverage:</span>{' '}
+              <span className="text-gray-300">{(quality.citation_coverage * 100).toFixed(0)}%</span>
+            </Tip>
           </div>
           <div>
-            <span className="text-gray-500">Density:</span>{' '}
-            <span className="text-gray-300">{quality.citation_density?.toFixed(1)}/sentence</span>
+            <Tip id="density">
+              <span className="text-gray-500">Density:</span>{' '}
+              <span className="text-gray-300">{quality.citation_density?.toFixed(1)}/sentence</span>
+            </Tip>
           </div>
           <div>
-            <span className="text-gray-500">Unsupported:</span>{' '}
-            <span className={quality.unsupported_claims === 0 ? 'text-green-400' : 'text-yellow-400'}>
-              {quality.unsupported_claims}
-            </span>
+            <Tip id="unsupported_claims">
+              <span className="text-gray-500">Unsupported:</span>{' '}
+              <span className={quality.unsupported_claims === 0 ? 'text-green-400' : 'text-yellow-400'}>
+                {quality.unsupported_claims}
+              </span>
+            </Tip>
           </div>
         </div>
       </div>
@@ -214,27 +262,31 @@ function QualityPanel({ quality }) {
       {quality.faithfulness_score > 0 && (
         <div className="mb-3">
           <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Faithfulness</h4>
-          <div className="flex items-center gap-3 text-xs">
-            <ScoreBar
-              value={quality.faithfulness_score}
-              max={5}
-              color={quality.faithfulness_score >= 4 ? 'green' : quality.faithfulness_score >= 3 ? 'yellow' : 'red'}
-            />
-            <span className={
-              quality.faithfulness_score >= 4 ? 'text-green-400' :
-              quality.faithfulness_score >= 3 ? 'text-yellow-400' : 'text-red-400'
-            }>
-              {quality.faithfulness_score.toFixed(1)} / 5
-            </span>
-            <span className="text-gray-600">keyword overlap with sources</span>
-          </div>
+          <Tip id="faithfulness">
+            <div className="flex items-center gap-3 text-xs">
+              <ScoreBar
+                value={quality.faithfulness_score}
+                max={5}
+                color={quality.faithfulness_score >= 4 ? 'green' : quality.faithfulness_score >= 3 ? 'yellow' : 'red'}
+              />
+              <span className={
+                quality.faithfulness_score >= 4 ? 'text-green-400' :
+                quality.faithfulness_score >= 3 ? 'text-yellow-400' : 'text-red-400'
+              }>
+                {quality.faithfulness_score.toFixed(1)} / 5
+              </span>
+              <span className="text-gray-600">keyword overlap with sources</span>
+            </div>
+          </Tip>
         </div>
       )}
 
       {/* Per-source verification */}
       {perSource.length > 0 && (
         <div>
-          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Source Verification</h4>
+          <Tip id="source_verification">
+            <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Source Verification</h4>
+          </Tip>
           <div className="space-y-1">
             {perSource.map((s, i) => (
               <div key={i} className="flex items-center gap-2 text-xs">
@@ -298,18 +350,24 @@ function Message({ message }) {
           {data && (
             <div className="mt-3 pt-2 border-t border-gray-700 space-y-1.5">
               <div className="flex items-center gap-3 text-xs text-gray-500">
-                <span className="flex items-center gap-1">
-                  <Zap size={12} />
-                  {data.latency_ms?.toFixed(0)}ms
-                </span>
-                <span className="flex items-center gap-1">
-                  <Cpu size={12} />
-                  {data.backend}/{data.model?.split(':')[0]}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Search size={12} />
-                  {data.sources?.length || 0} sources
-                </span>
+                <Tip id="latency">
+                  <span className="flex items-center gap-1">
+                    <Zap size={12} />
+                    {data.latency_ms?.toFixed(0)}ms
+                  </span>
+                </Tip>
+                <Tip id="backend_model">
+                  <span className="flex items-center gap-1">
+                    <Cpu size={12} />
+                    {data.backend}/{data.model?.split(':')[0]}
+                  </span>
+                </Tip>
+                <Tip id="sources_count">
+                  <span className="flex items-center gap-1">
+                    <Search size={12} />
+                    {data.sources?.length || 0} sources
+                  </span>
+                </Tip>
               </div>
 
               {/* Quality badges + toggle */}
