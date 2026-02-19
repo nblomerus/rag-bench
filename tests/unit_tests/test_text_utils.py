@@ -30,8 +30,8 @@ class TestNormalizeSectionName:
 
     def test_basic_lowercase(self):
         """Test basic lowercase conversion."""
-        # Note: 'Introduction' becomes 'ntroduction' due to Roman numeral 'I' removal before lowercasing
-        assert normalize_section_name("Introduction") == "ntroduction"
+        # 'Introduction' is preserved (Roman numeral stripping requires trailing period)
+        assert normalize_section_name("Introduction") == "introduction"
         assert normalize_section_name("METHODOLOGY") == "methodology"
 
     def test_removes_numbering(self):
@@ -41,9 +41,9 @@ class TestNormalizeSectionName:
         assert normalize_section_name("5. Results") == "results"
 
     def test_removes_roman_numerals(self):
-        """Test that Roman numeral prefixes are removed."""
+        """Test that Roman numeral prefixes with period are removed."""
         assert normalize_section_name("IV. Discussion") == "discussion"
-        assert normalize_section_name("II Background") == "background"
+        assert normalize_section_name("II. Background") == "background"
 
     def test_replaces_spaces_with_underscores(self):
         """Test that spaces are replaced with underscores."""
@@ -52,8 +52,8 @@ class TestNormalizeSectionName:
 
     def test_removes_trailing_punctuation(self):
         """Test that trailing punctuation is removed."""
-        # Note: 'Introduction' becomes 'ntroduction' due to Roman numeral 'I' removal
-        assert normalize_section_name("Introduction:") == "ntroduction"
+        # 'Introduction' is preserved (Roman numeral stripping requires trailing period)
+        assert normalize_section_name("Introduction:") == "introduction"
         assert normalize_section_name("Methods -") == "methods"
         assert normalize_section_name("Results—") == "results"
 
@@ -65,7 +65,7 @@ class TestNormalizeSectionName:
     def test_strips_leading_trailing_underscores(self):
         """Test that leading/trailing underscores are removed."""
         result = normalize_section_name("  Introduction  ")
-        # Result will be 'ntroduction' due to Roman numeral 'I' removal
+        # 'Introduction' is preserved (Roman numeral stripping requires trailing period)
         assert not result.startswith("_")
         assert not result.endswith("_")
 
@@ -101,11 +101,11 @@ These are the results."""
 
         sections = extract_sections(text)
 
-        # Note: 'Introduction' becomes 'ntroduction' due to Roman numeral 'I' removal
-        assert "ntroduction" in sections
+        # 'Introduction' is preserved (Roman numeral stripping requires trailing period)
+        assert "introduction" in sections
         assert "methods" in sections
         assert "results" in sections
-        assert "This is the introduction." in sections["ntroduction"]
+        assert "This is the introduction." in sections["introduction"]
 
     def test_different_header_levels(self):
         """Test that different header levels are handled."""
@@ -145,8 +145,8 @@ Some content here."""
 
         sections = extract_sections(text)
 
-        # Empty ntroduction section should not be included
-        assert "ntroduction" not in sections or sections["ntroduction"].strip() != ""
+        # Empty introduction section should not be included
+        assert "introduction" not in sections or sections["introduction"].strip() != ""
 
     def test_empty_text(self):
         """Test extraction with empty text."""
@@ -182,9 +182,9 @@ Method line 2"""
 
         sections = extract_sections(text)
 
-        # Note: 'Introduction' becomes 'ntroduction' due to Roman numeral 'I' removal
-        assert "Line 1" in sections["ntroduction"]
-        assert "Line 2" in sections["ntroduction"]
+        # 'Introduction' is preserved (Roman numeral stripping requires trailing period)
+        assert "Line 1" in sections["introduction"]
+        assert "Line 2" in sections["introduction"]
         assert "Method line 1" in sections["methods"]
 
     def test_section_name_normalization(self):
@@ -219,8 +219,8 @@ These are the methods with details and more content to make it long enough to pa
 
         sections = extract_sections_from_pdf(text)
 
-        # Note: 'Introduction' becomes 'ntroduction' due to Roman numeral 'I' removal
-        assert "ntroduction" in sections
+        # 'Introduction' is preserved (Roman numeral stripping requires trailing period)
+        assert "introduction" in sections
         assert "methods" in sections
 
     def test_all_caps_headers(self):
@@ -233,8 +233,8 @@ These are the methods section with sufficient details and content here to meet t
 
         sections = extract_sections_from_pdf(text)
 
-        # Note: 'Introduction' becomes 'ntroduction' due to Roman numeral 'I' removal
-        assert "ntroduction" in sections
+        # 'Introduction' is preserved (Roman numeral stripping requires trailing period)
+        assert "introduction" in sections
         assert "methodology" in sections
 
     def test_keyword_based_headers(self):
@@ -248,8 +248,8 @@ Machine learning has evolved rapidly over the past decade with many significant 
         sections = extract_sections_from_pdf(text)
 
         assert "abstract" in sections
-        # Note: 'Introduction' becomes 'ntroduction' due to Roman numeral 'I' removal
-        assert "ntroduction" in sections
+        # 'Introduction' is preserved (Roman numeral stripping requires trailing period)
+        assert "introduction" in sections
 
     def test_filters_short_sections(self):
         """Test that very short sections are filtered out."""
@@ -262,8 +262,7 @@ This section has much more content that should be retained properly with enough 
         sections = extract_sections_from_pdf(text)
 
         # Short introduction should be filtered (< 30 chars)
-        # Note: 'Introduction' becomes 'ntroduction' due to Roman numeral 'I' removal
-        assert "ntroduction" not in sections
+        assert "introduction" not in sections
         # Methods with sufficient content should be kept
         assert "methods" in sections
 
@@ -313,8 +312,8 @@ More content with sufficient length to pass the filter properly and be included 
         sections = extract_sections_from_pdf(text)
 
         # Long line should not create a section
-        # Note: 'Introduction' becomes 'ntroduction' due to Roman numeral 'I' removal
-        assert "ntroduction" in sections
+        # 'Introduction' is preserved (Roman numeral stripping requires trailing period)
+        assert "introduction" in sections
         assert "methods" in sections
 
     def test_numbered_subsection_headers(self):
@@ -612,9 +611,9 @@ More content."""
 
         sections = extract_sections(text)
 
-        # Note: 'Introduction' becomes 'ntroduction' due to Roman numeral 'I' removal
-        assert "ntroduction" in sections
-        assert len(sections["ntroduction"]) > 1000
+        # 'Introduction' is preserved (Roman numeral stripping requires trailing period)
+        assert "introduction" in sections
+        assert len(sections["introduction"]) > 1000
 
     def test_special_characters_in_acronyms(self):
         """Test acronym extraction with special characters in full forms."""

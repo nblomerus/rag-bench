@@ -488,7 +488,7 @@ class HybridRetriever:
         # Build from ChromaDB
         logger.info(f"Loading {count} chunks for BM25 indexing (with batching)...")
         all_chunks = []
-        batch_size = 50000
+        batch_size = 200_000
 
         for offset in range(0, count, batch_size):
             batch_limit = min(batch_size, count - offset)

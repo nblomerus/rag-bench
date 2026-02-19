@@ -320,6 +320,112 @@ class TestHallucinations:
         assert detect_hallucinations("any answer", []) == []
 
 
+class TestMultipleCitationScenarios:
+    """Tests for answers citing multiple sources in various patterns."""
+
+    def test_three_sources_all_cited_coverage(self):
+        answer = "Point A [Source 1]. Point B [Source 2]. Point C [Source 3]."
+        assert source_coverage(answer, 3) == 1.0
+
+    def test_five_sources_two_cited_coverage(self):
+        answer = "Point A [Source 1]. Point B [Source 4]."
+        assert source_coverage(answer, 5) == 2 / 5
+
+    def test_density_with_multi_cite_sentence(self):
+        """One sentence cites multiple sources."""
+        answer = "Transformers [Source 1] extend sequence models [Source 2]."
+        density = citation_density(answer)
+        assert density == pytest.approx(2.0)
+
+    def test_density_across_many_sentences(self):
+        """5 sentences, 3 have citations."""
+        answer = (
+            "Transformers use attention [Source 1]. "
+            "This is efficient. "
+            "BERT uses masking [Source 2]. "
+            "Training is important. "
+            "GPT uses autoregressive decoding [Source 3]."
+        )
+        density = citation_density(answer)
+        assert density == pytest.approx(3 / 5)
+
+    def test_unsupported_with_some_cited(self):
+        """Mix of cited and uncited factual sentences."""
+        answer = (
+            "The Transformer has 65 million parameters [Source 1]. "
+            "BERT achieves 0.85 accuracy on the benchmark. "
+            "GPT-2 has 1.5 billion parameters [Source 2]."
+        )
+        # Middle sentence has number + technical term but no citation
+        count = count_unsupported_claims(answer)
+        assert count >= 1
+
+    def test_all_factual_claims_cited(self):
+        """Every factual sentence has a citation."""
+        answer = (
+            "The Transformer uses 8 attention heads [Source 1]. "
+            "BERT has 110 million parameters [Source 2]. "
+            "GPT-3 was trained on 300 billion tokens [Source 3]."
+        )
+        count = count_unsupported_claims(answer)
+        assert count == 0
+
+    def test_precision_all_cited_correct(self):
+        """3 cited sources, all from expected papers."""
+        answer = "A [Source 1]. B [Source 2]. C [Source 3]."
+        results = [
+            {"arxiv_id": "1706.03762"},
+            {"arxiv_id": "1810.04805"},
+            {"arxiv_id": "2005.14165"},
+        ]
+        expected = ["1706.03762", "1810.04805", "2005.14165"]
+        assert citation_precision(answer, results, expected) == 1.0
+
+    def test_precision_half_correct(self):
+        """4 cited, 2 from expected papers."""
+        answer = "A [Source 1]. B [Source 2]. C [Source 3]. D [Source 4]."
+        results = [
+            {"arxiv_id": "1706.03762"},
+            {"arxiv_id": "9999.00001"},
+            {"arxiv_id": "1810.04805"},
+            {"arxiv_id": "9999.00002"},
+        ]
+        expected = ["1706.03762", "1810.04805"]
+        assert citation_precision(answer, results, expected) == 0.5
+
+    def test_recall_two_of_three_expected(self):
+        """3 expected papers, only 2 cited in answer."""
+        answer = "A [Source 1]. B [Source 2]."
+        results = [
+            {"arxiv_id": "1706.03762"},
+            {"arxiv_id": "1810.04805"},
+            {"arxiv_id": "2005.14165"},
+        ]
+        expected = ["1706.03762", "1810.04805", "2005.14165"]
+        assert citation_recall(answer, results, expected) == pytest.approx(2 / 3)
+
+    def test_full_pipeline_multi_source(self):
+        """End-to-end compute_citation_metrics with 4 sources."""
+        answer = (
+            "Transformers [Source 1] are used in NLP. "
+            "BERT [Source 2] introduced masking. "
+            "GPT [Source 3] uses autoregressive generation."
+        )
+        results = [
+            {"arxiv_id": "1706.03762"},
+            {"arxiv_id": "1810.04805"},
+            {"arxiv_id": "2005.14165"},
+            {"arxiv_id": "1901.00001"},
+        ]
+        expected = ["1706.03762", "1810.04805", "2005.14165"]
+        metrics = compute_citation_metrics(answer, results, expected)
+        assert metrics["precision"] == 1.0  # all 3 cited are expected
+        assert metrics["recall"] == 1.0  # all 3 expected are cited
+        assert metrics["cited_sources"] == [1, 2, 3]
+        assert metrics["source_coverage"] == 3 / 4  # 3 of 4 results cited
+        assert metrics["density"] == pytest.approx(1.0)  # 3 citations / 3 sentences
+
+
 class TestComputeCitationMetrics:
     def test_full_pipeline(self):
         answer = "The Transformer [Source 1] uses attention. BERT [Source 2] uses masking."
