@@ -82,7 +82,7 @@ def main():
 
     # Initialize LLM backend
     llm_backend = os.environ.get("RAG_LLM_BACKEND", "ollama")
-    llm_model = os.environ.get("RAG_LLM_MODEL", "mistral:7b-instruct-q4_K_M")
+    llm_model = os.environ.get("RAG_LLM_MODEL", "gemma2:27b")
     llm_base_url = os.environ.get("RAG_LLM_BASE_URL", "http://localhost:11434")
     llm = build_llm_backend(llm_backend, llm_model, llm_base_url)
 

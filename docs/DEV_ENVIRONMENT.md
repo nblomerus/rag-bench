@@ -138,7 +138,7 @@ make check
 ```bash
 # Use Ollama (default, runs in Docker)
 RAG_LLM_BACKEND=ollama
-RAG_LLM_MODEL=mistral:7b-instruct-q4_K_M
+RAG_LLM_MODEL=gemma2:27b
 RAG_LLM_BASE_URL=http://ollama:11434
 
 # Or use OpenAI

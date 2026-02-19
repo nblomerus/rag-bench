@@ -153,7 +153,7 @@ Key settings in `.env` (see [.env.example](.env.example) for all options):
 
 ```bash
 RAG_LLM_BACKEND=ollama                    # ollama | openai | anthropic
-RAG_LLM_MODEL=mistral:7b-instruct-q4_K_M
+RAG_LLM_MODEL=gemma2:27b
 RAG_LLM_BASE_URL=http://ollama:11434
 DOMAIN=ragbench.co.za                     # Production only
 ```

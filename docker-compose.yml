@@ -11,11 +11,11 @@ services:
     runtime: nvidia
     environment:
       - RAG_LLM_BACKEND=${RAG_LLM_BACKEND:-ollama}
-      - RAG_LLM_MODEL=${RAG_LLM_MODEL:-mistral:7b-instruct-q4_K_M}
+      - RAG_LLM_MODEL=${RAG_LLM_MODEL:-gemma2:27b}
       - RAG_LLM_BASE_URL=${RAG_LLM_BASE_URL:-http://ollama:11434}
       - RAG_API_PORT=8000
       - PYTHONUNBUFFERED=1
-      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_VISIBLE_DEVICES=1
     ports:
       - "8000:8000"
     volumes:
@@ -68,7 +68,7 @@ services:
     restart: unless-stopped
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
-      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_VISIBLE_DEVICES=0
 
 networks:
   ragbench:

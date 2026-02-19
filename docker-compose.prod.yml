@@ -11,11 +11,11 @@ services:
     runtime: nvidia
     environment:
       - RAG_LLM_BACKEND=${RAG_LLM_BACKEND:-ollama}
-      - RAG_LLM_MODEL=${RAG_LLM_MODEL:-mistral:7b-instruct-q4_K_M}
+      - RAG_LLM_MODEL=${RAG_LLM_MODEL:-gemma2:27b}
       - RAG_LLM_BASE_URL=${RAG_LLM_BASE_URL:-http://ollama:11434}
       - RAG_API_PORT=${RAG_API_PORT:-8000}
       - PYTHONUNBUFFERED=1
-      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_VISIBLE_DEVICES=1
     volumes:
       - ./chroma_db:/app/chroma_db
       - ./data:/app/data
@@ -97,12 +97,12 @@ services:
     restart: always
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
-      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_VISIBLE_DEVICES=0
     entrypoint: >
       /bin/sh -c "
         ollama serve &
         until ollama list 2>/dev/null; do sleep 1; done &&
-        ollama pull ${RAG_LLM_MODEL:-mistral:7b-instruct-q4_K_M} &&
+        ollama pull ${RAG_LLM_MODEL:-gemma2:27b} &&
         wait
       "
     expose:

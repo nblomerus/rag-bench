@@ -64,7 +64,7 @@ def build_llm_backend(backend: str, model: str = "", base_url: str = ""):
     """Create the appropriate LLM backend."""
     if backend == "ollama":
         return OllamaBackend(
-            model=model or "mistral:7b-instruct-q4_K_M",
+            model=model or "gemma2:27b",
             base_url=base_url or "http://localhost:11434",
         )
     elif backend == "openai":

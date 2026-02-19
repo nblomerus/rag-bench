@@ -42,8 +42,11 @@ clean:
 	find . -type f -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 
 # Deploy
+# GPU layout: CUDA 0 = RTX 5070 Ti (LLM via Ollama), CUDA 1 = RTX 2070 Super (embedding + reranker)
 
 run-server:
+	CUDA_VISIBLE_DEVICES=1 \
+	RAG_LLM_MODEL=gemma2:27b \
 	python -m rag_bench.api.server
 
 # Docker (Development) - Uses Docker Compose v2 (docker compose)

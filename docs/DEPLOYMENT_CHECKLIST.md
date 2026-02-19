@@ -55,7 +55,7 @@ Use this checklist to guide your first production deployment to `ragbench.co.za`
 - [ ] Set `LETSENCRYPT_EMAIL=admin@ragbench.co.za`
 - [ ] Set `CORS_ORIGINS=https://ragbench.co.za`
 - [ ] Set `LOG_LEVEL=INFO`
-- [ ] Set `RAG_LLM_MODEL` (default: `mistral:7b-instruct-q4_K_M`)
+- [ ] Set `RAG_LLM_MODEL` (default: `gemma2:27b`)
 - [ ] Added any API keys (OpenAI, etc.) if needed
 - [ ] Verified `.env.prod` is gitignored
 
