@@ -163,7 +163,7 @@ nano .env.prod  # Edit with your settings
 ```bash
 # .env.prod
 RAG_LLM_BACKEND=ollama
-RAG_LLM_MODEL=mistral:7b-instruct-q4_K_M
+RAG_LLM_MODEL=gemma2:27b
 RAG_LLM_BASE_URL=http://ollama:11434
 DOMAIN=ragbench.co.za
 LETSENCRYPT_EMAIL=admin@ragbench.co.za
@@ -261,7 +261,7 @@ make env-status
 
 # LLM Configuration
 RAG_LLM_BACKEND=ollama              # or openai, anthropic
-RAG_LLM_MODEL=mistral:7b-instruct-q4_K_M
+RAG_LLM_MODEL=gemma2:27b
 RAG_LLM_BASE_URL=http://ollama:11434
 
 # Domain & SSL

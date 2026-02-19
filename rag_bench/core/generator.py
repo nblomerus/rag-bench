@@ -340,7 +340,7 @@ class LLMBackend:
 class OllamaBackend(LLMBackend):
     """Generate via Ollama API (local LLM server)."""
 
-    def __init__(self, model: str = "mistral:7b-instruct-q4_K_M", base_url: str = "http://localhost:11434"):
+    def __init__(self, model: str = "gemma2:27b", base_url: str = "http://localhost:11434"):
         self.model = model
         self.base_url = base_url.rstrip("/")
         logger.info(f"Ollama backend: {model} at {base_url}")
@@ -494,7 +494,7 @@ def build_llm_backend(backend: str, model: str = "", base_url: str = ""):
     """
     if backend == "ollama":
         return OllamaBackend(
-            model=model or "mistral:7b-instruct-q4_K_M",
+            model=model or "gemma2:27b",
             base_url=base_url or "http://localhost:11434",
         )
     elif backend == "openai":

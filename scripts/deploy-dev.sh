@@ -102,12 +102,12 @@ if [ -f ".env.dev" ]; then
 fi
 
 echo "LLM Backend: ${RAG_LLM_BACKEND:-ollama}"
-echo "LLM Model: ${RAG_LLM_MODEL:-mistral:7b-instruct-q4_K_M}"
+echo "LLM Model: ${RAG_LLM_MODEL:-gemma2:27b}"
 
 if [ "${RAG_LLM_BACKEND}" == "ollama" ]; then
     echo ""
     echo -e "${BLUE}ℹ Ollama will download the model on first use${NC}"
-    echo "  Model: ${RAG_LLM_MODEL:-mistral:7b-instruct-q4_K_M}"
+    echo "  Model: ${RAG_LLM_MODEL:-gemma2:27b}"
     echo "  This may take 5-10 minutes depending on your connection"
 fi
 

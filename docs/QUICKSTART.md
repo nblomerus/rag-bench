@@ -99,7 +99,7 @@ make deploy                 # Full deployment
 │                                               │
 │                   ┌──────────────┐            │
 │                   │ Ollama LLM   │            │
-│                   │ (mistral)    │            │
+│                   │ (gemma2)     │            │
 │                   └──────────────┘            │
 └─────────────────────────────────────────────────┘
 ```
@@ -119,7 +119,7 @@ Edit `.env` for configuration (created automatically by `make deploy-dev`):
 
 ```bash
 RAG_LLM_BACKEND=ollama                    # LLM provider
-RAG_LLM_MODEL=mistral:7b-instruct-q4_K_M # Model to use
+RAG_LLM_MODEL=gemma2:27b                 # Model to use
 DOMAIN=ragbench.co.za                     # Your domain
 LETSENCRYPT_EMAIL=admin@ragbench.co.za    # SSL renewal
 OLLAMA_PORT=11435                         # (Optional) Change if port conflicts
