@@ -473,6 +473,7 @@ def extract_sections_from_text(text: str) -> dict[str, str]:
     """
     Split extracted paper text into sections based on common headers.
     Handles both markdown-style and plain text headers.
+    Also handles split headers where section number and title are on separate lines.
     """
     if not text or len(text.strip()) < 100:
         return {"full_text": text}
@@ -484,7 +485,7 @@ def extract_sections_from_text(text: str) -> dict[str, str]:
     # Patterns for section headers
     header_patterns = [
         re.compile(r"^#{1,4}\s+(.+)$"),  # Markdown: ## Header
-        re.compile(r"^(\d+\.?\s+[A-Z][A-Za-z\s]+)$"),  # Numbered: 1. Introduction
+        re.compile(r"^(\d+(?:\.\d+)*\.?\s+[A-Z][A-Za-z\s]+)$"),  # Numbered: 1. Introduction, 3.2.1 Attention
         re.compile(r"^([A-Z][A-Z\s]{3,40})$"),  # ALL CAPS: INTRODUCTION
         re.compile(
             r"^(Abstract|Introduction|Related Work|Background|"
@@ -496,8 +497,14 @@ def extract_sections_from_text(text: str) -> dict[str, str]:
         ),  # Known section names
     ]
 
-    for line in text.split("\n"):
-        stripped = line.strip()
+    # Standalone section number (PDF splits number from title across lines)
+    section_number_re = re.compile(r"^(\d+(?:\.\d+)*)\.?\s*$")
+
+    lines = text.split("\n")
+    i = 0
+
+    while i < len(lines):
+        stripped = lines[i].strip()
         matched_header = None
 
         for pattern in header_patterns:
@@ -505,6 +512,13 @@ def extract_sections_from_text(text: str) -> dict[str, str]:
             if m:
                 matched_header = m.group(1) if m.lastindex else stripped
                 break
+
+        # Check for split header: standalone section number + title on next line
+        if not matched_header and section_number_re.match(stripped) and i + 1 < len(lines):
+            next_line = lines[i + 1].strip()
+            if next_line and next_line[0].isupper() and len(next_line) < 60 and not next_line.endswith("."):
+                matched_header = f"{stripped} {next_line}"
+                i += 1  # consume the title line too
 
         if matched_header and len(matched_header) < 80:
             # Save previous section
@@ -520,7 +534,9 @@ def extract_sections_from_text(text: str) -> dict[str, str]:
             current_section = re.sub(r"\s+", "_", current_section) or "unnamed"
             current_lines = []
         else:
-            current_lines.append(line)
+            current_lines.append(lines[i])
+
+        i += 1
 
     # Save final section
     if current_lines:

@@ -950,30 +950,44 @@ class TestComputeHelpers:
     """Direct tests for private compute helper functions."""
 
     def test_retrieval_confidence_high_cross_encoder(self):
-        results = [{"score": 7.5}, {"score": 7.0}, {"score": 6.8}]
+        # gap_ratio = 5.0/2.5 = 2.0, top > 3.0, gap >= 1.8 → high
+        results = [{"score": 5.0}, {"score": 2.5}]
         assert _compute_retrieval_confidence(results) == "high"
 
+    def test_retrieval_confidence_low_cross_encoder_tight_scores(self):
+        # gap_ratio = 7.5/7.0 = 1.07, too close together → low
+        results = [{"score": 7.5}, {"score": 7.0}, {"score": 6.8}]
+        assert _compute_retrieval_confidence(results) == "low"
+
     def test_retrieval_confidence_medium_cross_encoder(self):
+        # gap_ratio = 4.0/2.5 = 1.6, top > 2.0, gap >= 1.3 → medium
         results = [{"score": 4.0}, {"score": 2.5}]
         assert _compute_retrieval_confidence(results) == "medium"
 
-    def test_retrieval_confidence_medium_cross_encoder_above_half(self):
+    def test_retrieval_confidence_medium_cross_encoder_single(self):
+        # Single result: gap_ratio = inf, top > 2.0, gap >= 1.3 → medium
         results = [{"score": 2.5}]
-        # top_score=2.5 > 2.0, not > 6.0, not > 3.0, but above_half=1 >= 1 → medium
         assert _compute_retrieval_confidence(results) == "medium"
 
     def test_retrieval_confidence_high_cosine(self):
-        results = [{"score": 0.8}, {"score": 0.75}, {"score": 0.72}]
+        # gap_ratio = 0.9/0.5 = 1.8, top > 0.65, gap >= 1.5 → high
+        results = [{"score": 0.9}, {"score": 0.5}]
         assert _compute_retrieval_confidence(results) == "high"
 
+    def test_retrieval_confidence_low_cosine_tight_scores(self):
+        # gap_ratio = 0.8/0.75 = 1.067, too close → low
+        results = [{"score": 0.8}, {"score": 0.75}, {"score": 0.72}]
+        assert _compute_retrieval_confidence(results) == "low"
+
     def test_retrieval_confidence_medium_cosine(self):
+        # Single result: gap_ratio = inf, top > 0.4, gap >= 1.2 → medium
         results = [{"score": 0.6}]
         assert _compute_retrieval_confidence(results) == "medium"
 
-    def test_retrieval_confidence_medium_cosine_low_score(self):
+    def test_retrieval_confidence_low_cosine_low_score(self):
+        # top=0.3, below 0.4 threshold → low
         results = [{"score": 0.3}]
-        # top=0.3, above_half=1 >= 1 → medium
-        assert _compute_retrieval_confidence(results) == "medium"
+        assert _compute_retrieval_confidence(results) == "low"
 
     def test_score_spread_multiple_values(self):
         results = [{"score": 0.9}, {"score": 0.7}, {"score": 0.5}]

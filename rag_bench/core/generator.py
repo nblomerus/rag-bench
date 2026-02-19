@@ -240,15 +240,18 @@ def postprocess_math(text: str) -> str:
 # ruff: noqa: E501
 SYSTEM_PROMPT = """You are a precise AI/ML research assistant. Answer questions using ONLY the provided source passages. Follow these rules strictly:
 
-1. CITE EVERY CLAIM using [Source N] notation matching the provided sources.
-2. If the sources don't contain enough information, say so explicitly — never fabricate.
-3. Use direct language. Prefer the paper's own terminology.
-4. For numerical claims (BLEU scores, parameter counts, etc.), cite the exact source.
-5. If sources conflict, note the disagreement and cite both.
-6. Never cite a source for a claim it doesn't support.
-7. IMPORTANT: When sources are relevant to the question's topic, USE THEM — synthesize what they cover and note any gaps. However, if the question asks for a SPECIFIC piece of information (a number, a fact, a detail) and that specific information does not appear anywhere in the sources, you MUST explicitly state that the sources do not contain/specify/mention that particular detail. For example: if asked "What hardware was used to train X?" and the sources discuss X but never mention hardware, say "The sources do not specify the hardware used." Do NOT answer with unrelated information from the same paper just because the topic matches.
-8. If the question contains a false premise (e.g., "Paper X showed result Y" but the sources don't support that claim), point out that the premise appears incorrect based on the available sources.
-9. FORMAT — CRITICAL RULES:
+1. CITE EVERY FACTUAL CLAIM inline using [Source N] notation, where N is the number shown in the provided sources (e.g. [Source 1], [Source 2]). Valid citation numbers are only those that appear in the source list you were given.
+2. ONLY cite the provided sources. NEVER cite papers, authors, or results from your training memory. If you know a relevant paper that is not in the provided sources, do not cite it — instead note that the provided sources do not cover that aspect.
+3. NEVER add a bibliography, references, or sources list at the end of your answer. All citations must be inline within the answer text only.
+4. CITE PRECISELY — place [Source N] only immediately after the specific sentence or phrase that source directly supports. NEVER write catch-all sentences like "this is discussed in [Source 1], [Source 2], [Source 3]". If a source does not contribute a specific fact to your answer, do not cite it at all.
+5. If the sources don't contain enough information, say so explicitly — never fabricate.
+6. Use direct language. Prefer the paper's own terminology.
+7. For numerical claims (BLEU scores, parameter counts, etc.), cite the exact source.
+8. If sources conflict, note the disagreement and cite both.
+9. Never cite a source for a claim it doesn't support.
+9. IMPORTANT: When sources are relevant to the question's topic, USE THEM — synthesize what they cover and note any gaps. However, if the question asks for a SPECIFIC piece of information (a number, a fact, a detail) and that specific information does not appear anywhere in the sources, you MUST explicitly state that the sources do not contain/specify/mention that particular detail. For example: if asked "What hardware was used to train X?" and the sources discuss X but never mention hardware, say "The sources do not specify the hardware used." Do NOT answer with unrelated information from the same paper just because the topic matches.
+10. If the question contains a false premise (e.g., "Paper X showed result Y" but the sources don't support that claim), point out that the premise appears incorrect based on the available sources.
+11. FORMAT — CRITICAL RULES:
    a) Use **markdown** for structure (headings, lists, bold).
    b) ALL math MUST be written in LaTeX wrapped in dollar signs. Use $...$ for inline math and $$...$$ for display equations.
    c) NEVER copy raw equation text from the sources. ALWAYS rewrite equations in proper LaTeX.
@@ -269,13 +272,21 @@ GENERATION_PROMPT = """Based on the following source passages, answer the user's
 
 Question: {question}
 
-Instructions:
-- Use [Source N] citations for every factual claim
-- If the sources are insufficient, explicitly state what's missing
-- Be precise with numbers, equations, and technical terms
+CITATION RULES — read before writing:
+- Use [Source N] immediately after the specific claim it supports. N must match the number in the sources listed above.
+- NEVER write author names or paper titles as citations. Use [Source N] instead.
+  WRONG:  "Vaswani et al. (2017) introduced scaled dot-product attention."
+  CORRECT: "Scaled dot-product attention computes scores via softmax over dot products [Source 1]."
+- Each [Source N] must follow a specific claim from that source. Do NOT write catch-all sentences.
+  WRONG:  "This is discussed in [Source 1], [Source 2], and [Source 3]."
+  CORRECT: Cite each source only where it contributed a specific fact.
+- If a source does not contribute a specific fact to your answer, do not cite it at all.
+- Do NOT add a bibliography or references section at the end.
+- If the sources are insufficient for a specific claim, say so explicitly.
+
+Formatting rules:
 - Use **markdown** for structure. Use LaTeX for ALL math: $inline$ and $$display$$
-- NEVER copy raw math text from sources. Rewrite ALL equations in clean LaTeX notation.
-  Example: Instead of "q(xt|xt-1) = N(xt; sqrt(at) xt-1, (1-at)I)", write:
+- NEVER copy raw math text. Rewrite ALL equations in clean LaTeX:
   $$q(x_t | x_{{t-1}}) = \\mathcal{{N}}(x_t; \\sqrt{{\\alpha_t}} x_{{t-1}}, (1-\\alpha_t)\\mathbf{{I}})$$
 - Greek letters: \\alpha, \\beta, \\theta, \\epsilon, \\sigma, \\mu, etc.
 
@@ -1331,27 +1342,29 @@ class RAGGenerator:
         return False, ""
 
     def _filter_relevant_sources(self, results: list[dict]) -> list[dict]:
-        """Filter retrieval results to only include genuinely relevant sources."""
+        """Filter retrieval results to only include genuinely relevant sources.
+
+        Uses a relative threshold: each source must score at least a fraction
+        of the top score. This prevents low-relevance "partial matches" from
+        being sent to the LLM when there's a clear winner.
+        """
         if not results:
             return results
 
         top_score = results[0].get("score", 0.0)
 
-        if top_score > 2.0:
-            min_absolute = 0.0
-            max_drop = 4.0
-        elif top_score > 0.05:
-            min_absolute = 0.1
-            max_drop = 0.3
+        if top_score > 2.0:  # cross-encoder range
+            # Source must score at least 60% of the top score
+            min_ratio = 0.6
+        elif top_score > 0.05:  # cosine range
+            min_ratio = 0.7
         else:
-            return results[:4]
+            return results[:1]
 
         filtered = []
         for r in results:
             score = r.get("score", 0.0)
-            if score < min_absolute:
-                continue
-            if (top_score - score) > max_drop:
+            if score < top_score * min_ratio:
                 continue
             filtered.append(r)
             if len(filtered) >= 5:

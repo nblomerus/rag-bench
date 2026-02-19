@@ -17,6 +17,7 @@ from rag_bench.utils.text import (
     fix_encoding,
     format_authors,
     normalize_section_name,
+    strip_chunk_preamble,
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -315,6 +316,23 @@ More content with sufficient length to pass the filter properly and be included 
         # Note: 'Introduction' becomes 'ntroduction' due to Roman numeral 'I' removal
         assert "ntroduction" in sections
         assert "methods" in sections
+
+    def test_numbered_subsection_headers(self):
+        """Test extraction of dotted sub-section headers like 3.2.1."""
+        text = """3 Model Architecture
+The model follows an encoder-decoder structure with several important design decisions throughout.
+
+3.2 Attention
+An attention function maps a query and set of key-value pairs to an output computed as weighted sum.
+
+3.2.1 Scaled Dot Product Attention
+We call our particular attention scaled dot product attention where the input consists of queries."""
+
+        sections = extract_sections_from_pdf(text)
+
+        assert "model_architecture" in sections
+        assert "attention" in sections
+        assert "scaled_dot_product_attention" in sections
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -727,3 +745,66 @@ Very brief.
         assert len(sections) > 0
         # Check that content was extracted
         assert any(len(v) > 20 for v in sections.values())
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Strip Chunk Preamble Tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestStripChunkPreamble:
+    """Tests for strip_chunk_preamble function."""
+
+    def test_strips_title_prefix(self):
+        text = "Attention Is All You Need — Background\n\nThe dominant approach uses encoder-decoder."
+        assert strip_chunk_preamble(text) == "The dominant approach uses encoder-decoder."
+
+    def test_strips_figure_caption(self):
+        text = "Figure 2: Scaled dot-product attention.\nThe weights are computed via softmax."
+        assert strip_chunk_preamble(text) == "The weights are computed via softmax."
+
+    def test_strips_table_caption(self):
+        text = "Table 3: Results on WMT benchmarks.\nOur model achieves state-of-the-art BLEU scores."
+        assert strip_chunk_preamble(text) == "Our model achieves state-of-the-art BLEU scores."
+
+    def test_strips_section_headers(self):
+        text = "Scaled Dot-Product Attention\nMulti-Head Attention\nThe output is computed as a weighted sum."
+        assert strip_chunk_preamble(text) == "The output is computed as a weighted sum."
+
+    def test_strips_headers_and_figure(self):
+        text = (
+            "Attention Is All You Need — Background\n\n"
+            "Scaled Dot-Product Attention\n"
+            "Multi-Head Attention\n"
+            "Figure 2: (left) Scaled Dot-Product Attention.\n"
+            "of the values, where the weight assigned to each value is computed."
+        )
+        assert strip_chunk_preamble(text) == "of the values, where the weight assigned to each value is computed."
+
+    def test_strips_multiline_figure_caption(self):
+        """Figure captions that wrap to multiple lines should all be stripped."""
+        text = (
+            "Scaled Dot-Product Attention\n"
+            "Multi-Head Attention\n"
+            "Figure 2: (left) Scaled Dot-Product Attention.\n"
+            "attention layers running in parallel.\n"
+            "of the values, where the weight assigned to each value is computed by a compatibility function of the\n"
+            "query with the corresponding key."
+        )
+        expected = (
+            "of the values, where the weight assigned to each value is computed by a compatibility function of the\n"
+            "query with the corresponding key."
+        )
+        assert strip_chunk_preamble(text) == expected
+
+    def test_no_preamble(self):
+        text = "The dominant sequence transduction models use complex recurrent networks."
+        assert strip_chunk_preamble(text) == text
+
+    def test_empty_string(self):
+        assert strip_chunk_preamble("") == ""
+
+    def test_only_headers(self):
+        text = "Introduction\nBackground"
+        # All lines are headers, return original stripped
+        assert strip_chunk_preamble(text) == "Introduction\nBackground"

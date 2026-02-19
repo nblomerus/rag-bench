@@ -168,17 +168,20 @@ class BM25:
         }
     )
 
+    # Cache format version — bump when the on-disk layout changes so stale
+    # caches are automatically rebuilt instead of crashing on load.
+    _CACHE_VERSION = 2
+
     def __init__(self, k1: float = 1.5, b: float = 0.75):
         self.k1 = k1
         self.b = b
-        self.doc_len = []  # length of each document
-        self.avgdl = 0.0  # average document length
-        self.doc_freqs = []  # term frequency per document
-        self.idf = {}  # inverse document frequency per term
+        self.doc_len: np.ndarray = np.array([], dtype=np.float32)
+        self.avgdl = 0.0
+        self.idf: dict[str, float] = {}
         self.doc_count = 0
-        self.chunk_ids = []  # parallel array of chunk IDs
-        self.chunk_texts = []  # parallel array of chunk texts
-        self.chunk_metadata = []  # parallel array of metadata
+        self.chunk_ids: list[str] = []
+        # Inverted index: term -> (doc_indices np.uint32, term_freqs np.float32)
+        self.inv_index: dict[str, tuple[np.ndarray, np.ndarray]] = {}
 
     def _tokenize(self, text: str) -> list[str]:
         """Tokenize with stopword removal for better signal at scale."""
@@ -189,75 +192,77 @@ class BM25:
         return [t for t in tokens if t not in self.STOPWORDS and len(t) > 1]
 
     def index(self, chunks: list[dict]):
-        """Build the BM25 index from a list of chunk dicts."""
+        """Build the BM25 inverted index from a list of chunk dicts."""
         self.chunk_ids = [c["chunk_id"] for c in chunks]
-        self.chunk_texts = [c["text"] for c in chunks]
-        self.chunk_metadata = [c.get("metadata", {}) for c in chunks]
+        self.doc_count = len(chunks)
 
-        # Build term frequencies
+        # First pass: collect term frequencies per doc and doc lengths
         df = Counter()  # document frequency per term
-        self.doc_freqs = []
-        self.doc_len = []
+        postings: dict[str, list[tuple[int, int]]] = {}  # term -> [(doc_idx, tf)]
+        doc_lens = []
 
-        for chunk in chunks:
+        for doc_idx, chunk in enumerate(chunks):
             tokens = self._tokenize(chunk["text"])
-            self.doc_len.append(len(tokens))
+            doc_lens.append(len(tokens))
 
             tf = Counter(tokens)
-            self.doc_freqs.append(tf)
-
-            # Count document frequency (how many docs contain each term)
-            for term in tf:
+            for term, freq in tf.items():
                 df[term] += 1
+                if term not in postings:
+                    postings[term] = []
+                postings[term].append((doc_idx, freq))
 
-        self.doc_count = len(chunks)
-        self.avgdl = sum(self.doc_len) / max(self.doc_count, 1)
+        self.doc_len = np.array(doc_lens, dtype=np.float32)
+        self.avgdl = float(self.doc_len.mean()) if self.doc_count > 0 else 0.0
 
-        # Compute IDF for each term
+        # Compute IDF
         self.idf = {}
         for term, freq in df.items():
-            # IDF with smoothing to avoid negative values
             self.idf[term] = math.log((self.doc_count - freq + 0.5) / (freq + 0.5) + 1.0)
 
-        logger.info(f"BM25 index built: {self.doc_count} docs, {len(self.idf)} unique terms")
+        # Build inverted index with numpy arrays
+        self.inv_index = {}
+        for term, posting_list in postings.items():
+            doc_ids = np.array([p[0] for p in posting_list], dtype=np.uint32)
+            tfs = np.array([p[1] for p in posting_list], dtype=np.float32)
+            self.inv_index[term] = (doc_ids, tfs)
+
+        logger.info(f"BM25 inverted index built: {self.doc_count} docs, {len(self.idf)} unique terms")
 
     def query(self, question: str, top_k: int = 20) -> list[dict]:
-        """Score all documents against the query and return top-k."""
+        """Score documents against the query using the inverted index."""
         query_tokens = self._tokenize(question)
-        scores = []
+        if not query_tokens or self.doc_count == 0:
+            return []
 
-        for i in range(self.doc_count):
-            score = 0.0
-            tf = self.doc_freqs[i]
-            dl = self.doc_len[i]
+        scores = np.zeros(self.doc_count, dtype=np.float64)
 
-            for token in query_tokens:
-                if token not in tf:
-                    continue
+        for token in query_tokens:
+            if token not in self.inv_index:
+                continue
 
-                term_freq = tf[token]
-                idf = self.idf.get(token, 0.0)
+            idf = self.idf[token]
+            doc_ids, tfs = self.inv_index[token]
 
-                # BM25 scoring formula
-                numerator = term_freq * (self.k1 + 1)
-                denominator = term_freq + self.k1 * (1 - self.b + self.b * dl / self.avgdl)
-                score += idf * numerator / denominator
+            # Vectorized BM25 scoring over matching documents only
+            dl = self.doc_len[doc_ids]
+            numerator = tfs * (self.k1 + 1)
+            denominator = tfs + self.k1 * (1 - self.b + self.b * dl / self.avgdl)
+            scores[doc_ids] += idf * numerator / denominator
 
-            scores.append(score)
-
-        # Get top-k indices
-        top_indices = np.argsort(scores)[::-1][:top_k]
+        # Fast top-k via argpartition (O(n) instead of O(n log n) full sort)
+        actual_k = min(top_k, self.doc_count)
+        top_indices = np.argpartition(scores, -actual_k)[-actual_k:]
+        top_indices = top_indices[np.argsort(scores[top_indices])[::-1]]
 
         results = []
         for idx in top_indices:
             if scores[idx] <= 0:
-                break  # No more relevant results
+                break
             results.append(
                 {
                     "chunk_id": self.chunk_ids[idx],
-                    "text": self.chunk_texts[idx],
                     "score": float(scores[idx]),
-                    "metadata": self.chunk_metadata[idx],
                     "source": "bm25",
                 }
             )
@@ -265,18 +270,17 @@ class BM25:
         return results
 
     def save_to_cache(self, path: Path):
-        """Serialize the BM25 index to disk for fast reload."""
+        """Serialize the inverted index to disk."""
         state = {
+            "_cache_version": self._CACHE_VERSION,
             "doc_count": self.doc_count,
             "avgdl": self.avgdl,
             "k1": self.k1,
             "b": self.b,
             "idf": self.idf,
             "doc_len": self.doc_len,
-            "doc_freqs": self.doc_freqs,
             "chunk_ids": self.chunk_ids,
-            "chunk_texts": self.chunk_texts,
-            "chunk_metadata": self.chunk_metadata,
+            "inv_index": self.inv_index,
         }
         with open(path, "wb") as f:
             pickle.dump(state, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -287,16 +291,17 @@ class BM25:
         try:
             with open(path, "rb") as f:
                 state = pickle.load(f)  # noqa: S301
+            if state.get("_cache_version") != self._CACHE_VERSION:
+                logger.info("BM25 cache version mismatch, rebuilding...")
+                return False
             self.doc_count = state["doc_count"]
             self.avgdl = state["avgdl"]
             self.k1 = state["k1"]
             self.b = state["b"]
             self.idf = state["idf"]
             self.doc_len = state["doc_len"]
-            self.doc_freqs = state["doc_freqs"]
             self.chunk_ids = state["chunk_ids"]
-            self.chunk_texts = state["chunk_texts"]
-            self.chunk_metadata = state["chunk_metadata"]
+            self.inv_index = state["inv_index"]
             return True
         except Exception as e:
             logger.warning(f"Failed to load BM25 cache: {e}")
@@ -683,6 +688,18 @@ class HybridRetriever:
         # Stage 1: First-stage retrieval (parallel in concept)
         bm25_results = self.bm25.query(question, top_k=first_stage_k)
         dense_results = self._dense_query(question, top_k=first_stage_k)
+
+        # Enrich BM25 results with text/metadata from ChromaDB
+        if bm25_results:
+            bm25_ids = [r["chunk_id"] for r in bm25_results]
+            enriched = self.collection.get(ids=bm25_ids, include=["documents", "metadatas"])
+            id_to_data = {}
+            for i, cid in enumerate(enriched["ids"]):
+                id_to_data[cid] = (enriched["documents"][i], enriched["metadatas"][i])
+            for r in bm25_results:
+                text, meta = id_to_data.get(r["chunk_id"], ("", {}))
+                r["text"] = text
+                r["metadata"] = meta
 
         logger.debug(f"First stage: BM25={len(bm25_results)}, Dense={len(dense_results)}")
 

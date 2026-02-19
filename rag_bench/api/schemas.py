@@ -37,6 +37,7 @@ class QualityMetrics(BaseModel):
     score_spread: dict = {}
     source_diversity: dict = {}
     per_source_cited: list[dict] = []
+    faithfulness_score: float = 0.0
 
 
 class QueryResponse(BaseModel):

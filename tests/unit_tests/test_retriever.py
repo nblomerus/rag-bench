@@ -138,7 +138,7 @@ class TestBM25:
         assert bm25.doc_count == len(sample_chunks)
         assert len(bm25.chunk_ids) == len(sample_chunks)
         assert len(bm25.doc_len) == len(sample_chunks)
-        assert len(bm25.doc_freqs) == len(sample_chunks)
+        assert len(bm25.inv_index) > 0
         assert bm25.avgdl > 0
         assert len(bm25.idf) > 0
 
@@ -178,7 +178,6 @@ class TestBM25:
 
         assert len(results) <= 2
         assert all("chunk_id" in r for r in results)
-        assert all("text" in r for r in results)
         assert all("score" in r for r in results)
         assert all(r["source"] == "bm25" for r in results)
 
@@ -230,15 +229,17 @@ class TestBM25:
 
         assert results == []
 
-    def test_query_metadata_included(self, sample_chunks):
-        """Test that metadata is included in results."""
+    def test_query_returns_expected_fields(self, sample_chunks):
+        """Test that query results contain the expected fields."""
         bm25 = BM25()
         bm25.index(sample_chunks)
 
         results = bm25.query("neural", top_k=1)
 
         if results:
-            assert "metadata" in results[0]
+            assert "chunk_id" in results[0]
+            assert "score" in results[0]
+            assert "source" in results[0]
 
     def test_bm25_scoring_formula(self):
         """Test BM25 scoring is reasonable."""
