@@ -49,6 +49,7 @@ from rag_bench.config import (
     COLLECTION_NAME,
     DEFAULT_TOP_K,
     EMBEDDING_MODEL,
+    EVAL_DIR,
     PROJECT_ROOT,
     RERANKER_MODEL,
 )
@@ -60,7 +61,7 @@ from rag_bench.core.generator import (
     build_llm_backend,
 )
 from rag_bench.core.retriever import HybridRetriever
-from rag_bench.utils.text import fix_encoding
+from rag_bench.utils.text import fix_encoding, strip_chunk_preamble
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -69,7 +70,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 # Configuration from environment
 # ═══════════════════════════════════════════════════════════════════════════
 LLM_BACKEND = os.environ.get("RAG_LLM_BACKEND", "ollama")
-LLM_MODEL = os.environ.get("RAG_LLM_MODEL", "mistral:7b-instruct-q4_K_M")
+LLM_MODEL = os.environ.get("RAG_LLM_MODEL", "gemma2:27b")
 LLM_BASE_URL = os.environ.get("RAG_LLM_BASE_URL", "http://localhost:11434")
 RERANKER_MODEL_OVERRIDE = os.environ.get("RAG_RERANKER_MODEL", RERANKER_MODEL)
 
@@ -240,7 +241,7 @@ def _format_sources(results: list[dict]) -> list[SourceResult]:
                 score=round(score, 4),
                 title=meta.get("title", meta.get("source_display", "Unknown")),
                 section=meta.get("section", ""),
-                text_preview=fix_encoding(r.get("text", ""))[:300],
+                text_preview=strip_chunk_preamble(fix_encoding(r.get("text", "")))[:300],
                 paper_id=meta.get("paper_id", meta.get("doc_id", meta.get("arxiv_id", ""))),
                 chunk_id=r.get("chunk_id", ""),
                 relevance=relevance,
@@ -252,6 +253,143 @@ def _format_sources(results: list[dict]) -> list[SourceResult]:
 # ═══════════════════════════════════════════════════════════════════════════
 # Per-response quality metrics (fast, deterministic — no LLM calls)
 # ═══════════════════════════════════════════════════════════════════════════
+
+
+_STOP_WORDS = frozenset(
+    [
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "shall",
+        "should",
+        "may",
+        "might",
+        "must",
+        "can",
+        "could",
+        "to",
+        "of",
+        "in",
+        "for",
+        "on",
+        "with",
+        "at",
+        "by",
+        "from",
+        "that",
+        "this",
+        "these",
+        "those",
+        "it",
+        "its",
+        "as",
+        "or",
+        "and",
+        "but",
+        "not",
+        "no",
+        "so",
+        "if",
+        "than",
+        "then",
+        "their",
+        "there",
+        "they",
+        "we",
+        "our",
+        "us",
+        "which",
+        "who",
+        "what",
+        "how",
+        "when",
+        "where",
+        "why",
+        "i",
+        "you",
+        "he",
+        "she",
+        "we",
+        "they",
+        "me",
+        "him",
+        "her",
+        "us",
+        "them",
+        "my",
+        "your",
+        "his",
+        "her",
+        "its",
+        "our",
+        "their",
+        "s",
+        "t",
+        "re",
+        "ve",
+        "ll",
+        "d",
+        "m",
+    ]
+)
+
+
+def _content_words(text: str) -> set[str]:
+    """Extract meaningful content words (3+ chars, not stop words)."""
+    import re
+
+    tokens = re.findall(r"[a-zA-Z]\w{2,}", text.lower())
+    return {t for t in tokens if t not in _STOP_WORDS}
+
+
+def _compute_faithfulness_heuristic(answer: str, source_passages: list[str]) -> float:
+    """
+    Content-word overlap between answer sentences and source passages, mapped to 1-5.
+
+    Filters stop words and short tokens so common function words don't inflate the score.
+    Only considers sentences with at least 4 content words to avoid noise from
+    one-word headers or transition phrases.
+    """
+    import re
+
+    if not source_passages:
+        return 1.0
+
+    # Strip the trailing sources block from the answer
+    answer_body = re.split(r"\n\s*(?:\[Source[^\]]*\]:|Sources?:)", answer, maxsplit=1)[0]
+    source_words = _content_words(" ".join(source_passages))
+    if not source_words:
+        return 1.0
+
+    sentences = [s.strip() for s in re.split(r"[.!?]+", answer_body) if len(s.strip()) > 15]
+    if not sentences:
+        return 1.0
+
+    overlap_scores = []
+    for sentence in sentences:
+        words = _content_words(sentence)
+        if len(words) >= 4:  # skip very short/header sentences
+            overlap_scores.append(len(words & source_words) / len(words))
+
+    if not overlap_scores:
+        return 1.0
+    avg_overlap = sum(overlap_scores) / len(overlap_scores)
+    return round(1.0 + avg_overlap * 4.0, 1)
 
 
 def _compute_quality_metrics(answer: str, all_results: list[dict], filtered_results: list[dict]) -> QualityMetrics:
@@ -266,6 +404,7 @@ def _compute_quality_metrics(answer: str, all_results: list[dict], filtered_resu
     sources_for_metrics = filtered_results if filtered_results else all_results[:5]
     num_provided = len(sources_for_metrics)
     cited = extract_cited_source_numbers(answer)
+    source_passages = [r.get("text", "") for r in sources_for_metrics if r.get("text")]
 
     return QualityMetrics(
         retrieval_confidence=_compute_retrieval_confidence(all_results),
@@ -278,42 +417,57 @@ def _compute_quality_metrics(answer: str, all_results: list[dict], filtered_resu
         score_spread=_compute_score_spread(all_results),
         source_diversity=_compute_source_diversity(sources_for_metrics),
         per_source_cited=_compute_per_source_cited(answer, sources_for_metrics),
+        faithfulness_score=_compute_faithfulness_heuristic(answer, source_passages),
     )
 
 
 def _compute_retrieval_confidence(results: list[dict]) -> str:
-    """Classify retrieval confidence as high/medium/low."""
+    """Classify retrieval confidence as high/medium/low.
+
+    Uses both absolute score and score gap (top vs second) so a clear winner
+    at moderate absolute scores is still rated 'high'.
+    """
     if not results:
         return "low"
-    top_score = results[0].get("score", 0.0)
-    above_half = sum(1 for r in results if r.get("score", 0.0) >= top_score / 2)
+    scores = [r.get("score", 0.0) for r in results]
+    top = scores[0]
+    second = scores[1] if len(scores) > 1 else 0.0
+    # gap_ratio: how much better is the top result than the second
+    gap_ratio = top / second if second > 0.0 else float("inf")
 
-    # Cross-encoder scores are typically > 1.0, cosine < 1.0
-    if top_score > 2.0:  # cross-encoder range
-        if top_score > 6.0 and above_half >= 3:
+    # Cross-encoder scores typically in 1-10 range; cosine < 1.0
+    if top > 2.0:  # cross-encoder range
+        if top > 3.0 and gap_ratio >= 1.8:
             return "high"
-        elif top_score > 3.0 or above_half >= 1:
+        elif top > 2.0 and gap_ratio >= 1.3:
             return "medium"
     else:  # cosine range
-        if top_score > 0.7 and above_half >= 3:
+        if top > 0.65 and gap_ratio >= 1.5:
             return "high"
-        elif top_score > 0.5 or above_half >= 1:
+        elif top > 0.4 and gap_ratio >= 1.2:
             return "medium"
     return "low"
 
 
 def _compute_score_spread(results: list[dict]) -> dict:
-    """Return min/max/mean/std of retrieval scores."""
+    """Return min/max/mean/std/gap_ratio of retrieval scores.
+
+    gap_ratio is top_score / second_score — a high ratio (>1.8) means the top
+    result is a clear winner, indicating focused retrieval for the query.
+    """
     if not results:
-        return {"min": 0.0, "max": 0.0, "mean": 0.0, "std": 0.0}
+        return {"min": 0.0, "max": 0.0, "mean": 0.0, "std": 0.0, "gap_ratio": 0.0}
     scores = [r.get("score", 0.0) for r in results]
     mean = sum(scores) / len(scores)
     variance = sum((s - mean) ** 2 for s in scores) / len(scores)
+    second = scores[1] if len(scores) > 1 else 0.0
+    gap_ratio = round(scores[0] / second, 2) if second > 0.0 else 0.0
     return {
         "min": round(min(scores), 4),
         "max": round(max(scores), 4),
         "mean": round(mean, 4),
         "std": round(variance**0.5, 4),
+        "gap_ratio": gap_ratio,
     }
 
 
@@ -337,13 +491,35 @@ def _compute_source_diversity(results: list[dict]) -> dict:
 
 
 def _compute_per_source_cited(answer: str, results: list[dict]) -> list[dict]:
-    """For each source, check if it was cited in the answer and how many times."""
+    """For each source, check if it was cited in the answer and how many times.
+
+    Detects three citation styles:
+      - [Source N] inline in body
+      - [N] bare number inline in body
+      - Footer-only: source listed in the trailing sources block (counted as cited once)
+    """
     import re
+
+    parts = re.split(r"\n\s*(?:\[Source[^\]]*\]:|Sources?:)", answer, maxsplit=1)
+    body = parts[0]
+    footer = parts[1] if len(parts) > 1 else ""
 
     per_source = []
     for i, r in enumerate(results, 1):
         meta = r.get("metadata", {})
-        count = len(re.findall(rf"\[Source\s+{i}\]", answer))
+
+        # Standard [Source N] in body
+        standard_count = len(re.findall(rf"\[Source\s+{i}\]", body))
+        # Bare [N] in body only (avoid matching footer list items)
+        bare_count = len(re.findall(rf"\[{i}\]", body))
+        inline_count = standard_count + bare_count
+
+        # Footer reference (only credited if no inline citation found)
+        footer_cited = False
+        if inline_count == 0:
+            footer_cited = bool(re.search(rf"\[Source\s+{i}\]", footer) or re.search(rf"\[{i}\]", footer))
+
+        count = inline_count + (1 if footer_cited else 0)
         per_source.append(
             {
                 "source_number": i,
@@ -351,6 +527,7 @@ def _compute_per_source_cited(answer: str, results: list[dict]) -> list[dict]:
                 "title": meta.get("title", "Unknown"),
                 "cited": count > 0,
                 "citation_count": count,
+                "footer_only": footer_cited,
                 "score": round(r.get("score", 0.0), 4),
             }
         )
@@ -561,13 +738,19 @@ async def query_rag_stream(request: QueryRequest):
 
             gen = generator.answer_stream(request.question, top_k=request.top_k)
 
+            # Capture results from the sources event so quality metrics can be computed at done
+            _stream_all_results: list[dict] = []
+            _stream_filtered_results: list[dict] = []
+
             while True:
                 evt = await loop.run_in_executor(None, _next_or_stop, gen)
                 if evt is _STOP:
                     break
 
                 if evt["event"] == "sources":
-                    display_results = evt.get("filtered_results", evt.get("results", []))
+                    _stream_all_results = evt.get("results", [])
+                    _stream_filtered_results = evt.get("filtered_results", [])
+                    display_results = _stream_filtered_results or _stream_all_results
                     sources = _format_sources(display_results)
                     yield f"data: {json.dumps({'event': 'sources', 'sources': [s.model_dump() for s in sources]})}\n\n"
 
@@ -590,6 +773,15 @@ async def query_rag_stream(request: QueryRequest):
 
                 elif evt["event"] == "done":
                     latency = (time.time() - start) * 1000
+                    quality = QualityMetrics()
+                    try:
+                        quality = _compute_quality_metrics(
+                            evt["answer"],
+                            _stream_all_results,
+                            _stream_filtered_results,
+                        )
+                    except Exception as qe:
+                        logger.warning(f"Stream quality metrics failed: {qe}")
                     completion_msg = {
                         "event": "done",
                         "answer": evt["answer"],
@@ -597,6 +789,7 @@ async def query_rag_stream(request: QueryRequest):
                         "latency_ms": round(latency, 1),
                         "backend": _llm_backend_name,
                         "model": _llm_model_name,
+                        "quality": quality.model_dump(),
                     }
                     yield f"data: {json.dumps(completion_msg)}\n\n"
 
@@ -638,7 +831,7 @@ async def run_evaluation(request: EvalRequest):
     if not _generator:
         raise HTTPException(status_code=503, detail="Pipeline still loading")
 
-    eval_path = PROJECT_ROOT / "eval" / "eval_queries.json"
+    eval_path = EVAL_DIR / "eval_queries.json"
     if not eval_path.exists():
         raise HTTPException(status_code=404, detail="eval_queries.json not found")
 

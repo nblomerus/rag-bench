@@ -102,6 +102,11 @@ function QualityBadges({ quality }) {
                      quality.unsupported_claims <= 2 ? 'bg-yellow-900/30 text-yellow-400 border-yellow-800' :
                      'bg-red-900/30 text-red-400 border-red-800'
 
+  const faithScore = quality.faithfulness_score || 0
+  const faithColor = faithScore >= 4 ? 'bg-green-900/30 text-green-400 border-green-800' :
+                     faithScore >= 3 ? 'bg-yellow-900/30 text-yellow-400 border-yellow-800' :
+                     'bg-red-900/30 text-red-400 border-red-800'
+
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       <span className={`quality-badge border ${confColor}`}>
@@ -115,6 +120,11 @@ function QualityBadges({ quality }) {
       <span className={`quality-badge border ${unsupColor}`}>
         {quality.unsupported_claims} unsupported
       </span>
+      {faithScore > 0 && (
+        <span className={`quality-badge border ${faithColor}`}>
+          Faith {faithScore.toFixed(1)}/5
+        </span>
+      )}
     </div>
   )
 }
@@ -199,6 +209,27 @@ function QualityPanel({ quality }) {
           </div>
         </div>
       </div>
+
+      {/* Faithfulness */}
+      {quality.faithfulness_score > 0 && (
+        <div className="mb-3">
+          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Faithfulness</h4>
+          <div className="flex items-center gap-3 text-xs">
+            <ScoreBar
+              value={quality.faithfulness_score}
+              max={5}
+              color={quality.faithfulness_score >= 4 ? 'green' : quality.faithfulness_score >= 3 ? 'yellow' : 'red'}
+            />
+            <span className={
+              quality.faithfulness_score >= 4 ? 'text-green-400' :
+              quality.faithfulness_score >= 3 ? 'text-yellow-400' : 'text-red-400'
+            }>
+              {quality.faithfulness_score.toFixed(1)} / 5
+            </span>
+            <span className="text-gray-600">keyword overlap with sources</span>
+          </div>
+        </div>
+      )}
 
       {/* Per-source verification */}
       {perSource.length > 0 && (

@@ -152,13 +152,39 @@ def compute_retrieval_metrics(
 
 def extract_cited_source_numbers(answer: str) -> list[int]:
     """
-    Parse all [Source N] references from the answer body (excluding the Sources block).
+    Parse citation references from the answer, preferring the body over the footer.
+
+    Handles three formats:
+      - Standard inline:  [Source N]  (instruction-following models)
+      - Fallback inline:  [N]         (models that use numeric footnote style)
+      - Footer-only:      Source: [Source 1] ... (models that only list at the end)
+
+    When a model only cites in a trailing sources block (no inline citations),
+    we count those footer references so the metric is not misleadingly zero.
+
     Returns sorted, deduplicated list of source numbers.
     """
-    # Strip the "Sources:" / "Source:" block at the end so we only count inline citations
-    text = re.split(r"\n\s*Sources?:", answer, maxsplit=1)[0]
-    matches = re.findall(r"\[Source\s+(\d+)\]", text)
-    return sorted(set(int(m) for m in matches))
+    parts = re.split(r"\n\s*(?:\[Source[^\]]*\]:|Sources?:)", answer, maxsplit=1)
+    body = parts[0]
+    footer = parts[1] if len(parts) > 1 else ""
+
+    # Standard inline format: [Source N]
+    standard = re.findall(r"\[Source\s+(\d+)\]", body)
+    if standard:
+        return sorted(set(int(m) for m in standard))
+
+    # Fallback: bare [N] in body — limit to 1-20
+    bare = re.findall(r"\[(\d{1,2})\]", body)
+    if bare:
+        return sorted(set(int(m) for m in bare if 1 <= int(m) <= 20))
+
+    # Last resort: model only cited in footer — still credit those references
+    footer_standard = re.findall(r"\[Source\s+(\d+)\]", footer)
+    if footer_standard:
+        return sorted(set(int(m) for m in footer_standard))
+
+    footer_bare = re.findall(r"\[(\d{1,2})\]", footer)
+    return sorted(set(int(m) for m in footer_bare if 1 <= int(m) <= 20))
 
 
 def _source_number_to_paper_id(source_num: int, results: list[dict]) -> str | None:
@@ -227,51 +253,65 @@ def source_coverage(answer: str, num_sources_provided: int) -> float:
     return len(cited) / num_sources_provided
 
 
+# Matches any inline citation: [Source N] or bare [N] (1-20)
+_CITATION_PAT = re.compile(r"\[Source\s+\d+\]|\[(\d{1,2})\]")
+
+
+def _strip_sources_block(answer: str) -> str:
+    """Remove trailing sources/references block from answer text."""
+    return re.split(r"\n\s*(?:\[Source[^\]]*\]:|Sources?:)", answer, maxsplit=1)[0]
+
+
+def _has_citation(text: str) -> bool:
+    """Return True if text contains any inline citation in either supported format."""
+    return bool(_CITATION_PAT.search(text))
+
+
 def citation_density(answer: str) -> float:
     """
     Average number of citations per sentence.
+    Handles both [Source N] and bare [N] citation formats.
     """
-    # Remove the "Sources:" block at the end if present
-    text = re.split(r"\n\s*Sources?:", answer, maxsplit=1)[0]
-    # Split into sentences
+    text = _strip_sources_block(answer)
     sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
     if not sentences:
         return 0.0
-    total_citations = len(re.findall(r"\[Source\s+\d+\]", text))
+    total_citations = len(_CITATION_PAT.findall(text))
     return total_citations / len(sentences)
 
 
 def count_unsupported_claims(answer: str) -> int:
     """
-    Count sentences that make factual claims but have no [Source N] citation.
+    Count sentences that make specific factual claims but have no citation.
 
-    Heuristic: sentences containing numbers, named entities (capitalized words),
-    or technical terms but no [Source N] pattern.
-    Excludes the "Sources:" block at the end and very short sentences.
+    A sentence is considered an unsupported claim when it contains BOTH:
+      - a number or measurement (e.g. "175 billion", "0.85", "28 BLEU")
+      - a technical term indicating it's making a verifiable claim
+
+    Named entities alone are NOT flagged — headlines, topic sentences, and
+    introductory statements routinely name things without needing citations.
+    Excludes the sources block and sentences shorter than 25 characters.
     """
-    # Remove the "Sources:" block
-    text = re.split(r"\n\s*Sources?:", answer, maxsplit=1)[0]
+    text = _strip_sources_block(answer)
     sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+
+    _TECHNICAL = re.compile(
+        r"\b(?:parameter|layer|architecture|training|dataset|performance|accuracy|"
+        r"score|benchmark|attention|embedding|token|transformer|neural|matrix|vector|"
+        r"gradient|loss|weight|dimension|head|softmax|linear|epoch|batch|"
+        r"precision|recall|f1|bleu|rouge|perplexity|latency|throughput)\b",
+        re.IGNORECASE,
+    )
+    _NUMBER = re.compile(r"\b\d+(?:[.,]\d+)?(?:\s*(?:billion|million|thousand|%|ms|gb|tb))?\b")
 
     unsupported = 0
     for sentence in sentences:
-        if len(sentence) < 20:
+        if len(sentence) < 25:
             continue
-        has_citation = bool(re.search(r"\[Source\s+\d+\]", sentence))
-        if has_citation:
+        if _has_citation(sentence):
             continue
-        # Check if sentence makes a factual claim
-        has_number = bool(re.search(r"\d+", sentence))
-        has_named_entity = bool(re.search(r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*", sentence))
-        has_technical = bool(
-            re.search(
-                r"\b(?:model|parameter|layer|architecture|training|dataset|performance|accuracy|"
-                r"score|benchmark|attention|embedding|token|transformer|neural)\b",
-                sentence,
-                re.IGNORECASE,
-            )
-        )
-        if has_number or has_named_entity or has_technical:
+        # Only flag sentences that make measurable/verifiable claims
+        if _NUMBER.search(sentence) and _TECHNICAL.search(sentence):
             unsupported += 1
 
     return unsupported

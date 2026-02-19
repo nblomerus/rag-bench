@@ -3,7 +3,7 @@
     "id": "eval_001",
     "question": "What is the scaled dot-product attention formula?",
     "difficulty": "easy",
-    "top_score": 0.9991486072540283,
+    "top_score": 0.9989672899246216,
     "is_relevant": true,
     "num_results": 5,
     "should_deflect": false
@@ -12,7 +12,7 @@
     "id": "eval_002",
     "question": "How many trainable parameters does LoRA reduce compared to full fine-tuning on GPT-3?",
     "difficulty": "easy",
-    "top_score": 0.9981333613395691,
+    "top_score": 0.9957032799720764,
     "is_relevant": true,
     "num_results": 5,
     "should_deflect": false
@@ -21,7 +21,7 @@
     "id": "eval_003",
     "question": "What BLEU score did the Transformer achieve on English-to-German translation?",
     "difficulty": "easy",
-    "top_score": 0.9970609545707703,
+    "top_score": 0.9929331541061401,
     "is_relevant": true,
     "num_results": 5,
     "should_deflect": false
@@ -30,7 +30,7 @@
     "id": "eval_004",
     "question": "What is the forward diffusion process in DDPM?",
     "difficulty": "easy",
-    "top_score": 0.999161958694458,
+    "top_score": 0.9992424249649048,
     "is_relevant": true,
     "num_results": 5,
     "should_deflect": false
@@ -39,7 +39,7 @@
     "id": "eval_005",
     "question": "How many demonstration prompts were used to train the InstructGPT SFT model?",
     "difficulty": "easy",
-    "top_score": 0.6494656205177307,
+    "top_score": 0.8078407049179077,
     "is_relevant": true,
     "num_results": 5,
     "should_deflect": false
@@ -48,7 +48,7 @@
     "id": "eval_006",
     "question": "What retriever does the RAG model use?",
     "difficulty": "easy",
-    "top_score": 0.9965226650238037,
+    "top_score": 0.9971210360527039,
     "is_relevant": true,
     "num_results": 5,
     "should_deflect": false
@@ -57,7 +57,7 @@
     "id": "eval_007",
     "question": "What is the difference between RAG-Sequence and RAG-Token?",
     "difficulty": "easy",
-    "top_score": 0.9811850190162659,
+    "top_score": 0.9915130734443665,
     "is_relevant": true,
     "num_results": 5,
     "should_deflect": false
@@ -66,7 +66,7 @@
     "id": "eval_008",
     "question": "Why does the Transformer need positional encoding?",
     "difficulty": "easy",
-    "top_score": 0.9981334805488586,
+    "top_score": 0.9977126121520996,
     "is_relevant": true,
     "num_results": 5,
     "should_deflect": false

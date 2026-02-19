@@ -23,6 +23,7 @@ from rag_bench.core.ingest import (
     load_arxiv_dataset,
     parse_paper,
 )
+from rag_bench.utils.text import extract_sections_from_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -87,14 +88,22 @@ def load_scraped_papers(scraped_path: Path) -> dict[str, dict]:
     with open(scraped_path) as f:
         scraped_docs = json.load(f)
 
-    # Index by normalized arXiv ID
+    # Index by normalized arXiv ID, re-extracting sections from full_text
+    # so that sub-section headers (3.2.1, etc.) are properly detected
     scraped_by_id = {}
+    re_sectioned = 0
     for doc in scraped_docs:
         arxiv_id = extract_arxiv_id(doc["doc_id"])
         normalized_id = normalize_arxiv_id(arxiv_id)
+        # Re-extract sections from full_text using updated PDF patterns
+        if doc.get("full_text"):
+            new_sections = extract_sections_from_pdf(doc["full_text"])
+            if len(new_sections) > len(doc.get("sections", {})):
+                doc["sections"] = new_sections
+                re_sectioned += 1
         scraped_by_id[normalized_id] = doc
 
-    logger.info(f"Loaded {len(scraped_by_id)} scraped papers")
+    logger.info(f"Loaded {len(scraped_by_id)} scraped papers ({re_sectioned} gained sub-sections)")
     return scraped_by_id
 
 

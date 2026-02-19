@@ -61,7 +61,7 @@ HEADER_PATTERN = re.compile(r"^(#{1,4})\s+(.+)$", re.MULTILINE)
 
 # Additional patterns for PDF-extracted text (plain text headers)
 PDF_HEADER_PATTERNS = [
-    re.compile(r"^(\d+\.?\s+[A-Z][A-Za-z\s]+)$"),  # Numbered: 1. Introduction
+    re.compile(r"^(\d+(?:\.\d+)*\.?\s+[A-Z][A-Za-z\s]+)$"),  # Numbered: 1. Introduction, 3.2.1 Attention
     re.compile(r"^([A-Z][A-Z\s]{3,40})$"),  # ALL CAPS: INTRODUCTION
     re.compile(
         r"^(Abstract|Introduction|Related Work|Background|"
@@ -72,6 +72,9 @@ PDF_HEADER_PATTERNS = [
         re.IGNORECASE,
     ),
 ]
+
+# Standalone section number on its own line (PDF extraction splits number from title)
+_SECTION_NUMBER_RE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s*$")
 
 
 def normalize_section_name(name: str) -> str:
@@ -137,7 +140,8 @@ def extract_sections_from_pdf(text: str) -> dict[str, str]:
     Split PDF-extracted text into sections.
 
     Handles both markdown-style and plain text headers found in PDF extractions.
-    Falls back to markdown extraction first, then tries PDF header patterns.
+    Also handles split headers where a section number (e.g. '3.2.1') appears on
+    one line and the title (e.g. 'Scaled Dot-Product Attention') on the next.
     """
     if not text or len(text.strip()) < 100:
         return {"full_text": text}
@@ -148,9 +152,11 @@ def extract_sections_from_pdf(text: str) -> dict[str, str]:
 
     # Combined patterns: markdown + PDF-specific
     all_patterns = [HEADER_PATTERN] + PDF_HEADER_PATTERNS
+    lines = text.split("\n")
+    i = 0
 
-    for line in text.split("\n"):
-        stripped = line.strip()
+    while i < len(lines):
+        stripped = lines[i].strip()
         matched_header = None
 
         for pattern in all_patterns:
@@ -162,6 +168,14 @@ def extract_sections_from_pdf(text: str) -> dict[str, str]:
                     matched_header = m.group(1) if m.lastindex else stripped
                 break
 
+        # Check for split header: standalone section number + title on next line
+        if not matched_header and _SECTION_NUMBER_RE.match(stripped) and i + 1 < len(lines):
+            next_line = lines[i + 1].strip()
+            # Next line should look like a title: starts with uppercase, short, no period
+            if next_line and next_line[0].isupper() and len(next_line) < 60 and not next_line.endswith("."):
+                matched_header = f"{stripped} {next_line}"
+                i += 1  # consume the title line too
+
         if matched_header and len(matched_header) < 80:
             # Save previous section
             if current_lines:
@@ -172,7 +186,9 @@ def extract_sections_from_pdf(text: str) -> dict[str, str]:
             current_section = normalize_section_name(matched_header)
             current_lines = []
         else:
-            current_lines.append(line)
+            current_lines.append(lines[i])
+
+        i += 1
 
     # Save final section
     if current_lines:
@@ -371,4 +387,56 @@ def clean_latex_artifacts(text: str) -> str:
     text = re.sub(r"\s+", " ", text)  # Multiple spaces → single space
     text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)  # Multiple blank lines → double newline
 
+    return text.strip()
+
+
+_FIGURE_TABLE_RE = re.compile(r"^(Figure|Fig\.|Table|Algorithm)\s+\d+", re.IGNORECASE)
+
+
+def strip_chunk_preamble(text: str) -> str:
+    """Strip leading section headers and figure/table captions from chunk text.
+
+    Chunks from PDF extraction often start with sub-section titles and figure
+    captions before the actual paragraph content.  This function skips past
+    those so that downstream search (e.g. PDF location matching) and previews
+    start at the real content.
+
+    Returns the original text unchanged if no preamble is detected.
+    """
+    if not text:
+        return text
+
+    # Strip "Title — Section\n\n" contextual prefix first
+    prefix_match = re.match(r"^.+ — .+\n\n", text)
+    if prefix_match:
+        text = text[prefix_match.end() :]
+
+    lines = text.split("\n")
+    content_start = 0
+    in_caption = False
+
+    for i, raw_line in enumerate(lines):
+        line = raw_line.strip()
+        if not line:
+            in_caption = False
+            content_start = i + 1
+            continue
+        # Skip figure/table/algorithm captions (may span multiple lines)
+        if _FIGURE_TABLE_RE.match(line):
+            in_caption = True
+            content_start = i + 1
+            continue
+        # Caption continuation: short lowercase-starting lines wrapping from Figure/Table
+        if in_caption and len(line) < 50 and line[0].islower():
+            content_start = i + 1
+            continue
+        in_caption = False
+        # Skip short section headers (no sentence-ending punctuation, < 60 chars)
+        if len(line) < 60 and not re.search(r"[.!?:,]$", line):
+            content_start = i + 1
+            continue
+        break
+
+    if content_start > 0 and content_start < len(lines):
+        return "\n".join(lines[content_start:]).strip()
     return text.strip()
