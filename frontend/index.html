@@ -1647,6 +1647,8 @@
             const [evalRunning, setEvalRunning] = useState(false);
             const [error, setError] = useState(null);
             const [ready, setReady] = useState(false);
+            const [serverOffline, setServerOffline] = useState(false);
+            const failCount = useRef(0);
 
             // Paper viewer state
             const [paperViewerData, setPaperViewerData] = useState(null); // { paper, highlightChunkId, highlightText }
@@ -1661,11 +1663,18 @@
             useEffect(() => {
                 const check = async () => {
                     try {
-                        const res = await fetch(`${API_BASE}/health`);
+                        const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(4000) });
                         const d = await res.json();
+                        failCount.current = 0;
+                        setServerOffline(false);
                         setReady(d.pipeline_ready);
                         if (!d.pipeline_ready) setTimeout(check, 2000);
-                    } catch { setTimeout(check, 3000); }
+                        else setTimeout(check, 30000);
+                    } catch {
+                        failCount.current += 1;
+                        if (failCount.current >= 3) setServerOffline(true);
+                        setTimeout(check, 5000);
+                    }
                 };
                 check();
             }, []);
@@ -1829,7 +1838,7 @@
                                     className={`text-xs px-3 py-1.5 rounded-md transition ${showEval ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'}`}>
                                     <span className="inline-flex items-center gap-1"><BarChartIcon size={12} />Eval</span>
                                 </button>
-                                <div className={`w-2 h-2 rounded-full ${ready ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`} />
+                                <div className={`w-2 h-2 rounded-full ${serverOffline ? 'bg-red-500 animate-pulse' : ready ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`} />
                             </div>
                         </div>
                     </header>
@@ -1843,15 +1852,37 @@
                                 {showEval && <EvalPanel evalResults={evalResults} isRunning={evalRunning} onRun={handleRunEval} onClose={() => setShowEval(false)} />}
 
                                 <div className="flex-1 overflow-y-auto pb-4">
-                                    {isEmpty && !isLoading && (
+                                    {serverOffline && (
+                                        <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
+                                            <div className="w-16 h-16 bg-red-600/10 border border-red-600/30 rounded-2xl flex items-center justify-center mb-4">
+                                                <span style={{fontSize:'28px'}}>🔌</span>
+                                            </div>
+                                            <h2 className="text-lg font-semibold text-gray-100 mb-2">Server Offline</h2>
+                                            <p className="text-sm text-gray-400 max-w-sm mb-1">
+                                                The RAG-Bench API is not reachable right now.
+                                            </p>
+                                            <p className="text-xs text-gray-500 max-w-sm mb-4">
+                                                This service runs on a spare personal machine — it may be temporarily offline or restarting. Retrying automatically…
+                                            </p>
+                                            <p className="text-xs text-yellow-500 flex items-center gap-2">
+                                                <Spinner size={12} /> Waiting for server…
+                                            </p>
+                                        </div>
+                                    )}
+                                    {!serverOffline && isEmpty && !isLoading && (
                                         <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
                                             <div className="w-16 h-16 bg-blue-600/10 border border-blue-600/20 rounded-2xl flex items-center justify-center mb-4">
                                                 <BookIcon size={28} />
                                             </div>
-                                            <h2 className="text-lg font-semibold text-gray-200 mb-1">Ask about AI/ML research</h2>
-                                            <p className="text-sm text-gray-500 mb-6 max-w-md">
-                                                Grounded answers with citations from {stats?.total_papers || '500+'} research papers.
-                                            </p>
+                                            <h2 className="text-lg font-semibold text-gray-100 mb-3">RAG-Bench</h2>
+                                            <div className="bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 mb-4 max-w-md text-left space-y-2">
+                                                <p className="text-sm text-gray-300">
+                                                    Ask questions about AI/ML research. Answers are grounded in <span className="text-white font-medium">{stats?.total_papers || '500+'} papers</span> with inline <span className="text-blue-400 font-medium">[Source N]</span> citations — no hallucinations.
+                                                </p>
+                                                <p className="text-xs text-gray-400">Uses BM25 + semantic search + cross-encoder reranking for precision retrieval.</p>
+                                                <p className="text-xs text-amber-400">⚠ First response may take 10–30 s while the model loads.</p>
+                                                <p className="text-xs text-gray-500">Hosted on a spare personal machine — uptime is best-effort and the service may occasionally be offline.</p>
+                                            </div>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-w-lg w-full">
                                                 {EXAMPLES.map((q, i) => (
                                                     <button key={i} onClick={() => handleSubmit(q)} disabled={!ready}
@@ -1928,6 +1959,13 @@
         }
 
         ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js');
+            });
+        }
     </script>
 </body>
 
