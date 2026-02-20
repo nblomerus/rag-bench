@@ -8,7 +8,6 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ragbench-api
-    runtime: nvidia
     environment:
       - RAG_LLM_BACKEND=${RAG_LLM_BACKEND:-ollama}
       - RAG_LLM_MODEL=${RAG_LLM_MODEL:-gemma2:27b}
@@ -16,6 +15,13 @@ services:
       - RAG_API_PORT=8000
       - PYTHONUNBUFFERED=1
       - NVIDIA_VISIBLE_DEVICES=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]
+              capabilities: [gpu]
     ports:
       - "8000:8000"
     volumes:
@@ -42,6 +48,9 @@ services:
     container_name: ragbench-frontend
     ports:
       - "3000:80"
+    volumes:
+      - ./frontend/index.html:/usr/share/nginx/html/index.html
+      - ./frontend/public/sw.js:/usr/share/nginx/html/sw.js
     networks:
       - ragbench
     depends_on:
@@ -58,7 +67,6 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: ragbench-ollama
-    runtime: nvidia
     ports:
       - "${OLLAMA_PORT:-11434}:11434"
     volumes:
@@ -69,6 +77,13 @@ services:
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
       - NVIDIA_VISIBLE_DEVICES=0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
 
 networks:
   ragbench:
