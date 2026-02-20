@@ -1344,20 +1344,28 @@ class RAGGenerator:
     def _filter_relevant_sources(self, results: list[dict]) -> list[dict]:
         """Filter retrieval results to only include genuinely relevant sources.
 
-        Uses a relative threshold: each source must score at least a fraction
-        of the top score. This prevents low-relevance "partial matches" from
-        being sent to the LLM when there's a clear winner.
+        Uses a relative threshold based on the score gap between the top result
+        and the rest:
+
+        - Dominant winner: top score is strong AND the gap ratio to the second
+          result is large (≥ 1.8×). Use a tight 70% threshold so only sources
+          that are also strong matches survive. This prevents a single highly
+          relevant chunk from dragging in several loosely related ones.
+        - Competitive field: scores are closer together. Use a loose 35%
+          threshold so multiple relevant sources are kept, enabling the model
+          to draw on a broader evidence base for comparative or survey queries.
         """
         if not results:
             return results
 
         top_score = results[0].get("score", 0.0)
+        second_score = results[1].get("score", 0.0) if len(results) > 1 else 0.0
+        gap_ratio = (top_score / second_score) if second_score > 0 else float("inf")
 
         if top_score > 2.0:  # cross-encoder range
-            # Source must score at least 35% of the top score
-            min_ratio = 0.35
-        elif top_score > 0.05:  # cosine range
-            min_ratio = 0.5
+            min_ratio = 0.7 if top_score > 3.0 and gap_ratio >= 1.8 else 0.35
+        elif top_score > 0.05:  # cosine similarity range
+            min_ratio = 0.8 if top_score > 0.7 and gap_ratio >= 1.8 else 0.5
         else:
             return results[:1]
 

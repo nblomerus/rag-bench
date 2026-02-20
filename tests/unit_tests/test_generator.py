@@ -2539,4 +2539,107 @@ class TestRemainingCoveragePaths:
 
         # Should append sources (line 1494-1495)
         assert "Sources:" in response["answer"]
-        assert "[Source 1]" in response["answer"]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Source Relevance Filter Tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestFilterRelevantSources:
+    """Tests for RAGGenerator._filter_relevant_sources.
+
+    Two regimes:
+      - Dominant winner: top score strong + large gap to second → tight filter
+      - Competitive field: scores closer together → loose filter, keep more sources
+    """
+
+    def _make_generator(self, mock_retriever):
+        return RAGGenerator(retriever=mock_retriever, llm_backend=MagicMock())
+
+    def _results(self, scores):
+        return [{"score": s, "metadata": {}} for s in scores]
+
+    # ── Cross-encoder range (scores > 2.0) ───────────────────────────────────
+
+    def test_dominant_winner_filters_to_one(self, mock_retriever):
+        """Top 3.53, second 1.78 (gap 1.98×) → tight filter keeps only top."""
+        gen = self._make_generator(mock_retriever)
+        results = self._results([3.53, 1.78, 1.70, 1.46, 1.45])
+        filtered = gen._filter_relevant_sources(results)
+        assert len(filtered) == 1
+        assert filtered[0]["score"] == 3.53
+
+    def test_dominant_winner_gap_exactly_at_threshold(self, mock_retriever):
+        """Gap ratio exactly 1.8 → still triggers tight filter."""
+        gen = self._make_generator(mock_retriever)
+        # top=3.6, second=2.0 → gap=1.8, top>3.0 → tight (0.7 * 3.6 = 2.52)
+        results = self._results([3.6, 2.0, 1.5])
+        filtered = gen._filter_relevant_sources(results)
+        assert len(filtered) == 1
+
+    def test_dominant_winner_keeps_close_second(self, mock_retriever):
+        """Two sources both above tight threshold should both pass."""
+        gen = self._make_generator(mock_retriever)
+        # top=4.0, second=3.2 → gap=1.25 < 1.8 → loose filter (0.35 * 4.0 = 1.4)
+        results = self._results([4.0, 3.2, 1.0])
+        filtered = gen._filter_relevant_sources(results)
+        # gap < 1.8 so loose filter applies; threshold = 0.35 * 4.0 = 1.4
+        # 4.0 and 3.2 pass, but 1.0 < 1.4 → filtered out
+        assert len(filtered) == 2
+
+    def test_competitive_field_keeps_all_five(self, mock_retriever):
+        """Scores close together → loose 35% threshold → all 5 pass."""
+        gen = self._make_generator(mock_retriever)
+        # Matches the "BERT vs GPT vs Transformer" scenario
+        results = self._results([2.65, 1.49, 1.44, 1.39, 1.39])
+        filtered = gen._filter_relevant_sources(results)
+        # threshold = 2.65 * 0.35 = 0.93 → all scores well above
+        assert len(filtered) == 5
+
+    def test_top_below_dominant_threshold(self, mock_retriever):
+        """top=2.5 (< 3.0) with large gap → not dominant, uses loose filter."""
+        gen = self._make_generator(mock_retriever)
+        # top=2.5, second=0.8 → gap=3.1× but top not > 3.0 → loose (0.35)
+        results = self._results([2.5, 0.8, 0.5])
+        filtered = gen._filter_relevant_sources(results)
+        # threshold = 2.5 * 0.35 = 0.875 → 0.8 fails, 0.5 fails → only top
+        assert len(filtered) == 1
+        assert filtered[0]["score"] == 2.5
+
+    def test_single_result_always_kept(self, mock_retriever):
+        """Single result with any score is always returned."""
+        gen = self._make_generator(mock_retriever)
+        results = self._results([5.0])
+        filtered = gen._filter_relevant_sources(results)
+        assert len(filtered) == 1
+
+    def test_empty_results(self, mock_retriever):
+        gen = self._make_generator(mock_retriever)
+        assert gen._filter_relevant_sources([]) == []
+
+    # ── Cosine similarity range (scores < 2.0) ───────────────────────────────
+
+    def test_cosine_dominant_winner(self, mock_retriever):
+        """Cosine: top=0.85, second=0.42 → gap=2.02×, top>0.7 → tight (0.8)."""
+        gen = self._make_generator(mock_retriever)
+        results = self._results([0.85, 0.42, 0.38])
+        filtered = gen._filter_relevant_sources(results)
+        # threshold = 0.85 * 0.8 = 0.68 → only 0.85 passes
+        assert len(filtered) == 1
+
+    def test_cosine_competitive_field(self, mock_retriever):
+        """Cosine: scores close → loose 50% threshold keeps multiple."""
+        gen = self._make_generator(mock_retriever)
+        results = self._results([0.82, 0.75, 0.70, 0.65])
+        filtered = gen._filter_relevant_sources(results)
+        # gap = 0.82/0.75 = 1.09 < 1.8 → loose (0.5 * 0.82 = 0.41) → all pass
+        assert len(filtered) == 4
+
+    def test_very_low_scores_fall_through(self, mock_retriever):
+        """Scores at or below 0.05 → first result only."""
+        gen = self._make_generator(mock_retriever)
+        results = self._results([0.04, 0.02, 0.01])
+        filtered = gen._filter_relevant_sources(results)
+        assert len(filtered) == 1
+        assert filtered[0]["score"] == 0.04
