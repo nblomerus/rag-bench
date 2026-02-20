@@ -54,6 +54,9 @@ run-server:
 docker-build:
 	docker compose build
 
+docker-build-frontend:
+	docker compose build --no-cache frontend && docker compose up -d frontend
+
 docker-up:
 	docker compose up -d
 
@@ -229,6 +232,6 @@ help:
 	@echo ""
 
 .PHONY: pyenv upgrade install pre-commit check ruff test clean help prune-branches run-server \
-        docker-build docker-up docker-down docker-logs docker-ps docker-exec-api docker-clean docker-restart \
+        docker-build docker-build-frontend docker-up docker-down docker-logs docker-ps docker-exec-api docker-clean docker-restart \
         deploy-dev deploy deploy-ssl switch-dev switch-prod env-status backup restore rollback health-monitor \
         prod-start prod-stop prod-restart prod-rebuild prod-ingest prod-logs prod-status prod-shell
