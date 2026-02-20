@@ -72,8 +72,15 @@ jobs:
             requirements.txt
             dev-requirements.txt
 
+      - name: Install CPU-only PyTorch
+        run: uv pip install --system torch --index-url https://download.pytorch.org/whl/cpu
+
       - name: Install dependencies
-        run: uv pip install --system -r requirements.txt -r dev-requirements.txt
+        run: |
+          # Strip CUDA/GPU packages that are pulled in by the CUDA torch build
+          # but are not needed for CPU-only CI (saves ~1.5 GB of downloads)
+          grep -vE "^(nvidia-|cuda-|triton)" requirements.txt > /tmp/requirements-nocuda.txt
+          uv pip install --system -r /tmp/requirements-nocuda.txt -r dev-requirements.txt
 
       - name: Run tests with coverage
         run: pytest --cov --cov-report=term-missing --cov-report=xml:coverage.xml -v
