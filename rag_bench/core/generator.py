@@ -251,7 +251,8 @@ SYSTEM_PROMPT = """You are a precise AI/ML research assistant. Answer questions 
 9. Never cite a source for a claim it doesn't support.
 9. IMPORTANT: When sources are relevant to the question's topic, USE THEM — synthesize what they cover and note any gaps. However, if the question asks for a SPECIFIC piece of information (a number, a fact, a detail) and that specific information does not appear anywhere in the sources, you MUST explicitly state that the sources do not contain/specify/mention that particular detail. For example: if asked "What hardware was used to train X?" and the sources discuss X but never mention hardware, say "The sources do not specify the hardware used." Do NOT answer with unrelated information from the same paper just because the topic matches.
 10. If the question contains a false premise (e.g., "Paper X showed result Y" but the sources don't support that claim), point out that the premise appears incorrect based on the available sources.
-11. FORMAT — CRITICAL RULES:
+11. When multiple sources discuss the same concept, prefer citing the ORIGINAL source that introduced it over a later paper that merely references or discusses it. Use the publication year shown in each source header to identify which is the original.
+12. FORMAT — CRITICAL RULES:
    a) Use **markdown** for structure (headings, lists, bold).
    b) ALL math MUST be written in LaTeX wrapped in dollar signs. Use $...$ for inline math and $$...$$ for display equations.
    c) NEVER copy raw equation text from the sources. ALWAYS rewrite equations in proper LaTeX.
@@ -281,6 +282,7 @@ CITATION RULES — read before writing:
   WRONG:  "This is discussed in [Source 1], [Source 2], and [Source 3]."
   CORRECT: Cite each source only where it contributed a specific fact.
 - If a source does not contribute a specific fact to your answer, do not cite it at all.
+- When multiple sources cover the same concept, prefer citing the original/earliest source that introduced it.
 - Do NOT add a bibliography or references section at the end.
 - If the sources are insufficient for a specific claim, say so explicitly.
 
@@ -703,6 +705,7 @@ class RelevanceGate:
         named_entities = re.findall(r"\b([A-Z][A-Za-z]*(?:[-][A-Za-z0-9]+)*)\b", question)
         sentence_start_words = {
             "What",
+            "Who",
             "How",
             "Why",
             "When",
@@ -712,6 +715,7 @@ class RelevanceGate:
             "According",
             "Did",
             "Does",
+            "Do",
             "Is",
             "Are",
             "Can",
@@ -728,6 +732,10 @@ class RelevanceGate:
             "Summarize",
             "Outline",
             "Detail",
+            "Give",
+            "Name",
+            "Define",
+            "Discuss",
         }
         common_suffixes = {
             "trained",
@@ -1150,6 +1158,30 @@ class RelevanceGate:
                             f"The premise of the question may be incorrect."
                         )
 
+        # Numerical claim check: detect questions asserting specific numbers
+        # (e.g., "BERT uses 500 billion parameters") and verify the number
+        # appears in source passages. If not, the premise is likely false.
+        numerical_claim_patterns = [
+            # "X uses/has/contains N parameters/layers/heads"
+            r"(\w+)\s+(?:uses?|has|have|contains?)\s+(\d[\d,.]*)\s*(?:billion|million|thousand|B|M|K)?\s*(?:parameters?|layers?|heads?|dimensions?|tokens?)",
+            # "X scored/achieved/reached N BLEU/F1/accuracy"
+            r"(\w+)\s+(?:scores?d?|achieves?d?|reache[sd]|got|gets?)\s+(?:a\s+)?(?:score\s+of\s+)?(\d[\d,.]*)\s*(?:BLEU|F1|accuracy|%|percent)",
+            # "X paper claims/shows/proves that ... N"
+            r"(?:the\s+)?(\w+)\s+paper\s+(?:claims?|shows?|proves?|states?)\s+that\s+.*?(\d[\d,.]+)\s*(?:billion|million|thousand|B|M|K|%|percent)?",
+        ]
+
+        for pattern in numerical_claim_patterns:
+            match = re.search(pattern, question, re.IGNORECASE)
+            if match:
+                claimed_number = match.group(2).replace(",", "")
+                # Check if this exact number appears in the passages
+                if claimed_number not in p_lower:
+                    return True, (
+                        f"The question states a specific number ({match.group(2)}) "
+                        f"but this number does not appear in the retrieved passages. "
+                        f"The premise of the question may be incorrect."
+                    )
+
         # Paper-specific claim check: for "according to the X paper" questions,
         # verify the claimed detail exists in passages FROM that paper (not just
         # from other papers that might discuss the topic).
@@ -1291,13 +1323,20 @@ class RAGGenerator:
             meta = r.get("metadata", {})
             source_label = meta.get("source_display", "Unknown source")
             section = meta.get("section", "")
+            year = meta.get("year", "")
+
+            # Build header: [Source N] Title (year) — section
+            header = f"[Source {i}] {source_label}"
+            if year:
+                header += f" ({year})"
+            if section:
+                header += f" — {section}"
 
             # Clean encoding artifacts and broken LaTeX from source data
             text = fix_encoding(r.get("text", ""))
             text = clean_latex_artifacts(text)
 
-            block = f"[Source {i}] {source_label}{f' — {section}' if section else ''}\n{text}"
-            blocks.append(block)
+            blocks.append(f"{header}\n{text}")
 
         return "\n\n".join(blocks)
 
@@ -1392,8 +1431,411 @@ class RAGGenerator:
             citations.append(citation)
         return citations
 
-    def answer(self, question: str, top_k: int | None = None) -> dict:
-        """Generate a grounded answer with citations."""
+    # Stopwords for citation overlap computation (class-level to avoid re-creation)
+    _CITATION_STOPWORDS = {
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "shall",
+        "can",
+        "to",
+        "of",
+        "in",
+        "for",
+        "on",
+        "with",
+        "at",
+        "by",
+        "from",
+        "as",
+        "into",
+        "through",
+        "during",
+        "and",
+        "but",
+        "or",
+        "nor",
+        "not",
+        "so",
+        "yet",
+        "both",
+        "either",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "they",
+        "them",
+        "their",
+        "we",
+        "our",
+        "you",
+        "your",
+        "which",
+        "what",
+        "who",
+        "how",
+        "when",
+        "where",
+        "than",
+        "more",
+        "also",
+        "such",
+        "each",
+    }
+
+    def _inject_missing_citations(self, answer_text: str, sources: list[dict]) -> str:
+        """Inject [Source N] citations into uncited factual sentences.
+
+        Only adds citations to sentences that don't already have one.
+        Existing LLM-generated citations are trusted and left untouched.
+        """
+        if not sources or not answer_text.strip():
+            return answer_text
+
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", answer_text) if s.strip()]
+        if not sentences:
+            return answer_text
+
+        stopwords = self._CITATION_STOPWORDS
+
+        # Pre-compute source word sets
+        source_words = []
+        for s in sources:
+            text = s.get("text", "").lower()
+            words = set(re.findall(r"\b[a-z]{3,}\b", text)) - stopwords
+            source_words.append(words)
+
+        def _best_source_for(sent_words: set) -> tuple[int, float]:
+            """Find the source with highest word overlap. Returns (idx, overlap)."""
+            best_idx, best_ov = -1, 0.0
+            for idx, sw in enumerate(source_words):
+                ov = len(sent_words & sw) / len(sent_words) if sent_words else 0
+                if ov > best_ov:
+                    best_ov = ov
+                    best_idx = idx
+            return best_idx, best_ov
+
+        result_parts = []
+        for sentence in sentences:
+            # Skip short/non-factual sentences
+            if len(sentence) < 30:
+                result_parts.append(sentence)
+                continue
+
+            # Already has a citation — trust the LLM
+            if re.search(r"\[Source\s+\d+\]", sentence):
+                result_parts.append(sentence)
+                continue
+
+            # No citation — inject if overlap is strong enough
+            sent_words = set(re.findall(r"\b[a-z]{3,}\b", sentence.lower())) - stopwords
+            if len(sent_words) < 3:
+                result_parts.append(sentence)
+                continue
+
+            best_idx, best_ov = _best_source_for(sent_words)
+            if best_ov >= 0.3 and best_idx >= 0:
+                source_num = best_idx + 1
+                if sentence[-1] in ".!?":
+                    sentence = sentence[:-1] + f" [Source {source_num}]" + sentence[-1]
+                else:
+                    sentence = sentence + f" [Source {source_num}]"
+            result_parts.append(sentence)
+
+        return " ".join(result_parts)
+
+    # Domain terms broad enough to cover all ML subfields without false positives
+    _DOMAIN_TERMS = {
+        # Core ML/AI
+        "model",
+        "neural",
+        "network",
+        "training",
+        "learning",
+        "inference",
+        "embedding",
+        "encoder",
+        "decoder",
+        "layer",
+        "parameter",
+        "weight",
+        "gradient",
+        "loss",
+        "optimizer",
+        "epoch",
+        "batch",
+        "fine-tun",
+        "pretrain",
+        "finetun",
+        "fine_tun",
+        # Architecture
+        "transformer",
+        "attention",
+        "convolution",
+        "recurrent",
+        "cnn",
+        "rnn",
+        "lstm",
+        "gru",
+        "mlp",
+        "feedforward",
+        "residual",
+        "normalization",
+        "softmax",
+        "relu",
+        "gelu",
+        "dropout",
+        "pooling",
+        # NLP
+        "language",
+        "token",
+        "vocab",
+        "bert",
+        "gpt",
+        "llm",
+        "nlp",
+        "prompt",
+        "instruct",
+        "chat",
+        "generation",
+        "translation",
+        "summariz",
+        "sentiment",
+        "ner",
+        "parsing",
+        "corpus",
+        # Vision
+        "image",
+        "vision",
+        "diffusion",
+        "gan",
+        "vae",
+        "clip",
+        "segmentation",
+        "detection",
+        "recognition",
+        "pixel",
+        "convolutional",
+        # Techniques
+        "lora",
+        "rlhf",
+        "peft",
+        "rag",
+        "retrieval",
+        "augment",
+        "quantiz",
+        "distill",
+        "pruning",
+        "scaling",
+        "benchmark",
+        "evaluation",
+        "metric",
+        "perplexity",
+        "bleu",
+        "rouge",
+        "accuracy",
+        "f1",
+        # Research
+        "paper",
+        "arxiv",
+        "research",
+        "study",
+        "experiment",
+        "dataset",
+        "baseline",
+        "state-of-the-art",
+        "sota",
+        "ablation",
+        # Named models/methods
+        "llama",
+        "mistral",
+        "gemma",
+        "falcon",
+        "mixtral",
+        "chinchilla",
+        "t5",
+        "roberta",
+        "electra",
+        "albert",
+        "deberta",
+        "xlnet",
+        "stable diffusion",
+        "dalle",
+        "midjourney",
+        "vit",
+        "resnet",
+        "yolo",
+        "detr",
+        "sam",
+        "whisper",
+        "wav2vec",
+        "mamba",
+        "starcoder",
+        "codex",
+        "humaneval",
+        "swe-bench",
+        "deepseek",
+        "colbert",
+        "dpr",
+        "llava",
+        "vall-e",
+        "distilbert",
+        "qlora",
+        "dora",
+        "gptq",
+        "awq",
+        "smoothquant",
+        "flashattention",
+        "flash attention",
+        "speculative decod",
+        "react",
+        "chain-of-thought",
+        "chain of thought",
+        "rope",
+        "rotary",
+        "yarn",
+        "dit",
+        "graphrag",
+        "self-rag",
+        "crag",
+        "phi-",
+        "mmlu",
+        "chatbot arena",
+        "llama guard",
+        "swe-agent",
+        "openhands",
+        "state space",
+        "state-space",
+        "adam",
+        "sgd",
+        "cosine",
+        "warmup",
+        "schedule",
+        "cross-entropy",
+        "contrastive",
+        "triplet",
+        "reinforcement",
+        "reward",
+        "policy",
+        "agent",
+        "multimodal",
+        "multi-modal",
+        "alignment",
+        "grounding",
+    }
+
+    _OPINION_PATTERNS = [
+        "do you think",
+        "your opinion",
+        "in your view",
+        "which do you prefer",
+        "which do you recommend",
+        "what do you think",
+        "do you believe",
+    ]
+
+    def _is_on_topic(self, question: str) -> bool:
+        """Check if the question is related to AI/ML research.
+
+        Uses a broad set of domain terms to allow any legitimate ML question
+        through, while catching purely off-topic queries (weather, sports,
+        code requests, casual chat).
+        """
+        q_lower = question.lower()
+        return any(term in q_lower for term in self._DOMAIN_TERMS)
+
+    def _is_opinion_question(self, question: str) -> bool:
+        """Check if the question asks for a subjective opinion."""
+        q_lower = question.lower()
+        return any(p in q_lower for p in self._OPINION_PATTERNS)
+
+    def answer(self, question: str, top_k: int | None = None, context_override: str | None = None) -> dict:
+        """Generate a grounded answer with citations.
+
+        Args:
+            question: The question to answer.
+            top_k: Number of passages to retrieve.
+            context_override: If provided, skip retrieval and use this text as context directly.
+                Used by benchmark runners (GaRAGe, RAGTruth) to inject their own passages.
+        """
+        # Fast path: use provided context instead of retrieval pipeline
+        if context_override is not None:
+            prompt = GENERATION_PROMPT.format(
+                sources_block=context_override,
+                question=question,
+            )
+            try:
+                answer_text = self.llm.generate(
+                    prompt=prompt,
+                    system_prompt=self.system_prompt,
+                )
+            except Exception as e:
+                logger.error(f"LLM generation failed: {e}")
+                fallback = TemplateFallbackBackend()
+                answer_text = fallback.generate(prompt=prompt)
+
+            answer_text = postprocess_math(answer_text)
+
+            return {
+                "answer": answer_text.strip(),
+                "sources": [],
+                "results": [],
+                "filtered_results": [],
+                "deflected": False,
+                "deflection_reason": "",
+                "scores": [],
+            }
+
+        # Step 0: Off-topic pre-check (before retrieval to save compute)
+        if not self._is_on_topic(question):
+            reason = "This question does not appear to be about AI/ML research. I can only answer questions about machine learning, deep learning, and related research topics."
+            logger.info(f"Off-topic deflection: {question[:60]}")
+            return {
+                "answer": DEFLECTION_RESPONSE.format(reason=reason),
+                "sources": [],
+                "results": [],
+                "filtered_results": [],
+                "deflected": True,
+                "deflection_reason": reason,
+                "scores": [],
+            }
+
+        # Step 0b: Opinion question pre-check
+        if self._is_opinion_question(question):
+            reason = "I provide information from research papers rather than personal opinions. Try rephrasing as a factual comparison, e.g. 'Compare X and Y based on published benchmarks.'"
+            logger.info(f"Opinion deflection: {question[:60]}")
+            return {
+                "answer": DEFLECTION_RESPONSE.format(reason=reason),
+                "sources": [],
+                "results": [],
+                "filtered_results": [],
+                "deflected": True,
+                "deflection_reason": reason,
+                "scores": [],
+            }
+
         k = top_k or self.top_k
 
         # Increase retrieval for multi-document synthesis queries
@@ -1404,11 +1846,12 @@ class RAGGenerator:
 
         # Step 0.5: Identify foundational papers to inject
         inject_chunks = []
+        relevant_ids = set()
         if self.citation_booster:
             relevant_ids = self.citation_booster.identify_relevant_papers(question)
             if relevant_ids:
                 for arxiv_id in relevant_ids:
-                    inject_chunks.extend(self.retriever.fetch_paper_chunks(arxiv_id, max_chunks=5))
+                    inject_chunks.extend(self.retriever.fetch_paper_chunks(arxiv_id, max_chunks=5, query=question))
                 if inject_chunks:
                     logger.info(f"Foundational injection: {len(inject_chunks)} chunks from {len(relevant_ids)} paper(s)")
 
@@ -1422,6 +1865,12 @@ class RAGGenerator:
             top_k=boost_candidates,
             inject_chunks=inject_chunks or None,
         )
+
+        # Check if foundational paper survived retrieval
+        if relevant_ids:
+            found_in_retrieval = any(r.get("metadata", {}).get("arxiv_id", "") in relevant_ids for r in retrieval[:20])
+            if not found_in_retrieval:
+                logger.debug("Relevant foundational paper not in top-20 retrieval results")
 
         # Step 1.5: Apply citation boosting (if enabled)
         if self.citation_booster:
@@ -1445,6 +1894,9 @@ class RAGGenerator:
                 top_k=None,  # Don't truncate; let diversify_results handle selection
             )
 
+            # Save boosted pool before diversification truncates it
+            boosted_pool = list(retrieval)
+
             # Apply diversification to ensure foundational papers are included
             retrieval = self.citation_booster.diversify_results(
                 retrieval,
@@ -1452,6 +1904,28 @@ class RAGGenerator:
                 max_per_paper=1,
                 require_foundational=True,
             )
+
+            # Ensure the *specific* query-relevant foundational paper is in the
+            # selection. diversify_results only guarantees *any* foundational paper,
+            # which may be a different one (e.g. T5 when we need Attention paper).
+            if relevant_ids and retrieval:
+                has_relevant = any(r.get("metadata", {}).get("arxiv_id", "") in relevant_ids for r in retrieval)
+                if not has_relevant:
+                    # Find the best-scoring chunk from the relevant paper in the boosted pool
+                    for r in boosted_pool:
+                        if r.get("metadata", {}).get("arxiv_id", "") in relevant_ids:
+                            # Insert at position 1 (after highest-scored result) and
+                            # drop the last result to maintain list size. Placing the
+                            # query-relevant paper near the top increases the chance
+                            # the LLM will cite it correctly.
+                            retrieval.pop()
+                            retrieval.insert(1, r)
+                            logger.info(
+                                f"Forced relevant foundational paper into results at pos 2: "
+                                f"{r.get('metadata', {}).get('arxiv_id', '?')} "
+                                f"(score={r.get('score', 0):.3f})"
+                            )
+                            break
 
             logger.debug(f"Citation boosting applied: {len(retrieval)} results after boost+diversity")
 
@@ -1549,6 +2023,9 @@ class RAGGenerator:
         # Step 5.5: Post-process math formatting
         answer_text = postprocess_math(answer_text)
 
+        # Step 5.55: Inject missing citations if LLM didn't follow instructions
+        answer_text = self._inject_missing_citations(answer_text, relevant)
+
         # Step 5.6: Post-generation answer alignment check
         is_tangential, focus_term = self._check_answer_alignment(question, answer_text)
         if is_tangential:
@@ -1599,6 +2076,26 @@ class RAGGenerator:
         - {"event": "token", "token": "..."}
         - {"event": "done", "answer": "...", "sources": [...]}
         """
+        # Off-topic pre-check
+        if not self._is_on_topic(question):
+            reason = "This question does not appear to be about AI/ML research. I can only answer questions about machine learning, deep learning, and related research topics."
+            yield {
+                "event": "deflected",
+                "answer": DEFLECTION_RESPONSE.format(reason=reason),
+                "reason": reason,
+            }
+            return
+
+        # Opinion question pre-check
+        if self._is_opinion_question(question):
+            reason = "I provide information from research papers rather than personal opinions. Try rephrasing as a factual comparison, e.g. 'Compare X and Y based on published benchmarks.'"
+            yield {
+                "event": "deflected",
+                "answer": DEFLECTION_RESPONSE.format(reason=reason),
+                "reason": reason,
+            }
+            return
+
         k = top_k or self.top_k
 
         # Identify foundational papers to inject
@@ -1607,7 +2104,7 @@ class RAGGenerator:
             relevant_ids = self.citation_booster.identify_relevant_papers(question)
             if relevant_ids:
                 for arxiv_id in relevant_ids:
-                    inject_chunks.extend(self.retriever.fetch_paper_chunks(arxiv_id, max_chunks=5))
+                    inject_chunks.extend(self.retriever.fetch_paper_chunks(arxiv_id, max_chunks=5, query=question))
                 if inject_chunks:
                     logger.info(f"Foundational injection: {len(inject_chunks)} chunks from {len(relevant_ids)} paper(s)")
 
@@ -1754,6 +2251,9 @@ class RAGGenerator:
             yield {"event": "token", "token": full_text}
 
         full_text = postprocess_math(full_text)
+
+        # Inject missing citations if LLM didn't follow instructions
+        full_text = self._inject_missing_citations(full_text, relevant)
 
         is_tangential, focus_term = self._check_answer_alignment(question, full_text)
         if is_tangential:

@@ -608,13 +608,64 @@ class HybridRetriever:
         arxiv_id: str,
         max_chunks: int = 3,
         preferred_sections: list[str] | None = None,
+        query: str | None = None,
     ) -> list[dict]:
         """
         Fetch chunks for a specific paper directly from ChromaDB.
 
         Used for foundational paper injection — bypasses BM25/dense retrieval
         to guarantee the paper appears in the candidate pool.
+
+        When ``query`` is provided, uses semantic similarity to select the most
+        relevant chunks from the paper and returns real similarity scores.
+        Otherwise falls back to static section-priority ordering with score 0.0.
         """
+        # ── Query-aware path: select chunks by semantic similarity ──
+        if query is not None:
+            try:
+                prefixed_query = self.BGE_QUERY_PREFIX + query
+                raw_embedding = self.embed_model.encode(
+                    prefixed_query,
+                    normalize_embeddings=True,
+                )
+                query_embedding = np.array(raw_embedding).flatten().tolist()
+
+                data = self.collection.query(
+                    query_embeddings=[query_embedding],
+                    where={"arxiv_id": arxiv_id},
+                    n_results=max_chunks,
+                    include=["documents", "metadatas", "distances"],
+                )
+            except Exception as e:
+                logger.warning(f"Query-aware fetch failed for arxiv_id={arxiv_id}: {e}")
+                return []
+
+            if not data or not data.get("ids") or not data["ids"][0]:
+                logger.debug(f"No chunks found for arxiv_id={arxiv_id}")
+                return []
+
+            chunks = []
+            for i in range(len(data["ids"][0])):
+                score = 1.0 - data["distances"][0][i]
+                chunks.append(
+                    {
+                        "chunk_id": data["ids"][0][i],
+                        "text": data["documents"][0][i],
+                        "metadata": data["metadatas"][0][i],
+                        "score": score,
+                        "source": "injection",
+                        "sources": ["injection"],
+                        "rrf_score": 0.0,
+                        "bm25_score": 0.0,
+                        "dense_score": score,
+                    }
+                )
+
+            score_strs = [f"{c['score']:.3f}" for c in chunks]
+            logger.debug(f"Query-aware fetch: {len(chunks)} chunks for arxiv_id={arxiv_id} (scores: {score_strs})")
+            return chunks
+
+        # ── Static fallback path (backward compatibility) ──
         if preferred_sections is None:
             preferred_sections = ["abstract", "introduction", "background", "model", "architecture", "method"]
 

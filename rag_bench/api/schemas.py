@@ -200,3 +200,46 @@ class FullEvalResponse(BaseModel):
     by_difficulty: dict = {}
     results: list[FullEvalResult]
     metadata: dict = {}
+
+
+# ── Benchmark Evaluation (RAG-Bench / RAGTruth) ──
+
+
+class BenchmarkEvalRequest(BaseModel):
+    benchmark: str = Field(..., description="Benchmark to run: 'ragbench' or 'ragtruth'")
+    sample_size: int = Field(default=50, ge=0, le=5000, description="Number of entries to evaluate (0 = all)")
+
+
+class BenchmarkResultItem(BaseModel):
+    """Single result entry in benchmark evaluation."""
+
+    id: str = ""
+    question: str = ""
+    answer: str = ""
+    metrics: dict = {}
+    error: str | None = None
+
+
+class BenchmarkEvalResponse(BaseModel):
+    """Response for benchmark evaluation runs."""
+
+    benchmark: str
+    summary: dict = {}
+    results: list[BenchmarkResultItem] = []
+    metadata: dict = {}
+
+
+class BenchmarkHistoryEntry(BaseModel):
+    """A single entry in the benchmark evaluation history."""
+
+    timestamp: str
+    benchmark: str
+    total_evaluated: int = 0
+    accuracy: float | None = None
+    summary: dict = {}
+
+
+class BenchmarkHistoryResponse(BaseModel):
+    """Response listing past benchmark runs."""
+
+    runs: list[BenchmarkHistoryEntry] = []
