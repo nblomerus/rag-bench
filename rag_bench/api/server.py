@@ -26,8 +26,14 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from rag_bench.api.schemas import (
+    BenchmarkEvalRequest,
+    BenchmarkEvalResponse,
+    BenchmarkHistoryEntry,
+    BenchmarkHistoryResponse,
+    BenchmarkResultItem,
     EvalRequest,
     EvalResponse,
     EvalResult,
@@ -1207,14 +1213,339 @@ async def get_paper(paper_id: str):
 # ═══════════════════════════════════════════════════════════════════════════
 # Frontend — serve the single-file React app
 # ═══════════════════════════════════════════════════════════════════════════
-FRONTEND_HTML = PROJECT_ROOT / "frontend" / "index.html"
+# ── Benchmark Evaluation Endpoints ──
+
+_benchmark_running = False
+_benchmark_history: list[dict] = []
+BENCHMARK_HISTORY_FILE = PROJECT_ROOT / "data" / "benchmark_history.json"
+
+
+def _load_benchmark_history() -> list[dict]:
+    """Load benchmark history from disk."""
+    global _benchmark_history
+    if BENCHMARK_HISTORY_FILE.exists():
+        try:
+            with open(BENCHMARK_HISTORY_FILE) as f:
+                _benchmark_history = json.load(f)
+        except Exception:
+            _benchmark_history = []
+    return _benchmark_history
+
+
+def _save_benchmark_history():
+    """Save benchmark history to disk."""
+    try:
+        BENCHMARK_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(BENCHMARK_HISTORY_FILE, "w") as f:
+            json.dump(_benchmark_history, f, indent=2)
+    except Exception as e:
+        logger.error("Failed to save benchmark history: %s", e)
+
+
+# Load history on module import
+_load_benchmark_history()
+
+
+@app.post("/api/eval/benchmark", response_model=BenchmarkEvalResponse)
+async def run_benchmark_evaluation(request: BenchmarkEvalRequest):
+    """Run a RAG-Bench or RAGTruth benchmark evaluation."""
+    global _benchmark_running
+
+    if _benchmark_running:
+        raise HTTPException(status_code=409, detail="A benchmark evaluation is already running")
+
+    if not _generator:
+        raise HTTPException(status_code=503, detail="Pipeline not ready")
+
+    if request.benchmark not in ("ragbench", "ragtruth"):
+        raise HTTPException(status_code=400, detail="Benchmark must be 'ragbench' or 'ragtruth'")
+
+    _benchmark_running = True
+    try:
+        from datetime import datetime
+
+        if request.benchmark == "ragbench":
+            import random
+
+            from rag_bench.eval.benchmark import get_benchmark
+            from rag_bench.eval.judge import JudgeLLM
+            from rag_bench.eval.runner import EvalRunner
+
+            benchmark_entries = get_benchmark()
+            if request.sample_size > 0 and request.sample_size < len(benchmark_entries):
+                rng = random.Random(42)
+                benchmark_entries = rng.sample(benchmark_entries, request.sample_size)
+
+            judge = JudgeLLM(_generator.llm)
+            eval_runner = EvalRunner(
+                retriever=_retriever,
+                generator=_generator,
+                judge=judge,
+                benchmark=benchmark_entries,
+            )
+            report = await asyncio.get_event_loop().run_in_executor(
+                None,
+                eval_runner.run_all,
+            )
+
+            results = [
+                BenchmarkResultItem(
+                    id=r.id,
+                    question=r.question,
+                    answer=r.answer_preview,
+                    metrics={
+                        "ndcg_at_5": r.retrieval.get("ndcg_at_k", 0),
+                        "mrr": r.retrieval.get("mrr", 0),
+                        "citation_precision": r.citation.get("precision", 0),
+                        "completeness": r.completeness.get("score", 0),
+                        "deflection_correct": r.deflection.get("correct", False),
+                    },
+                    error=r.error,
+                )
+                for r in report.results
+            ]
+
+            summary = report.summary
+            accuracy = report.summary.get("retrieval_ndcg_at_5", None)
+
+        else:  # ragtruth
+            from rag_bench.eval.ragtruth.runner import RAGTruthRunner
+
+            runner = RAGTruthRunner(generator=_generator)
+            report = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: runner.run(sample_size=request.sample_size)
+            )
+
+            results = [
+                BenchmarkResultItem(
+                    id=r.id,
+                    question=r.prompt[:200],
+                    answer=r.generated_answer[:200],
+                    metrics={
+                        "has_hallucination_gold": r.has_hallucination_gold,
+                        "has_hallucination_predicted": r.has_hallucination_predicted,
+                        "span_f1": r.span_metrics.get("span_f1", 0),
+                    },
+                    error=r.error,
+                )
+                for r in report.results
+            ]
+
+            # Flatten case_level and by_type into summary (nested dicts break React rendering)
+            summary = {**report.summary}
+            for k, v in report.case_level.items():
+                if isinstance(v, (int, float)):
+                    summary[k] = v
+            for hall_type, count in report.by_type.items():
+                if isinstance(count, (int, float)):
+                    summary[f"type_{hall_type}"] = count
+            accuracy = report.summary.get("case_level_accuracy", None)
+
+        metadata = report.metadata
+
+        # Save to history
+        history_entry = {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "benchmark": request.benchmark,
+            "total_evaluated": metadata.get("total_evaluated", 0),
+            "accuracy": accuracy,
+            "summary": {k: v for k, v in summary.items() if isinstance(v, (int, float, str, bool))},
+        }
+        _benchmark_history.insert(0, history_entry)
+        # Keep last 50 runs
+        if len(_benchmark_history) > 50:
+            _benchmark_history[:] = _benchmark_history[:50]
+        _save_benchmark_history()
+
+        return BenchmarkEvalResponse(
+            benchmark=request.benchmark,
+            summary=summary,
+            results=results,
+            metadata=metadata,
+        )
+
+    except ImportError as e:
+        raise HTTPException(status_code=500, detail=f"Benchmark module not available: {e}") from e
+    except Exception as e:
+        logger.error("Benchmark evaluation failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Benchmark failed: {e}") from e
+    finally:
+        _benchmark_running = False
+
+
+@app.get("/api/eval/benchmark/status")
+async def benchmark_status():
+    """Check if a benchmark evaluation is currently running."""
+    return {"running": _benchmark_running}
+
+
+@app.get("/api/eval/benchmark/history", response_model=BenchmarkHistoryResponse)
+async def benchmark_history():
+    """Return past benchmark evaluation runs."""
+    return BenchmarkHistoryResponse(runs=[BenchmarkHistoryEntry(**h) for h in _benchmark_history])
+
+
+EVAL_RESULTS_DIR = PROJECT_ROOT / "eval_results"
+
+
+@app.get("/api/eval/benchmark/latest/{benchmark}")
+async def benchmark_latest(benchmark: str):
+    """Return the latest saved evaluation results for a benchmark."""
+    if benchmark == "ragbench":
+        # Load the most recent eval_*.json file
+        files = sorted(EVAL_RESULTS_DIR.glob("eval_*.json"), key=lambda p: p.stat().st_mtime)
+        if not files:
+            raise HTTPException(status_code=404, detail="No RAG-Bench evaluation results found")
+        try:
+            with open(files[-1]) as f:
+                data = json.load(f)
+            data["_source_file"] = files[-1].name
+            return data
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to load results: {e}") from e
+
+    elif benchmark == "ragtruth":
+        # Find the latest ragtruth entry in benchmark history
+        for entry in _benchmark_history:
+            if entry.get("benchmark") == "ragtruth" and entry.get("summary"):
+                return entry
+        raise HTTPException(status_code=404, detail="No RAGTruth evaluation results found")
+
+    else:
+        raise HTTPException(status_code=400, detail="Benchmark must be 'ragbench' or 'ragtruth'")
+
+
+@app.get("/api/eval/benchmark/examples")
+async def benchmark_examples():
+    """Return benchmark test examples that users can try individually."""
+    from rag_bench.eval.benchmark import get_benchmark
+
+    entries = get_benchmark()
+    examples = []
+    for e in entries:
+        examples.append(
+            {
+                "id": e.id,
+                "question": e.question,
+                "expected_sources": e.expected_sources,
+                "expected_answer_contains": e.expected_answer_contains,
+                "query_type": e.query_type,
+                "topic": e.topic,
+                "difficulty": e.difficulty,
+                "should_deflect": e.should_deflect,
+            }
+        )
+    return {"examples": examples}
+
+
+@app.get("/api/eval/ragtruth/examples")
+async def ragtruth_examples(sample: int = 20, seed: int = 42):
+    """Return RAGTruth examples for the Try-It panel.
+
+    Returns a mix of hallucinated and clean entries from the cached dataset.
+    """
+    import random as _rnd
+
+    from rag_bench.eval.ragtruth.loader import load_ragtruth
+
+    try:
+        entries = load_ragtruth(sample_size=0, task_type="QA", seed=seed)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load RAGTruth: {e}") from e
+
+    # Split into hallucinated vs clean based on metadata labels
+    with_hallu = []
+    clean = []
+    for e in entries:
+        labels = e.metadata.get("labels", [])
+        if labels:
+            with_hallu.append(e)
+        else:
+            clean.append(e)
+
+    # Sample a balanced set
+    rng = _rnd.Random(seed)
+    half = sample // 2
+    sampled_hallu = rng.sample(with_hallu, min(half, len(with_hallu)))
+    sampled_clean = rng.sample(clean, min(sample - len(sampled_hallu), len(clean)))
+    sampled = sampled_hallu + sampled_clean
+    rng.shuffle(sampled)
+
+    examples = []
+    for e in sampled:
+        labels = e.metadata.get("labels", [])
+        examples.append(
+            {
+                "id": e.id,
+                "prompt": e.prompt,
+                "context": e.source_info[:800],  # truncate for transport
+                "response": e.reference_response,
+                "has_hallucination": bool(labels),
+                "hallucination_spans": [
+                    {"text": lbl.get("text", ""), "label_type": lbl.get("label_type", "")} for lbl in labels
+                ],
+            }
+        )
+    return {"examples": examples, "total_with_hallucinations": len(with_hallu), "total_clean": len(clean)}
+
+
+@app.post("/api/eval/ragtruth/detect")
+async def ragtruth_detect(body: dict):
+    """Run hallucination detection on a single context+response pair.
+
+    Expects: { "context": "...", "response": "..." }
+    Returns detection results from the heuristic detector.
+    """
+    context = body.get("context", "")
+    response = body.get("response", "")
+    if not context or not response:
+        raise HTTPException(status_code=400, detail="Both 'context' and 'response' are required")
+
+    import time
+
+    from rag_bench.eval.ragtruth.runner import RAGTruthRunner
+
+    runner = RAGTruthRunner(generator=None)
+    start = time.time()
+    detection = runner._detect_heuristic(response, context)
+    latency = (time.time() - start) * 1000
+
+    return {
+        "has_hallucination": detection.get("has_hallucination", False),
+        "flagged_spans": [
+            {"text": span, "type": stype}
+            for span, stype in zip(
+                detection.get("spans", []),
+                detection.get("span_types", []),
+                strict=False,
+            )
+        ],
+        "latency_ms": round(latency, 1),
+    }
+
+
+FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
+FRONTEND_HTML = FRONTEND_DIST / "index.html"
+
+# Serve built frontend assets (JS, CSS) from dist/assets/
+if (FRONTEND_DIST / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="frontend-assets")
+
+
+@app.get("/sw.js", response_class=FileResponse)
+async def serve_service_worker():
+    """Serve the service worker from dist root."""
+    sw_path = FRONTEND_DIST / "sw.js"
+    if not sw_path.exists():
+        raise HTTPException(status_code=404, detail="Service worker not found")
+    return FileResponse(sw_path, media_type="application/javascript")
 
 
 @app.get("/", response_class=FileResponse)
 async def serve_frontend():
     """Serve the React frontend."""
     if not FRONTEND_HTML.exists():
-        raise HTTPException(status_code=404, detail="Frontend not found")
+        raise HTTPException(status_code=404, detail="Frontend not built. Run: cd frontend && npm run build")
     return FileResponse(FRONTEND_HTML, media_type="text/html")
 
 

@@ -634,10 +634,10 @@ class TestRAGGenerator:
 
         generator = RAGGenerator(retriever=mock_retriever, top_k=2)
 
-        generator.answer("test question")
+        generator.answer("test transformer question")
 
         # Check that retriever was called with correct top_k
-        mock_retriever.query.assert_called_with("test question", top_k=2, inject_chunks=None)
+        mock_retriever.query.assert_called_with("test transformer question", top_k=2, inject_chunks=None)
 
     def test_answer_checks_keyword_overlap(self, mock_retriever):
         """Test that low keyword overlap triggers deflection."""
@@ -995,10 +995,10 @@ class TestRAGGeneratorAdvanced:
             top_k=10,
         )
 
-        generator.answer("test", top_k=3)
+        generator.answer("test neural network", top_k=3)
 
         # Should call with custom top_k=3, not the default top_k=10
-        mock_retriever.query.assert_called_with("test", top_k=3, inject_chunks=None)
+        mock_retriever.query.assert_called_with("test neural network", top_k=3, inject_chunks=None)
 
     def test_answer_detects_entity_mismatch(self, mock_retriever):
         """Test that answer detects when entity is missing."""
@@ -1039,7 +1039,7 @@ class TestRAGGeneratorAdvanced:
         mock_retriever.query.return_value = [
             {
                 "score": 0.9,
-                "text": "This text might have encoding issues",
+                "text": "This model text might have encoding issues in training",
                 "metadata": {"source_display": "Paper", "section": "intro"},
             }
         ]
@@ -1050,7 +1050,7 @@ class TestRAGGeneratorAdvanced:
             retriever=mock_retriever, llm_backend=mock_llm, relevance_gate=RelevanceGate(min_top_score=0.3)
         )
 
-        response = generator.answer("What?")
+        response = generator.answer("What are encoding issues in model training?")
 
         assert not response["deflected"]
         assert "answer" in response
@@ -1100,7 +1100,7 @@ class TestAnswerStreaming:
             retriever=mock_retriever, llm_backend=mock_llm, relevance_gate=RelevanceGate(min_top_score=0.3)
         )
 
-        events = list(generator.answer_stream("What is testing?"))
+        events = list(generator.answer_stream("What is model testing?"))
 
         # Should have sources and done events
         assert any(e.get("event") == "sources" for e in events)
@@ -1151,7 +1151,7 @@ class TestAnswerStreaming:
             retriever=mock_retriever, llm_backend=mock_llm, relevance_gate=RelevanceGate(min_top_score=0.3)
         )
 
-        events = list(generator.answer_stream("test question"))
+        events = list(generator.answer_stream("test transformer question"))
 
         # Should still produce events and use fallback
         assert len(events) > 0
@@ -1989,7 +1989,7 @@ class TestStreamingDeflection:
             relevance_gate=RelevanceGate(min_top_score=0.5),
         )
 
-        events = list(generator.answer_stream("What is quantum computing?"))
+        events = list(generator.answer_stream("What is this neural network?"))
 
         # Should have sources event and deflected event
         assert any(e.get("event") == "sources" for e in events)
@@ -2352,7 +2352,7 @@ class TestStreamingEdgeCases:
             relevance_gate=RelevanceGate(min_top_score=0.3),
         )
 
-        events = list(generator.answer_stream("What is this?"))
+        events = list(generator.answer_stream("What is this model?"))
 
         # Should fall back to template backend (line 1597-1598)
         token_events = [e for e in events if e.get("event") == "token"]

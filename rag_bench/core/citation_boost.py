@@ -51,6 +51,19 @@ FOUNDATIONAL_PAPERS = {
     # Evaluation
     "2002.08512": {"title": "BLEU Score", "boost": 1.3, "year": 2002},
     "1803.05449": {"title": "ROUGE", "boost": 1.3, "year": 2004},
+    # Diffusion
+    "2006.11239": {"title": "DDPM", "boost": 1.4, "year": 2020},
+    "2112.10752": {"title": "Stable Diffusion", "boost": 1.4, "year": 2022},
+    # Multimodal
+    "2103.00020": {"title": "CLIP", "boost": 1.4, "year": 2021},
+    # Scaling
+    "2001.08361": {"title": "Scaling Laws", "boost": 1.4, "year": 2020},
+    "2203.15556": {"title": "Chinchilla", "boost": 1.4, "year": 2022},
+    # Architecture components
+    "2104.09864": {"title": "RoPE", "boost": 1.3, "year": 2021},
+    "2101.03961": {"title": "Switch Transformer", "boost": 1.3, "year": 2021},
+    # Reasoning
+    "2201.11903": {"title": "Chain-of-Thought", "boost": 1.3, "year": 2022},
 }
 
 
@@ -97,6 +110,29 @@ TOPIC_PAPER_MAP: dict[str, list[str]] = {
     "proximal policy": ["1707.06347"],
     "instructgpt": ["2203.02155"],
     "rlhf": ["2203.02155", "1707.06347"],
+    # Diffusion
+    "diffusion": ["2006.11239"],
+    "ddpm": ["2006.11239"],
+    "denoising diffusion": ["2006.11239"],
+    "stable diffusion": ["2112.10752"],
+    "latent diffusion": ["2112.10752"],
+    # Multimodal
+    "clip": ["2103.00020"],
+    "contrastive language": ["2103.00020"],
+    # Scaling
+    "scaling law": ["2001.08361"],
+    "scaling laws": ["2001.08361"],
+    "chinchilla": ["2203.15556"],
+    "compute-optimal": ["2203.15556"],
+    "compute optimal": ["2203.15556"],
+    # Architecture
+    "rope": ["2104.09864"],
+    "rotary position": ["2104.09864"],
+    "rotary embedding": ["2104.09864"],
+    "switch transformer": ["2101.03961"],
+    # Reasoning
+    "chain-of-thought": ["2201.11903"],
+    "chain of thought": ["2201.11903"],
 }
 
 
