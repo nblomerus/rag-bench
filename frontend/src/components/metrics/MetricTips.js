@@ -1,0 +1,16 @@
+export const METRIC_TIPS = {
+    retrieval_confidence: 'How closely the top retrieved passage matches your question. High = strong match, Low = topic may not be in the corpus.',
+    sources_cited: 'How many of the retrieved sources the model referenced with [Source N] in its answer.',
+    unsupported_claims: 'Sentences containing facts, numbers, or technical terms with no citation. Lower is better.',
+    faithfulness: 'How closely the answer sticks to the source text, measured by keyword overlap. Scale: 1 (poor) to 5 (excellent).',
+    latency: 'Total time from question to completed answer, including retrieval and LLM generation.',
+    backend_model: 'The LLM provider and model used to generate this answer.',
+    sources_count: 'Number of passages retrieved from the corpus to help answer your question.',
+    top_score: 'Similarity score of the single best-matching passage. Higher means the retrieval found a very relevant chunk.',
+    diversity: 'How many different papers and sections the retrieved passages come from. More diversity = broader evidence.',
+    coverage: 'Percentage of retrieved sources that were actually cited in the answer. 100% means every source was used.',
+    density: 'Average number of [Source N] citations per sentence. A well-cited answer typically has 0.5\u20132 per sentence.',
+    score_gap: 'How much stronger the top result is compared to the second. Higher ratio = more confident single best match.',
+    score_bar: 'Retrieval score for this source. The bar shows relative strength compared to the top result.',
+    source_verification: 'Shows whether each retrieved source was cited in the answer and how many times.',
+}
