@@ -1,0 +1,397 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar {
+    width: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 3px;
+}
+
+/* ─── Citation refs ─── */
+.citation-ref {
+    color: #60a5fa;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+}
+.citation-ref:hover {
+    color: #93bbfc;
+    text-decoration-style: solid;
+}
+
+/* ─── Loading dots animation ─── */
+@keyframes pulse-dot {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+}
+.loading-dots span {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin: 0 3px;
+    background: #60a5fa;
+    border-radius: 50%;
+    animation: pulse-dot 1.4s infinite ease-in-out;
+}
+.loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+/* ─── Spinner ─── */
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+.animate-spin {
+    animation: spin 1s linear infinite;
+}
+
+/* ─── Source card hover ─── */
+.source-card {
+    transition: all 0.15s ease;
+}
+.source-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* ─── Markdown answer styling ─── */
+.answer-md h1, .answer-md h2, .answer-md h3 {
+    font-weight: 600;
+    margin: 0.8em 0 0.4em;
+    color: #e2e8f0;
+}
+.answer-md h1 { font-size: 1.2em; }
+.answer-md h2 { font-size: 1.1em; }
+.answer-md h3 { font-size: 1em; }
+.answer-md p { margin: 0.4em 0; }
+.answer-md ul, .answer-md ol {
+    margin: 0.4em 0;
+    padding-left: 1.5em;
+}
+.answer-md li { margin: 0.2em 0; }
+.answer-md code {
+    background: #1e293b;
+    border: 1px solid #334155;
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    font-size: 0.9em;
+    color: #93c5fd;
+}
+.answer-md pre {
+    background: #0f172a;
+    border: 1px solid #334155;
+    padding: 0.8em;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 0.6em 0;
+}
+.answer-md pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    color: #e2e8f0;
+}
+.answer-md blockquote {
+    border-left: 3px solid #3b82f6;
+    padding-left: 0.8em;
+    margin: 0.5em 0;
+    color: #94a3b8;
+}
+.answer-md strong {
+    color: #f1f5f9;
+    font-weight: 600;
+}
+.answer-md table {
+    border-collapse: collapse;
+    margin: 0.5em 0;
+    width: 100%;
+}
+.answer-md th, .answer-md td {
+    border: 1px solid #334155;
+    padding: 0.4em 0.6em;
+    text-align: left;
+    font-size: 0.85em;
+}
+.answer-md th {
+    background: #1e293b;
+    font-weight: 600;
+}
+
+/* ─── KaTeX dark theme ─── */
+.katex {
+    font-size: 1.05em;
+    color: #e2e8f0;
+}
+.katex-display {
+    margin: 0.8em 0;
+    overflow-x: auto;
+    padding: 0.4em 0;
+}
+.katex-display > .katex {
+    font-size: 1.15em;
+}
+.answer-md .katex-html {
+    white-space: nowrap;
+}
+
+/* ─── Paper viewer panel ─── */
+.paper-panel {
+    flex: 0 0 600px;
+    min-width: 300px;
+    max-width: 50vw;
+    background: #111827;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid #334155;
+    overflow: hidden;
+    transition: flex 0.3s ease;
+}
+.paper-panel.empty {
+    background: #0a0f1a;
+}
+@media (max-width: 1400px) {
+    .paper-panel { flex: 0 0 500px; }
+}
+@media (max-width: 1024px) {
+    .paper-panel {
+        position: fixed;
+        top: 0; right: 0; bottom: 0;
+        flex: none;
+        width: 100%;
+        max-width: 100%;
+        z-index: 50;
+        border-left: none;
+        transform: translateX(100%);
+        transition: transform 0.3s ease;
+    }
+    .paper-panel.visible {
+        transform: translateX(0);
+    }
+}
+
+/* ─── Main content wrapper ─── */
+.main-content-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+}
+
+/* ─── Paper viewer header ─── */
+.paper-viewer-header {
+    flex-shrink: 0;
+    background: #1e293b;
+    border-bottom: 1px solid #334155;
+    padding: 0.5em 0.75em;
+}
+
+/* ─── PDF container ─── */
+.paper-pdf-container {
+    flex: 1;
+    overflow: hidden;
+    background: #525659;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    position: relative;
+}
+.paper-pdf-content {
+    flex: 1;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+    width: 100%;
+}
+.pdf-canvas-wrapper {
+    position: relative;
+    margin-bottom: 0;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    background: white;
+    display: flex;
+    align-items: flex-start;
+    max-width: 100%;
+    height: auto;
+}
+.pdf-canvas {
+    display: block;
+    background: white;
+    max-width: 100%;
+    height: auto;
+    width: 100%;
+}
+
+/* ─── PDF text highlight ─── */
+.pdf-text-highlight {
+    position: absolute;
+    background: rgba(255, 215, 0, 0.25);
+    border: 2px solid rgba(255, 215, 0, 0.5);
+    pointer-events: none;
+    z-index: 5;
+    box-sizing: border-box;
+}
+.pdf-text-highlight.first-highlight {
+    background: rgba(255, 215, 0, 0.5);
+    border: 3px solid rgba(255, 193, 7, 1);
+    box-shadow: 0 0 12px rgba(255, 215, 0, 0.7), inset 0 0 6px rgba(255, 215, 0, 0.4);
+    z-index: 10;
+    animation: pulse-highlight 2s ease-in-out infinite;
+}
+@keyframes pulse-highlight {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.08); }
+}
+
+/* ─── PDF controls ─── */
+.pdf-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: #1e293b;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    border: 1px solid #334155;
+}
+.pdf-controls button {
+    background: #334155;
+    color: #cbd5e1;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s;
+}
+.pdf-controls button:hover:not(:disabled) {
+    background: #475569;
+}
+.pdf-controls button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.pdf-status {
+    font-size: 13px;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* ─── Cited passage card ─── */
+.cited-passage-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-top: 2px solid #475569;
+    border-radius: 0;
+    padding: 0;
+    overflow: hidden;
+    flex: 0 0 auto;
+    min-height: 120px;
+    max-height: 200px;
+}
+.cited-passage-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5em 0.75em;
+    border-bottom: 1px solid #334155;
+    background: #0f172a;
+}
+.cited-passage-body {
+    padding: 0.75em;
+    overflow-y: auto;
+    max-height: 160px;
+    font-size: 0.8em;
+    line-height: 1.5;
+    color: #cbd5e1;
+}
+.cited-passage-section {
+    display: inline-block;
+    font-size: 0.7em;
+    font-weight: 600;
+    color: #60a5fa;
+    background: #60a5fa15;
+    padding: 2px 8px;
+    border-radius: 4px;
+    text-transform: capitalize;
+}
+
+/* ─── Quality badges ─── */
+.quality-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-weight: 500;
+    border-width: 1px;
+    border-style: solid;
+}
+
+/* ─── Metric tooltips ─── */
+.metric-tip {
+    position: relative;
+    cursor: help;
+}
+.metric-tip .tip-text {
+    visibility: hidden;
+    opacity: 0;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1f2937;
+    color: #d1d5db;
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.4;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid #374151;
+    white-space: normal;
+    width: max-content;
+    max-width: 260px;
+    z-index: 50;
+    pointer-events: none;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+.metric-tip .tip-text::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: #374151;
+}
+.metric-tip:hover .tip-text {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* ─── Score bar ─── */
+.score-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: #1f2937;
+    overflow: hidden;
+    width: 96px;
+}
+.score-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+}
