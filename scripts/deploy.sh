@@ -116,6 +116,13 @@ echo -e "${GREEN}✓ Volumes created${NC}"
 echo -e "\n${YELLOW}[6/7]${NC} Tearing down any existing containers..."
 
 docker compose -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+# Remove any orphaned containers from a different compose context
+for name in ragbench-api-prod ragbench-frontend-prod ragbench-nginx ragbench-ollama-prod ragbench-certbot; do
+    if docker inspect "$name" &>/dev/null; then
+        echo "Removing stale container: $name"
+        docker stop "$name" 2>/dev/null && docker rm "$name" 2>/dev/null || true
+    fi
+done
 
 echo -e "${GREEN}✓ Clean slate${NC}"
 

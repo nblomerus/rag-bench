@@ -153,6 +153,13 @@ cmd_exec() {
 
 cmd_start() {
     echo "🚀 Starting production..."
+    # Remove any orphaned containers from a different compose context
+    for name in ragbench-api-prod ragbench-frontend-prod ragbench-nginx ragbench-ollama-prod ragbench-certbot; do
+        if docker inspect "$name" &>/dev/null; then
+            echo "Removing stale container: $name"
+            docker stop "$name" 2>/dev/null && docker rm "$name" 2>/dev/null || true
+        fi
+    done
     dc up -d
     sleep 5
     echo ""
@@ -186,6 +193,13 @@ cmd_rebuild() {
     echo "🔨 Rebuilding production (downtime: ~2 minutes)..."
     echo ""
     dc down
+    # Remove any orphaned containers from a different compose context
+    for name in ragbench-api-prod ragbench-frontend-prod ragbench-nginx ragbench-ollama-prod ragbench-certbot; do
+        if docker inspect "$name" &>/dev/null; then
+            echo "Removing stale container: $name"
+            docker stop "$name" 2>/dev/null && docker rm "$name" 2>/dev/null || true
+        fi
+    done
     echo "Building images..."
     dc build
     echo "Starting services..."
