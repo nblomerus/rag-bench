@@ -39,7 +39,7 @@ See [QUICKSTART.md](docs/QUICKSTART.md) for the full 5-minute guide.
                    │ HTTP / SSE
 ┌──────────────────▼──────────────────────────────────┐
 │  Nginx (production only)                            │
-│  SSL termination · rate limiting · static caching   │
+│  SSL termination · static caching                   │
 └──────────────────┬──────────────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────────────┐
