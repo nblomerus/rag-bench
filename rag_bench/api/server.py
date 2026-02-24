@@ -656,7 +656,7 @@ async def metrics_summary():
 
 
 @app.post("/api/query", response_model=QueryResponse)
-async def query_rag(request: QueryRequest):
+async def query_rag(request: QueryRequest, raw_request: Request):
     """Ask a question and get a grounded answer with citations."""
     if not _generator:
         raise HTTPException(status_code=503, detail="Pipeline still loading")
@@ -767,7 +767,7 @@ async def query_rag(request: QueryRequest):
         CITATION_COVERAGE.observe(quality.citation_coverage)
 
     # Record in-memory tracker for frontend
-    client_ip = ""
+    client_ip = raw_request.headers.get("x-forwarded-for", raw_request.client.host if raw_request.client else "")
     _tracker.record_query(
         latency_ms=latency,
         status=status,
@@ -795,7 +795,7 @@ async def query_rag(request: QueryRequest):
 
 
 @app.post("/api/query/stream")
-async def query_rag_stream(request: QueryRequest):
+async def query_rag_stream(request: QueryRequest, raw_request: Request):
     """Stream the RAG answer via Server-Sent Events (SSE)."""
     if not _generator:
         raise HTTPException(status_code=503, detail="Pipeline still loading")
@@ -849,6 +849,8 @@ async def query_rag_stream(request: QueryRequest):
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
+
+    client_ip = raw_request.headers.get("x-forwarded-for", raw_request.client.host if raw_request.client else "")
 
     async def event_stream():
         try:
@@ -912,6 +914,7 @@ async def query_rag_stream(request: QueryRequest):
                         latency_ms=latency,
                         status="deflected",
                         question_preview=request.question,
+                        client_ip=client_ip,
                     )
                     UNIQUE_USERS.set(len(_tracker.unique_ips))
                     return
@@ -951,6 +954,7 @@ async def query_rag_stream(request: QueryRequest):
                         status="success",
                         question_preview=request.question,
                         citation_coverage=quality.citation_coverage,
+                        client_ip=client_ip,
                     )
                     UNIQUE_USERS.set(len(_tracker.unique_ips))
 
