@@ -3,6 +3,7 @@ RAG-Bench Configuration
 All hyperparameters, paths, and model settings for the pipeline.
 """
 
+import os
 from pathlib import Path
 
 # ── Paths ──
@@ -80,3 +81,10 @@ EMBEDDING_BATCH_SIZE = 254  # batch size for embedding computation (increased fo
 
 # ── Logging ──
 LOG_LEVEL = "INFO"
+
+# ── Version ──
+_version_file = PROJECT_ROOT / "version"
+VERSION = _version_file.read_text().strip() if _version_file.exists() else "0.0.0"
+
+# ── Environment ──
+RAG_ENV = os.environ.get("RAG_ENV", "development")

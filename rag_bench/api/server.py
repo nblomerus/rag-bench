@@ -16,17 +16,19 @@ Usage:
 
 import asyncio
 import json
-import logging
 import os
 import time
+import uuid
 from contextlib import asynccontextmanager
 
 import httpx
+import structlog
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from rag_bench.api.schemas import (
     BenchmarkEvalRequest,
@@ -57,7 +59,9 @@ from rag_bench.config import (
     EMBEDDING_MODEL,
     EVAL_DIR,
     PROJECT_ROOT,
+    RAG_ENV,
     RERANKER_MODEL,
+    VERSION,
 )
 from rag_bench.core.citation_boost import CitationBooster
 from rag_bench.core.generator import (
@@ -67,10 +71,28 @@ from rag_bench.core.generator import (
     build_llm_backend,
 )
 from rag_bench.core.retriever import HybridRetriever
+from rag_bench.observability import (
+    ACTIVE_REQUESTS,
+    BUILD_INFO,
+    CITATION_COVERAGE,
+    CORPUS_CHUNKS,
+    CORPUS_PAPERS,
+    PIPELINE_READY,
+    QUERIES_TOTAL,
+    REQUEST_DURATION,
+    RETRIEVAL_TOP_SCORE,
+    UNIQUE_USERS,
+    RequestTracker,
+    get_logger,
+    setup_logging,
+)
 from rag_bench.utils.text import fix_encoding, strip_chunk_preamble
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+setup_logging(
+    log_level=os.environ.get("LOG_LEVEL", "INFO"),
+    json_logs=RAG_ENV == "production",
+)
+logger = get_logger(__name__)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Configuration from environment
@@ -93,6 +115,8 @@ _llm_backend_name: str = ""
 _llm_model_name: str = ""
 _total_papers: int = 0  # Updated by background task
 _papers_counting: bool = True  # False once the full scan completes
+_start_time: float = time.time()
+_tracker = RequestTracker()
 
 
 _PAPER_COUNT_CACHE = CHROMA_DIR / ".paper_count"
@@ -194,8 +218,22 @@ async def lifespan(app):
     elapsed = time.time() - start
     logger.info(f"RAG pipeline loaded in {elapsed:.1f}s")
 
+    # Set Prometheus gauges
+    PIPELINE_READY.set(1)
+    CORPUS_CHUNKS.set(total_chunks)
+    CORPUS_PAPERS.set(_total_papers)
+    BUILD_INFO.info(
+        {
+            "version": VERSION,
+            "llm_backend": _llm_backend_name,
+            "llm_model": _llm_model_name,
+            "embedding_model": EMBEDDING_MODEL,
+        }
+    )
+
     yield  # App runs here
 
+    PIPELINE_READY.set(0)
     logger.info("Shutting down RAG pipeline")
 
 
@@ -214,6 +252,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Prometheus auto-instrumentation for all endpoints
+Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """Attach a unique request ID and log request lifecycle."""
+    request_id = str(uuid.uuid4())
+    request.state.request_id = request_id
+
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(request_id=request_id)
+
+    start = time.time()
+    response = await call_next(request)
+    duration_ms = (time.time() - start) * 1000
+
+    response.headers["X-Request-ID"] = request_id
+
+    # Skip noisy paths
+    path = request.url.path
+    if path not in ("/metrics", "/api/health", "/api/metrics/summary"):
+        logger.info(
+            "request_completed",
+            method=request.method,
+            path=path,
+            status_code=response.status_code,
+            duration_ms=round(duration_ms, 1),
+        )
+
+    return response
 
 
 def _format_sources(results: list[dict]) -> list[SourceResult]:
@@ -546,10 +616,29 @@ def _compute_per_source_cited(answer: str, results: list[dict]) -> list[dict]:
 @app.get("/api/health")
 async def health_check():
     """Health check — is the pipeline loaded?"""
+    uptime = round(time.time() - _start_time)
+    total_chunks = _retriever.collection.count() if _retriever else 0
     return {
         "status": "ok" if _generator else "loading",
         "pipeline_ready": _generator is not None,
+        "version": VERSION,
+        "uptime_seconds": uptime,
+        "corpus": {
+            "chunks": total_chunks,
+            "papers": _total_papers,
+            "papers_counting": _papers_counting,
+        },
+        "llm": {
+            "backend": _llm_backend_name,
+            "model": _llm_model_name,
+        },
     }
+
+
+@app.get("/api/metrics/summary")
+async def metrics_summary():
+    """Return curated metrics summary for the frontend Production tab."""
+    return _tracker.summary()
 
 
 @app.post("/api/query", response_model=QueryResponse)
@@ -629,9 +718,16 @@ async def query_rag(request: QueryRequest):
             citation_booster=None,
         )
 
+    ACTIVE_REQUESTS.inc()
     start = time.time()
-    result = generator.answer(request.question, top_k=request.top_k)
+    try:
+        result = generator.answer(request.question, top_k=request.top_k)
+    except Exception:
+        ACTIVE_REQUESTS.dec()
+        QUERIES_TOTAL.labels(status="error").inc()
+        raise
     latency = (time.time() - start) * 1000
+    ACTIVE_REQUESTS.dec()
 
     display_results = result.get("filtered_results", result.get("results", []))
 
@@ -646,6 +742,30 @@ async def query_rag(request: QueryRequest):
             )
         except Exception as e:
             logger.warning(f"Quality metrics computation failed: {e}")
+
+    # Record Prometheus metrics
+    status = "deflected" if result["deflected"] else "success"
+    QUERIES_TOTAL.labels(status=status).inc()
+    REQUEST_DURATION.labels(endpoint="/api/query", method="POST").observe(latency / 1000)
+    if result.get("scores"):
+        RETRIEVAL_TOP_SCORE.observe(result["scores"][0])
+    if quality.citation_coverage:
+        CITATION_COVERAGE.observe(quality.citation_coverage)
+
+    # Record in-memory tracker for frontend
+    client_ip = ""
+    _tracker.record_query(
+        latency_ms=latency,
+        status=status,
+        question_preview=request.question,
+        retrieval_ms=result.get("retrieval_ms", 0.0),
+        generation_ms=result.get("generation_ms", 0.0),
+        reranking_ms=result.get("reranking_ms", 0.0),
+        citation_coverage=quality.citation_coverage,
+        top_score=result["scores"][0] if result.get("scores") else 0.0,
+        client_ip=client_ip,
+    )
+    UNIQUE_USERS.set(len(_tracker.unique_ips))
 
     return QueryResponse(
         answer=result["answer"],
@@ -772,6 +892,14 @@ async def query_rag_stream(request: QueryRequest):
                         "model": _llm_model_name,
                     }
                     yield f"data: {json.dumps(deflection_msg)}\n\n"
+                    QUERIES_TOTAL.labels(status="deflected").inc()
+                    REQUEST_DURATION.labels(endpoint="/api/query/stream", method="POST").observe(latency / 1000)
+                    _tracker.record_query(
+                        latency_ms=latency,
+                        status="deflected",
+                        question_preview=request.question,
+                    )
+                    UNIQUE_USERS.set(len(_tracker.unique_ips))
                     return
 
                 elif evt["event"] == "token":
@@ -799,9 +927,23 @@ async def query_rag_stream(request: QueryRequest):
                     }
                     yield f"data: {json.dumps(completion_msg)}\n\n"
 
+                    # Record metrics
+                    QUERIES_TOTAL.labels(status="success").inc()
+                    REQUEST_DURATION.labels(endpoint="/api/query/stream", method="POST").observe(latency / 1000)
+                    if quality.citation_coverage:
+                        CITATION_COVERAGE.observe(quality.citation_coverage)
+                    _tracker.record_query(
+                        latency_ms=latency,
+                        status="success",
+                        question_preview=request.question,
+                        citation_coverage=quality.citation_coverage,
+                    )
+                    UNIQUE_USERS.set(len(_tracker.unique_ips))
+
         except Exception as e:
             logger.error(f"Stream error: {e}")
             yield f"data: {json.dumps({'event': 'error', 'message': str(e)})}\n\n"
+            QUERIES_TOTAL.labels(status="error").inc()
 
     return StreamingResponse(
         event_stream(),

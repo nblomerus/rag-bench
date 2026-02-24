@@ -14,6 +14,7 @@ Supports multiple LLM backends:
 import json
 import logging
 import re
+import time
 
 import requests
 
@@ -2010,6 +2011,7 @@ class RAGGenerator:
         )
 
         # Step 5: Generate answer
+        _gen_start = time.time()
         try:
             answer_text = self.llm.generate(
                 prompt=prompt,
@@ -2019,6 +2021,13 @@ class RAGGenerator:
             logger.error(f"LLM generation failed: {e}")
             fallback = TemplateFallbackBackend()
             answer_text = fallback.generate(prompt=prompt)
+        _gen_elapsed = time.time() - _gen_start
+        try:
+            from rag_bench.observability.metrics import GENERATION_DURATION
+
+            GENERATION_DURATION.observe(_gen_elapsed)
+        except Exception:
+            pass
 
         # Step 5.5: Post-process math formatting
         answer_text = postprocess_math(answer_text)

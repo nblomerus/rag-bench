@@ -113,6 +113,17 @@ deploy-ssl:
 	chmod +x scripts/init-ssl.sh
 	./scripts/init-ssl.sh
 
+# Monitoring (Prometheus + Grafana)
+
+monitoring-up:
+	docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+
+monitoring-down:
+	docker compose -f docker-compose.yml -f docker-compose.monitoring.yml down
+
+monitoring-logs:
+	docker compose -f docker-compose.yml -f docker-compose.monitoring.yml logs -f prometheus grafana
+
 # Operations
 
 backup:
@@ -211,6 +222,11 @@ help:
 	@echo "  switch-prod     Switch to production environment (local)"
 	@echo "  env-status      Show current environment"
 	@echo ""
+	@echo "Monitoring (Prometheus + Grafana):"
+	@echo "  monitoring-up    Start with Prometheus + Grafana"
+	@echo "  monitoring-down  Stop monitoring stack"
+	@echo "  monitoring-logs  View monitoring logs"
+	@echo ""
 	@echo "Operations:"
 	@echo "  backup          Create manual backup"
 	@echo "  restore         Restore from backup"
@@ -234,4 +250,5 @@ help:
 .PHONY: pyenv upgrade install pre-commit check ruff test clean help prune-branches run-server \
         docker-build docker-build-frontend docker-up docker-down docker-logs docker-ps docker-exec-api docker-clean docker-restart \
         deploy-dev deploy deploy-ssl switch-dev switch-prod env-status backup restore rollback health-monitor \
+        monitoring-up monitoring-down monitoring-logs \
         prod-start prod-stop prod-restart prod-rebuild prod-ingest prod-logs prod-status prod-shell

@@ -68,3 +68,7 @@ certbot/www/
 # Evaluation results
 results/
 eval_results/
+
+# Monitoring runtime data
+monitoring/prometheus-data/
+monitoring/grafana-data/
