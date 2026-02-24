@@ -12,6 +12,7 @@ Tests cover:
 
 from rag_bench.utils.text import (
     build_acronym_dict,
+    clean_latex_artifacts,
     extract_sections,
     extract_sections_from_pdf,
     fix_encoding,
@@ -807,3 +808,125 @@ class TestStripChunkPreamble:
         text = "Introduction\nBackground"
         # All lines are headers, return original stripped
         assert strip_chunk_preamble(text) == "Introduction\nBackground"
+
+    def test_blank_lines_before_content(self):
+        """Cover lines 420-422: blank lines at start advance content_start."""
+        text = "\n\nThe actual content of this chunk starts after blank lines."
+        result = strip_chunk_preamble(text)
+        assert result == "The actual content of this chunk starts after blank lines."
+
+
+class TestExtractSectionsFinalSection:
+    """Cover lines 130-132: final section saved when text ends with content."""
+
+    def test_final_section_content(self):
+        text = "# Introduction\nFirst section content.\n\n# Methods\nFinal section has content here."
+        sections = extract_sections(text)
+        assert "methods" in sections
+        assert "Final section" in sections["methods"]
+
+    def test_final_section_empty_stripped(self):
+        """Empty final section (only whitespace) is not saved."""
+        text = "# Introduction\nContent.\n\n# Methods\n   \n  "
+        sections = extract_sections(text)
+        assert "methods" not in sections
+
+
+class TestExtractSectionsFromPdfSplitHeaders:
+    """Cover lines 173-177: split header detection (number on one line, title on next)."""
+
+    def test_split_header(self):
+        content = "A" * 50  # need > 30 chars per section
+        text = f"INTRODUCTION\n\n{'B' * 50}\n\n3.2.1\nScaled Dot-Product Attention\n\n{content}"
+        sections = extract_sections_from_pdf(text)
+        # The split header should be combined
+        assert any("scaled_dot_product_attention" in k for k in sections)
+
+    def test_final_section_pdf(self):
+        """Cover line 194: final section with > 30 chars is saved."""
+        text = f"INTRODUCTION\n\n{'A' * 50}\n\nCONCLUSION\n\n{'B' * 50}"
+        sections = extract_sections_from_pdf(text)
+        assert "conclusion" in sections
+
+
+class TestFixEncodingFalsy:
+    """Cover fix_encoding returns early for falsy input."""
+
+    def test_none_returns_none(self):
+        assert fix_encoding(None) is None
+
+    def test_empty_returns_empty(self):
+        assert fix_encoding("") == ""
+
+
+class TestBranchCoverageExtra:
+    """Additional branch coverage tests for text.py."""
+
+    def test_extract_sections_ends_with_header(self):
+        """Cover branch 130->135: text ends with header, no trailing content."""
+        text = "# Introduction\nSome content.\n\n# Conclusion"
+        sections = extract_sections(text)
+        assert "introduction" in sections
+        # Conclusion has no content so should not appear
+        assert "conclusion" not in sections
+
+    def test_build_acronym_single_word_full_form(self):
+        """Cover branch 220->214: full form is only one word."""
+        text = "Something (ABC) here"
+        acronyms = build_acronym_dict(text)
+        # "Something" is only 1 word but the regex requires 2+, so no match
+        assert "ABC" not in acronyms
+
+    def test_format_authors_four_authors(self):
+        """Cover branch 239->237: 3+ last names triggers comma join."""
+        result = format_authors(["A B", "C D", "E F"], max_authors=3)
+        assert "and" in result
+        assert "B" in result
+
+    def test_format_authors_whitespace_only_skipped(self):
+        """Cover branch 239->237: whitespace-only author is skipped."""
+        result = format_authors(["  ", "John Smith"])
+        assert result == "Smith"
+
+    def test_extract_pdf_split_header_not_title(self):
+        """Cover branch 175->179: section number alone but next line isn't a title."""
+        intro = "A " * 60
+        text = f"INTRODUCTION\n\n{intro}\n\n3.2.1\nthis starts lowercase so not a title.\n\n{'B ' * 60}"
+        sections = extract_sections_from_pdf(text)
+        # The "3.2.1" followed by lowercase line should NOT be treated as split header
+        assert "introduction" in sections
+
+    def test_extract_pdf_final_section_too_short(self):
+        """Cover branch 194->199: final section < 30 chars falls through."""
+        intro = "A " * 60  # 120 chars — plenty > 30
+        text = f"INTRODUCTION\n\n{intro}\n\nCONCLUSION\n\nShort."
+        sections = extract_sections_from_pdf(text)
+        assert "introduction" in sections
+        # Conclusion text is < 30 chars, should not appear as separate section
+        assert "conclusion" not in sections
+
+    def test_extract_pdf_ends_with_header(self):
+        """Cover branch 194->199: text ends with header, current_lines empty."""
+        intro = "A " * 60
+        text = f"INTRODUCTION\n\n{intro}\n\nCONCLUSION"
+        sections = extract_sections_from_pdf(text)
+        assert "introduction" in sections
+
+
+class TestCleanLatexArtifacts:
+    """Cover line 364: clean_latex_artifacts returns early for falsy input."""
+
+    def test_empty_string(self):
+        assert clean_latex_artifacts("") == ""
+
+    def test_none(self):
+        assert clean_latex_artifacts(None) is None
+
+    def test_doubled_symbols(self):
+        result = clean_latex_artifacts("x ∈∈ S")
+        assert "∈∈" not in result
+        assert "∈" in result
+
+    def test_zero_width_spaces(self):
+        result = clean_latex_artifacts("hello\u200bworld")
+        assert "\u200b" not in result

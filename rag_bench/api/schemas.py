@@ -243,3 +243,49 @@ class BenchmarkHistoryResponse(BaseModel):
     """Response listing past benchmark runs."""
 
     runs: list[BenchmarkHistoryEntry] = []
+
+
+# ── Eval Trends ──
+
+
+class TrendDataPoint(BaseModel):
+    """Metrics from a single evaluation run for trend tracking."""
+
+    timestamp: str
+    run_type: str = "manual"
+    retrieval_mrr: float = 0.0
+    retrieval_ndcg_at_5: float = 0.0
+    retrieval_hit_rate: float = 0.0
+    avg_citation_precision: float = 0.0
+    avg_citation_recall: float = 0.0
+    avg_completeness: float = 0.0
+    avg_faithfulness: float = 0.0
+    deflection_accuracy: float = 0.0
+    avg_latency_ms: float = 0.0
+    total_queries: int = 0
+
+
+class TrendsResponse(BaseModel):
+    """Historical eval trends for regression tracking."""
+
+    trends: list[TrendDataPoint] = []
+
+
+# ── Scheduled Eval ──
+
+
+class EvalScheduleRequest(BaseModel):
+    """Configure the auto-eval schedule."""
+
+    enabled: bool = Field(..., description="Enable or disable scheduled evaluations")
+    interval_hours: int = Field(default=24, ge=1, le=168, description="Hours between eval runs")
+
+
+class EvalScheduleStatus(BaseModel):
+    """Current state of the eval scheduler."""
+
+    enabled: bool = False
+    interval_hours: int = 24
+    next_run: str | None = None
+    last_run: str | None = None
+    last_run_summary: dict = {}

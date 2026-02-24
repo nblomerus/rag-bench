@@ -34,26 +34,65 @@ def mock_pipeline():
 class TestBenchmarkLatest:
     """Test GET /api/eval/benchmark/latest/{benchmark}."""
 
+    def _patch_eval_dirs(self, tmp_path):
+        """Return context managers patching eval directory constants to tmp_path."""
+        return (
+            patch("rag_bench.api.server.EVAL_PRODUCTION_DIR", tmp_path / "production"),
+            patch("rag_bench.api.server.EVAL_MANUAL_DIR", tmp_path / "manual"),
+            patch("rag_bench.api.server.EVAL_RESULTS_DIR", tmp_path),
+        )
+
     def test_ragbench_with_results(self, client, tmp_path):
         """Return latest eval file for ragbench."""
-        eval_dir = tmp_path / "eval_results"
-        eval_dir.mkdir()
-        data = {"summary": {"total_queries": 10, "retrieval_mrr": 0.5}}
-        (eval_dir / "eval_20260101_120000.json").write_text(json.dumps(data))
+        manual_dir = tmp_path / "manual"
+        manual_dir.mkdir()
+        data = {"summary": {"total_queries": 10, "retrieval_mrr": 0.5}, "metadata": {}}
+        (manual_dir / "eval_20260101_120000.json").write_text(json.dumps(data))
 
-        with patch("rag_bench.api.server.EVAL_RESULTS_DIR", eval_dir):
+        p1, p2, p3 = self._patch_eval_dirs(tmp_path)
+        with p1, p2, p3:
             resp = client.get("/api/eval/benchmark/latest/ragbench")
         assert resp.status_code == 200
         body = resp.json()
         assert body["summary"]["total_queries"] == 10
         assert "_source_file" in body
 
+    def test_ragbench_prefers_production(self, client, tmp_path):
+        """Production file is preferred over manual."""
+        prod_dir = tmp_path / "production"
+        prod_dir.mkdir()
+        manual_dir = tmp_path / "manual"
+        manual_dir.mkdir()
+
+        prod_data = {"summary": {"total_queries": 100}, "metadata": {"run_type": "production"}}
+        manual_data = {"summary": {"total_queries": 5}, "metadata": {"run_type": "manual"}}
+        (prod_dir / "eval_20260201_120000.json").write_text(json.dumps(prod_data))
+        (manual_dir / "eval_20260202_120000.json").write_text(json.dumps(manual_data))
+
+        p1, p2, p3 = self._patch_eval_dirs(tmp_path)
+        with p1, p2, p3:
+            resp = client.get("/api/eval/benchmark/latest/ragbench")
+        assert resp.status_code == 200
+        assert resp.json()["summary"]["total_queries"] == 100
+        assert resp.json()["_run_type"] == "production"
+
+    def test_ragbench_fallback_to_manual(self, client, tmp_path):
+        """Falls back to manual when no production files exist."""
+        manual_dir = tmp_path / "manual"
+        manual_dir.mkdir()
+        data = {"summary": {"total_queries": 7}, "metadata": {"run_type": "manual"}}
+        (manual_dir / "eval_20260101_120000.json").write_text(json.dumps(data))
+
+        p1, p2, p3 = self._patch_eval_dirs(tmp_path)
+        with p1, p2, p3:
+            resp = client.get("/api/eval/benchmark/latest/ragbench")
+        assert resp.status_code == 200
+        assert resp.json()["_run_type"] == "manual"
+
     def test_ragbench_no_results(self, client, tmp_path):
         """404 when no eval files exist."""
-        eval_dir = tmp_path / "eval_results"
-        eval_dir.mkdir()
-
-        with patch("rag_bench.api.server.EVAL_RESULTS_DIR", eval_dir):
+        p1, p2, p3 = self._patch_eval_dirs(tmp_path)
+        with p1, p2, p3:
             resp = client.get("/api/eval/benchmark/latest/ragbench")
         assert resp.status_code == 404
 
@@ -316,6 +355,305 @@ class TestSaveBenchmarkHistory:
         ):
             # Should not raise
             _save_benchmark_history()
+
+
+class TestBenchmarkTrends:
+    """Test GET /api/eval/benchmark/trends."""
+
+    def _patch_eval_dirs(self, tmp_path):
+        """Return context managers patching eval directory constants to tmp_path."""
+        return (
+            patch("rag_bench.api.server.EVAL_PRODUCTION_DIR", tmp_path / "production"),
+            patch("rag_bench.api.server.EVAL_MANUAL_DIR", tmp_path / "manual"),
+            patch("rag_bench.api.server.EVAL_RESULTS_DIR", tmp_path),
+        )
+
+    def test_trends_with_production_results(self, client, tmp_path):
+        """Return trend data points from production eval files."""
+        prod_dir = tmp_path / "production"
+        prod_dir.mkdir()
+
+        data_1 = {
+            "summary": {
+                "total_queries": 50,
+                "retrieval_mrr": 0.65,
+                "retrieval_ndcg_at_5": 0.70,
+                "retrieval_hit_rate": 0.80,
+                "avg_citation_precision": 0.75,
+                "avg_completeness": 0.60,
+                "avg_faithfulness": 3.5,
+                "avg_latency_ms": 1200.0,
+            },
+            "metadata": {"timestamp": "2026-02-20 12:00:00", "run_type": "production"},
+        }
+        data_2 = {
+            "summary": {
+                "total_queries": 77,
+                "retrieval_mrr": 0.68,
+                "retrieval_ndcg_at_5": 0.72,
+                "retrieval_hit_rate": 0.85,
+                "avg_citation_precision": 0.80,
+                "avg_completeness": 0.65,
+                "avg_faithfulness": 4.0,
+                "avg_latency_ms": 1100.0,
+            },
+            "metadata": {"timestamp": "2026-02-23 12:42:43", "run_type": "production"},
+        }
+
+        (prod_dir / "eval_20260220_120000.json").write_text(json.dumps(data_1))
+        (prod_dir / "eval_20260223_124243.json").write_text(json.dumps(data_2))
+
+        p1, p2, p3 = self._patch_eval_dirs(tmp_path)
+        with p1, p2, p3:
+            resp = client.get("/api/eval/benchmark/trends?run_type=production")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["trends"]) == 2
+        assert body["trends"][0]["total_queries"] == 50
+        assert body["trends"][1]["total_queries"] == 77
+        assert body["trends"][1]["retrieval_mrr"] == 0.68
+        assert body["trends"][1]["avg_faithfulness"] == 4.0
+        assert body["trends"][0]["run_type"] == "production"
+
+    def test_trends_manual_filter(self, client, tmp_path):
+        """Return only manual trends when filtered."""
+        prod_dir = tmp_path / "production"
+        prod_dir.mkdir()
+        manual_dir = tmp_path / "manual"
+        manual_dir.mkdir()
+
+        prod_data = {
+            "summary": {"total_queries": 100},
+            "metadata": {"timestamp": "2026-02-20", "run_type": "production"},
+        }
+        manual_data = {
+            "summary": {"total_queries": 5},
+            "metadata": {"timestamp": "2026-02-21", "run_type": "manual"},
+        }
+        (prod_dir / "eval_20260220_000000.json").write_text(json.dumps(prod_data))
+        (manual_dir / "eval_20260221_000000.json").write_text(json.dumps(manual_data))
+
+        p1, p2, p3 = self._patch_eval_dirs(tmp_path)
+        with p1, p2, p3:
+            resp = client.get("/api/eval/benchmark/trends?run_type=manual")
+
+        assert resp.status_code == 200
+        trends = resp.json()["trends"]
+        assert len(trends) == 1
+        assert trends[0]["total_queries"] == 5
+        assert trends[0]["run_type"] == "manual"
+
+    def test_trends_all_filter(self, client, tmp_path):
+        """Return all trends when using 'all' filter."""
+        prod_dir = tmp_path / "production"
+        prod_dir.mkdir()
+        manual_dir = tmp_path / "manual"
+        manual_dir.mkdir()
+
+        prod_data = {
+            "summary": {"total_queries": 100},
+            "metadata": {"timestamp": "2026-02-20", "run_type": "production"},
+        }
+        manual_data = {
+            "summary": {"total_queries": 5},
+            "metadata": {"timestamp": "2026-02-21", "run_type": "manual"},
+        }
+        (prod_dir / "eval_20260220_000000.json").write_text(json.dumps(prod_data))
+        (manual_dir / "eval_20260221_000000.json").write_text(json.dumps(manual_data))
+
+        p1, p2, p3 = self._patch_eval_dirs(tmp_path)
+        with p1, p2, p3:
+            resp = client.get("/api/eval/benchmark/trends?run_type=all")
+
+        assert resp.status_code == 200
+        trends = resp.json()["trends"]
+        assert len(trends) == 2
+
+    def test_trends_production_fallback(self, client, tmp_path):
+        """Fall back to all when production is empty."""
+        manual_dir = tmp_path / "manual"
+        manual_dir.mkdir()
+        data = {
+            "summary": {"total_queries": 10},
+            "metadata": {"timestamp": "2026-02-20", "run_type": "manual"},
+        }
+        (manual_dir / "eval_20260220_000000.json").write_text(json.dumps(data))
+
+        p1, p2, p3 = self._patch_eval_dirs(tmp_path)
+        with p1, p2, p3:
+            resp = client.get("/api/eval/benchmark/trends")  # default is production
+
+        assert resp.status_code == 200
+        # Should fall back to manual files
+        assert len(resp.json()["trends"]) == 1
+
+    def test_trends_invalid_run_type(self, client, tmp_path):
+        """400 for invalid run_type."""
+        p1, p2, p3 = self._patch_eval_dirs(tmp_path)
+        with p1, p2, p3:
+            resp = client.get("/api/eval/benchmark/trends?run_type=invalid")
+        assert resp.status_code == 400
+
+    def test_trends_empty_dir(self, client, tmp_path):
+        """Return empty trends when no eval files exist."""
+        p1, p2, p3 = self._patch_eval_dirs(tmp_path)
+        with p1, p2, p3:
+            resp = client.get("/api/eval/benchmark/trends")
+        assert resp.status_code == 200
+        assert resp.json()["trends"] == []
+
+    def test_trends_no_dir(self, client, tmp_path):
+        """Return empty trends when eval dirs don't exist."""
+        empty = tmp_path / "nonexistent"
+        with (
+            patch("rag_bench.api.server.EVAL_PRODUCTION_DIR", empty / "production"),
+            patch("rag_bench.api.server.EVAL_MANUAL_DIR", empty / "manual"),
+            patch("rag_bench.api.server.EVAL_RESULTS_DIR", empty),
+        ):
+            resp = client.get("/api/eval/benchmark/trends")
+        assert resp.status_code == 200
+        assert resp.json()["trends"] == []
+
+    def test_trends_corrupt_file_skipped(self, client, tmp_path):
+        """Corrupt eval files are skipped without crashing."""
+        prod_dir = tmp_path / "production"
+        prod_dir.mkdir()
+
+        valid = {
+            "summary": {"total_queries": 10, "retrieval_mrr": 0.5},
+            "metadata": {"timestamp": "2026-02-20", "run_type": "production"},
+        }
+        (prod_dir / "eval_20260220_000000.json").write_text(json.dumps(valid))
+        (prod_dir / "eval_20260221_000000.json").write_text("not valid json!!!")
+
+        p1, p2, p3 = self._patch_eval_dirs(tmp_path)
+        with p1, p2, p3:
+            resp = client.get("/api/eval/benchmark/trends?run_type=production")
+
+        assert resp.status_code == 200
+        assert len(resp.json()["trends"]) == 1
+
+    def test_trends_missing_summary_fields_default(self, client, tmp_path):
+        """Missing summary fields default to 0."""
+        manual_dir = tmp_path / "manual"
+        manual_dir.mkdir()
+
+        data = {"summary": {}, "metadata": {"timestamp": "2026-02-20"}}
+        (manual_dir / "eval_20260220_000000.json").write_text(json.dumps(data))
+
+        p1, p2, p3 = self._patch_eval_dirs(tmp_path)
+        with p1, p2, p3:
+            resp = client.get("/api/eval/benchmark/trends?run_type=manual")
+
+        assert resp.status_code == 200
+        point = resp.json()["trends"][0]
+        assert point["retrieval_mrr"] == 0.0
+        assert point["avg_faithfulness"] == 0.0
+        assert point["total_queries"] == 0
+
+
+class TestEvalSchedule:
+    """Test GET/POST /api/eval/schedule."""
+
+    def test_schedule_status_default(self, client):
+        """Default schedule status when nothing has been configured."""
+        with (
+            patch("rag_bench.api.server._eval_schedule_enabled", False),
+            patch("rag_bench.api.server._eval_schedule_interval", 24),
+            patch("rag_bench.api.server._eval_schedule_last_run", None),
+            patch("rag_bench.api.server._eval_schedule_last_summary", {}),
+        ):
+            resp = client.get("/api/eval/schedule")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["enabled"] is False
+        assert body["interval_hours"] == 24
+        assert body["next_run"] is None
+        assert body["last_run"] is None
+
+    def test_schedule_status_with_last_run(self, client):
+        """Schedule status shows next_run computed from last_run."""
+        with (
+            patch("rag_bench.api.server._eval_schedule_enabled", True),
+            patch("rag_bench.api.server._eval_schedule_interval", 12),
+            patch("rag_bench.api.server._eval_schedule_last_run", "2026-02-23T12:00:00"),
+            patch("rag_bench.api.server._eval_schedule_last_summary", {"total_queries": 20, "retrieval_mrr": 0.7}),
+        ):
+            resp = client.get("/api/eval/schedule")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["enabled"] is True
+        assert body["interval_hours"] == 12
+        assert body["next_run"] == "2026-02-24T00:00:00"
+        assert body["last_run"] == "2026-02-23T12:00:00"
+        assert body["last_run_summary"]["retrieval_mrr"] == 0.7
+
+    def test_schedule_enable(self, client):
+        """POST to enable schedule updates state."""
+        with (
+            patch("rag_bench.api.server._eval_schedule_enabled", False),
+            patch("rag_bench.api.server._eval_schedule_interval", 24),
+            patch("rag_bench.api.server._eval_schedule_last_run", None),
+            patch("rag_bench.api.server._eval_schedule_last_summary", {}),
+            patch("rag_bench.api.server._start_eval_schedule") as mock_start,
+        ):
+            resp = client.post(
+                "/api/eval/schedule",
+                json={"enabled": True, "interval_hours": 8},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["enabled"] is True
+        assert body["interval_hours"] == 8
+        mock_start.assert_called_once()
+
+    def test_schedule_disable(self, client):
+        """POST to disable schedule doesn't start task."""
+        with (
+            patch("rag_bench.api.server._eval_schedule_enabled", True),
+            patch("rag_bench.api.server._eval_schedule_interval", 24),
+            patch("rag_bench.api.server._eval_schedule_last_run", None),
+            patch("rag_bench.api.server._eval_schedule_last_summary", {}),
+            patch("rag_bench.api.server._start_eval_schedule") as mock_start,
+        ):
+            resp = client.post(
+                "/api/eval/schedule",
+                json={"enabled": False, "interval_hours": 24},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["enabled"] is False
+        mock_start.assert_not_called()
+
+    def test_schedule_validation_interval_too_high(self, client):
+        """Interval > 168 hours is rejected by Pydantic."""
+        with (
+            patch("rag_bench.api.server._eval_schedule_enabled", False),
+            patch("rag_bench.api.server._eval_schedule_interval", 24),
+        ):
+            resp = client.post(
+                "/api/eval/schedule",
+                json={"enabled": True, "interval_hours": 999},
+            )
+
+        assert resp.status_code == 422
+
+    def test_schedule_validation_interval_too_low(self, client):
+        """Interval < 1 hour is rejected by Pydantic."""
+        with (
+            patch("rag_bench.api.server._eval_schedule_enabled", False),
+            patch("rag_bench.api.server._eval_schedule_interval", 24),
+        ):
+            resp = client.post(
+                "/api/eval/schedule",
+                json={"enabled": True, "interval_hours": 0},
+            )
+
+        assert resp.status_code == 422
 
 
 class TestPaperCountCache:

@@ -190,16 +190,19 @@ def _round_floats(obj, precision=4):
 def save_report(
     report: EvalReport,
     output_dir: str = "eval_results",
+    run_type: str = "manual",
 ) -> tuple[str, str]:
     """
-    Save both JSON and Markdown reports to output_dir.
+    Save both JSON and Markdown reports to output_dir/<run_type>/.
     Returns (json_path, md_path).
     """
-    os.makedirs(output_dir, exist_ok=True)
+    report.metadata["run_type"] = run_type
+    target_dir = os.path.join(output_dir, run_type)
+    os.makedirs(target_dir, exist_ok=True)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
 
-    json_path = os.path.join(output_dir, f"eval_{timestamp}.json")
-    md_path = os.path.join(output_dir, f"eval_{timestamp}.md")
+    json_path = os.path.join(target_dir, f"eval_{timestamp}.json")
+    md_path = os.path.join(target_dir, f"eval_{timestamp}.md")
 
     # JSON
     json_data = report_to_json(report)
