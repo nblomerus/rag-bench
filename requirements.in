@@ -25,3 +25,10 @@ uvicorn[standard]
 pydantic>=2.0.0
 httpx
 idna
+
+# Observability
+structlog
+prometheus-client
+prometheus-fastapi-instrumentator
+psutil
+nvidia-ml-py

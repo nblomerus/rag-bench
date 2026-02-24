@@ -748,6 +748,8 @@ class HybridRetriever:
             List of result dicts sorted by relevance, each containing:
             - chunk_id, text, score, rerank_score, metadata, sources
         """
+        _retrieval_start = time.time()
+
         # Stage 1: First-stage retrieval (parallel in concept)
         bm25_results = self.bm25.query(question, top_k=first_stage_k)
         dense_results = self._dense_query(question, top_k=first_stage_k)
@@ -787,7 +789,9 @@ class HybridRetriever:
                     )
 
         # Stage 3: Cross-encoder reranking
+        _rerank_start = time.time()
         reranked = self.reranker.rerank(question, rerank_candidates, top_k=top_k)
+        _rerank_elapsed = time.time() - _rerank_start
 
         # Ensure injected chunks survive reranking regardless of rank.
         # The reranker sorts candidates in-place, so rerank_candidates still
@@ -806,6 +810,16 @@ class HybridRetriever:
         # Apply threshold (injected chunks bypass — they were intentionally added)
         if relevance_threshold > 0:
             reranked = [r for r in reranked if r["score"] >= relevance_threshold or r.get("source") == "injection"]
+
+        # Record timing metrics for observability
+        _retrieval_elapsed = time.time() - _retrieval_start
+        try:
+            from rag_bench.observability.metrics import RERANKING_DURATION, RETRIEVAL_DURATION
+
+            RETRIEVAL_DURATION.observe(_retrieval_elapsed)
+            RERANKING_DURATION.observe(_rerank_elapsed)
+        except Exception:
+            pass
 
         return reranked
 

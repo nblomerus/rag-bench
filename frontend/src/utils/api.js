@@ -110,3 +110,9 @@ export async function detectHallucination(context, response) {
     if (!res.ok) throw new Error(`Detection error: ${res.status}`)
     return res.json()
 }
+
+export async function fetchMetricsSummary() {
+    const res = await fetch(`${API_BASE}/metrics/summary`)
+    if (!res.ok) throw new Error(`Metrics error: ${res.status}`)
+    return res.json()
+}

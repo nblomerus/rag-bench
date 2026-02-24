@@ -13,8 +13,9 @@ services:
       - RAG_LLM_MODEL=${RAG_LLM_MODEL:-gemma2:27b}
       - RAG_LLM_BASE_URL=${RAG_LLM_BASE_URL:-http://ollama:11434}
       - RAG_API_PORT=${RAG_API_PORT:-8000}
+      - RAG_ENV=production
       - PYTHONUNBUFFERED=1
-      - NVIDIA_VISIBLE_DEVICES=1
+      - CUDA_VISIBLE_DEVICES=1
     deploy:
       resources:
         limits:
@@ -22,7 +23,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["1"]
+              count: all
               capabilities: [gpu]
     memswap_limit: 28g
     volumes:
