@@ -29,9 +29,9 @@ export function Message({ message, onViewSource }) {
 
     if (message.role === 'user') {
         return (
-            <div className="flex justify-end mb-4">
-                <div className="bg-blue-600 text-white px-4 py-3 rounded-2xl rounded-br-md max-w-[75%]">
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+            <div className="flex justify-end mb-5">
+                <div className="px-5 py-3.5 rounded-[20px] rounded-br-md max-w-[75%] shadow-apple-sm" style={{ background: 'var(--apple-user-bubble)', color: '#ffffff' }}>
+                    <p className="text-[14px] leading-relaxed whitespace-pre-wrap">{message.content}</p>
                 </div>
             </div>
         )
@@ -43,22 +43,22 @@ export function Message({ message, onViewSource }) {
     const hasQuality = quality && quality.retrieval_confidence !== 'unknown' && !data?.deflected
 
     return (
-        <div className="flex justify-start mb-6">
+        <div className="flex justify-start mb-7">
             <div className="max-w-[85%] w-full">
                 {data?.deflected && !streaming && (
-                    <div className="flex items-center gap-2 bg-amber-900/30 border border-amber-700/50 text-amber-300 px-3 py-2 rounded-lg mb-2 text-xs">
+                    <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl mb-2 text-xs" style={{ background: 'var(--apple-yellow-bg)', border: '1px solid var(--apple-yellow-border)', color: 'var(--apple-yellow)' }}>
                         <AlertIcon size={14} />
                         <span>Deflected: {data.deflection_reason}</span>
                     </div>
                 )}
-                <div className="bg-gray-800 border border-gray-700 rounded-2xl rounded-bl-md px-4 py-3">
-                    <div ref={answerRef} className="text-sm text-gray-200 leading-relaxed">
+                <div className="rounded-[20px] rounded-bl-md px-5 py-3.5" style={{ background: 'var(--apple-assistant-bubble)', backdropFilter: 'blur(20px) saturate(180%)', border: '1px solid var(--apple-glass-border)' }}>
+                    <div ref={answerRef} className="text-[14px] leading-relaxed" style={{ color: 'var(--apple-text-primary)' }}>
                         {answerText ? formatAnswer(answerText) : (streaming ? '' : 'No response.')}
-                        {streaming && <span className="inline-block w-2 h-4 bg-blue-400 ml-0.5 animate-pulse rounded-sm" />}
+                        {streaming && <span className="inline-block w-2 h-4 ml-0.5 animate-pulse rounded-sm" style={{ background: 'var(--apple-accent)' }} />}
                     </div>
                     {data && !streaming && (
-                        <div className="mt-3 pt-2 border-t border-gray-700 space-y-2">
-                            <div className="flex items-center gap-3 text-xs text-gray-500">
+                        <div className="mt-3 pt-2 space-y-2" style={{ borderTop: '1px solid var(--apple-divider)' }}>
+                            <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--apple-text-quaternary)' }}>
                                 <Tip id="latency"><span className="flex items-center gap-1"><ZapIcon size={12} />{data.latency_ms?.toFixed(0) || '0'}ms</span></Tip>
                                 <Tip id="backend_model"><span className="flex items-center gap-1"><CpuIcon size={12} />{data.backend || '...'}/{((data.model || '').split(':')[0]) || '...'}</span></Tip>
                                 <Tip id="sources_count"><span className="flex items-center gap-1"><SearchIcon size={12} />{data.sources?.length || 0} relevant source{data.sources?.length !== 1 ? 's' : ''}</span></Tip>
@@ -68,9 +68,9 @@ export function Message({ message, onViewSource }) {
                                     <QualityBadges quality={quality} />
                                     <button
                                         onClick={() => setShowQuality(v => !v)}
-                                        style={{ marginLeft: 'auto', fontSize: '11px', color: '#6b7280', display: 'flex', alignItems: 'center', gap: '2px', background: 'none', border: 'none', cursor: 'pointer', padding: '0' }}
-                                        onMouseOver={e => e.currentTarget.style.color = '#d1d5db'}
-                                        onMouseOut={e => e.currentTarget.style.color = '#6b7280'}
+                                        style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--apple-text-quaternary)', display: 'flex', alignItems: 'center', gap: '2px', background: 'none', border: 'none', cursor: 'pointer', padding: '0' }}
+                                        onMouseOver={e => e.currentTarget.style.color = 'var(--apple-text-primary)'}
+                                        onMouseOut={e => e.currentTarget.style.color = 'var(--apple-text-quaternary)'}
                                     >
                                         {showQuality ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                                         <span>Details</span>
@@ -80,7 +80,7 @@ export function Message({ message, onViewSource }) {
                         </div>
                     )}
                     {streaming && data?.sources?.length > 0 && (
-                        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-700 text-xs text-gray-500">
+                        <div className="flex items-center gap-2 mt-2 pt-2 text-xs" style={{ borderTop: '1px solid var(--apple-divider)', color: 'var(--apple-text-quaternary)' }}>
                             <SearchIcon size={12} />
                             <span>{data.sources.length} source{data.sources.length !== 1 ? 's' : ''} found — generating answer...</span>
                         </div>

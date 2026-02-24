@@ -2,7 +2,190 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Scrollbar ─── */
+/* ═══════════════════════════════════════════════════════════════
+   Apple Theme System
+   ═══════════════════════════════════════════════════════════════ */
+
+:root,
+[data-theme="dark"] {
+  /* Backgrounds */
+  --apple-bg-primary: #000000;
+  --apple-bg-secondary: #1c1c1e;
+  --apple-bg-tertiary: #2c2c2e;
+  --apple-bg-elevated: #1c1c1e;
+
+  /* Glass surfaces */
+  --apple-glass-bg: rgba(28, 28, 30, 0.72);
+  --apple-glass-bg-thick: rgba(28, 28, 30, 0.85);
+  --apple-glass-border: rgba(255, 255, 255, 0.08);
+  --apple-glass-highlight: rgba(255, 255, 255, 0.05);
+
+  /* Text hierarchy */
+  --apple-text-primary: #f5f5f7;
+  --apple-text-secondary: #a1a1a6;
+  --apple-text-tertiary: #6e6e73;
+  --apple-text-quaternary: #48484a;
+
+  /* Borders */
+  --apple-border-primary: rgba(255, 255, 255, 0.1);
+  --apple-border-secondary: rgba(255, 255, 255, 0.06);
+  --apple-divider: rgba(255, 255, 255, 0.08);
+
+  /* Accent */
+  --apple-accent: #0a84ff;
+  --apple-accent-hover: #409cff;
+  --apple-accent-bg: rgba(10, 132, 255, 0.12);
+  --apple-accent-border: rgba(10, 132, 255, 0.25);
+
+  /* Status */
+  --apple-green: #30d158;
+  --apple-green-bg: rgba(48, 209, 88, 0.12);
+  --apple-green-border: rgba(48, 209, 88, 0.25);
+  --apple-red: #ff453a;
+  --apple-red-bg: rgba(255, 69, 58, 0.12);
+  --apple-red-border: rgba(255, 69, 58, 0.25);
+  --apple-yellow: #ffd60a;
+  --apple-yellow-bg: rgba(255, 214, 10, 0.12);
+  --apple-yellow-border: rgba(255, 214, 10, 0.25);
+  --apple-orange: #ff9f0a;
+  --apple-orange-bg: rgba(255, 159, 10, 0.12);
+  --apple-orange-border: rgba(255, 159, 10, 0.25);
+
+  /* Shadows */
+  --apple-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --apple-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.2);
+  --apple-shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.25);
+
+  /* Chat */
+  --apple-user-bubble: #0a84ff;
+  --apple-user-bubble-text: #ffffff;
+  --apple-assistant-bubble: rgba(44, 44, 46, 0.8);
+  --apple-assistant-bubble-border: rgba(255, 255, 255, 0.08);
+
+  /* Input */
+  --apple-input-bg: rgba(44, 44, 46, 0.6);
+  --apple-input-border: rgba(255, 255, 255, 0.1);
+  --apple-input-focus-ring: rgba(10, 132, 255, 0.4);
+
+  /* Code */
+  --apple-code-bg: rgba(44, 44, 46, 0.8);
+  --apple-code-border: rgba(255, 255, 255, 0.08);
+  --apple-code-text: #6cc7f6;
+  --apple-code-block-bg: rgba(0, 0, 0, 0.4);
+
+  /* Charts */
+  --apple-chart-bg: rgba(28, 28, 30, 0.6);
+  --apple-chart-grid: rgba(255, 255, 255, 0.06);
+  --apple-chart-text: #6e6e73;
+
+  /* Scrollbar */
+  --apple-scrollbar-thumb: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="light"] {
+  --apple-bg-primary: #f5f5f7;
+  --apple-bg-secondary: #ffffff;
+  --apple-bg-tertiary: #f2f2f7;
+  --apple-bg-elevated: #ffffff;
+
+  --apple-glass-bg: rgba(255, 255, 255, 0.72);
+  --apple-glass-bg-thick: rgba(255, 255, 255, 0.85);
+  --apple-glass-border: rgba(0, 0, 0, 0.06);
+  --apple-glass-highlight: rgba(255, 255, 255, 0.8);
+
+  --apple-text-primary: #1d1d1f;
+  --apple-text-secondary: #6e6e73;
+  --apple-text-tertiary: #a1a1a6;
+  --apple-text-quaternary: #c7c7cc;
+
+  --apple-border-primary: rgba(0, 0, 0, 0.1);
+  --apple-border-secondary: rgba(0, 0, 0, 0.05);
+  --apple-divider: rgba(0, 0, 0, 0.08);
+
+  --apple-accent: #0071e3;
+  --apple-accent-hover: #0077ed;
+  --apple-accent-bg: rgba(0, 113, 227, 0.08);
+  --apple-accent-border: rgba(0, 113, 227, 0.2);
+
+  --apple-green: #34c759;
+  --apple-green-bg: rgba(52, 199, 89, 0.1);
+  --apple-green-border: rgba(52, 199, 89, 0.2);
+  --apple-red: #ff3b30;
+  --apple-red-bg: rgba(255, 59, 48, 0.1);
+  --apple-red-border: rgba(255, 59, 48, 0.2);
+  --apple-yellow: #ff9500;
+  --apple-yellow-bg: rgba(255, 149, 0, 0.1);
+  --apple-yellow-border: rgba(255, 149, 0, 0.2);
+  --apple-orange: #ff9500;
+  --apple-orange-bg: rgba(255, 149, 0, 0.1);
+  --apple-orange-border: rgba(255, 149, 0, 0.2);
+
+  --apple-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --apple-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+  --apple-shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.06);
+
+  --apple-user-bubble: #0071e3;
+  --apple-user-bubble-text: #ffffff;
+  --apple-assistant-bubble: rgba(255, 255, 255, 0.9);
+  --apple-assistant-bubble-border: rgba(0, 0, 0, 0.08);
+
+  --apple-input-bg: rgba(255, 255, 255, 0.8);
+  --apple-input-border: rgba(0, 0, 0, 0.1);
+  --apple-input-focus-ring: rgba(0, 113, 227, 0.35);
+
+  --apple-code-bg: rgba(242, 242, 247, 0.8);
+  --apple-code-border: rgba(0, 0, 0, 0.06);
+  --apple-code-text: #0550ae;
+  --apple-code-block-bg: rgba(242, 242, 247, 0.8);
+
+  --apple-chart-bg: rgba(255, 255, 255, 0.8);
+  --apple-chart-grid: rgba(0, 0, 0, 0.06);
+  --apple-chart-text: #6e6e73;
+
+  --apple-scrollbar-thumb: rgba(0, 0, 0, 0.15);
+}
+
+/* ═══ Base ═══ */
+@layer base {
+  body {
+    background-color: var(--apple-bg-primary);
+    color: var(--apple-text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+}
+
+/* ═══ Glass utility classes ═══ */
+.glass {
+  background: var(--apple-glass-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--apple-glass-border);
+}
+
+.glass-thick {
+  background: var(--apple-glass-bg-thick);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid var(--apple-glass-border);
+}
+
+.glass-card {
+  background: var(--apple-glass-bg-thick);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--apple-glass-border);
+  box-shadow: var(--apple-shadow-sm);
+  border-radius: 16px;
+  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.apple-divider {
+  border-color: var(--apple-divider);
+}
+
+/* ═══ Scrollbar ═══ */
 ::-webkit-scrollbar {
     width: 6px;
 }
@@ -10,13 +193,13 @@
     background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-    background: #4b5563;
+    background: var(--apple-scrollbar-thumb);
     border-radius: 3px;
 }
 
-/* ─── Citation refs ─── */
+/* ═══ Citation refs ═══ */
 .citation-ref {
-    color: #60a5fa;
+    color: var(--apple-accent);
     font-weight: 600;
     cursor: pointer;
     text-decoration: underline;
@@ -24,11 +207,11 @@
     text-underline-offset: 2px;
 }
 .citation-ref:hover {
-    color: #93bbfc;
+    color: var(--apple-accent-hover);
     text-decoration-style: solid;
 }
 
-/* ─── Loading dots animation ─── */
+/* ═══ Loading dots ═══ */
 @keyframes pulse-dot {
     0%, 80%, 100% { transform: scale(0); }
     40% { transform: scale(1); }
@@ -38,14 +221,14 @@
     width: 8px;
     height: 8px;
     margin: 0 3px;
-    background: #60a5fa;
+    background: var(--apple-accent);
     border-radius: 50%;
     animation: pulse-dot 1.4s infinite ease-in-out;
 }
 .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
 .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
 
-/* ─── Spinner ─── */
+/* ═══ Spinner ═══ */
 @keyframes spin {
     to { transform: rotate(360deg); }
 }
@@ -53,20 +236,20 @@
     animation: spin 1s linear infinite;
 }
 
-/* ─── Source card hover ─── */
+/* ═══ Source card ═══ */
 .source-card {
-    transition: all 0.15s ease;
+    transition: all 0.2s ease;
 }
 .source-card:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--apple-shadow-md);
 }
 
-/* ─── Markdown answer styling ─── */
+/* ═══ Markdown answer styling ═══ */
 .answer-md h1, .answer-md h2, .answer-md h3 {
     font-weight: 600;
     margin: 0.8em 0 0.4em;
-    color: #e2e8f0;
+    color: var(--apple-text-primary);
 }
 .answer-md h1 { font-size: 1.2em; }
 .answer-md h2 { font-size: 1.1em; }
@@ -78,18 +261,18 @@
 }
 .answer-md li { margin: 0.2em 0; }
 .answer-md code {
-    background: #1e293b;
-    border: 1px solid #334155;
+    background: var(--apple-code-bg);
+    border: 1px solid var(--apple-code-border);
     padding: 0.1em 0.35em;
     border-radius: 4px;
     font-size: 0.9em;
-    color: #93c5fd;
+    color: var(--apple-code-text);
 }
 .answer-md pre {
-    background: #0f172a;
-    border: 1px solid #334155;
+    background: var(--apple-code-block-bg);
+    border: 1px solid var(--apple-border-primary);
     padding: 0.8em;
-    border-radius: 6px;
+    border-radius: 8px;
     overflow-x: auto;
     margin: 0.6em 0;
 }
@@ -97,16 +280,16 @@
     background: none;
     border: none;
     padding: 0;
-    color: #e2e8f0;
+    color: var(--apple-text-primary);
 }
 .answer-md blockquote {
-    border-left: 3px solid #3b82f6;
+    border-left: 3px solid var(--apple-accent);
     padding-left: 0.8em;
     margin: 0.5em 0;
-    color: #94a3b8;
+    color: var(--apple-text-secondary);
 }
 .answer-md strong {
-    color: #f1f5f9;
+    color: var(--apple-text-primary);
     font-weight: 600;
 }
 .answer-md table {
@@ -115,20 +298,20 @@
     width: 100%;
 }
 .answer-md th, .answer-md td {
-    border: 1px solid #334155;
+    border: 1px solid var(--apple-border-primary);
     padding: 0.4em 0.6em;
     text-align: left;
     font-size: 0.85em;
 }
 .answer-md th {
-    background: #1e293b;
+    background: var(--apple-bg-tertiary);
     font-weight: 600;
 }
 
-/* ─── KaTeX dark theme ─── */
+/* ═══ KaTeX ═══ */
 .katex {
     font-size: 1.05em;
-    color: #e2e8f0;
+    color: var(--apple-text-primary);
 }
 .katex-display {
     margin: 0.8em 0;
@@ -142,21 +325,21 @@
     white-space: nowrap;
 }
 
-/* ─── Paper viewer panel ─── */
+/* ═══ Paper viewer ═══ */
 .paper-panel {
     flex: 0 0 600px;
     min-width: 300px;
     max-width: 50vw;
-    background: #111827;
+    background: var(--apple-bg-secondary);
     z-index: 40;
     display: flex;
     flex-direction: column;
-    border-left: 1px solid #334155;
+    border-left: 1px solid var(--apple-divider);
     overflow: hidden;
-    transition: flex 0.3s ease;
+    transition: flex 0.3s ease, background-color 0.3s ease;
 }
 .paper-panel.empty {
-    background: #0a0f1a;
+    background: var(--apple-bg-primary);
 }
 @media (max-width: 1400px) {
     .paper-panel { flex: 0 0 500px; }
@@ -178,7 +361,6 @@
     }
 }
 
-/* ─── Main content wrapper ─── */
 .main-content-wrapper {
     flex: 1;
     display: flex;
@@ -187,19 +369,20 @@
     min-width: 0;
 }
 
-/* ─── Paper viewer header ─── */
 .paper-viewer-header {
     flex-shrink: 0;
-    background: #1e293b;
-    border-bottom: 1px solid #334155;
+    background: var(--apple-glass-bg-thick);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid var(--apple-divider);
     padding: 0.5em 0.75em;
 }
 
-/* ─── PDF container ─── */
+/* ═══ PDF container ═══ */
 .paper-pdf-container {
     flex: 1;
     overflow: hidden;
-    background: #525659;
+    background: var(--apple-bg-tertiary);
     display: flex;
     flex-direction: column;
     padding: 0;
@@ -217,12 +400,14 @@
 .pdf-canvas-wrapper {
     position: relative;
     margin-bottom: 0;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--apple-shadow-md);
     background: white;
     display: flex;
     align-items: flex-start;
     max-width: 100%;
     height: auto;
+    border-radius: 4px;
+    overflow: hidden;
 }
 .pdf-canvas {
     display: block;
@@ -232,7 +417,7 @@
     width: 100%;
 }
 
-/* ─── PDF text highlight ─── */
+/* ═══ PDF highlights ═══ */
 .pdf-text-highlight {
     position: absolute;
     background: rgba(255, 215, 0, 0.25);
@@ -253,29 +438,31 @@
     50% { opacity: 0.8; transform: scale(1.08); }
 }
 
-/* ─── PDF controls ─── */
+/* ═══ PDF controls ═══ */
 .pdf-controls {
     display: flex;
     align-items: center;
     gap: 12px;
     padding: 8px 12px;
-    background: #1e293b;
-    border-radius: 6px;
+    background: var(--apple-glass-bg-thick);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-radius: 12px;
     margin-bottom: 12px;
-    border: 1px solid #334155;
+    border: 1px solid var(--apple-glass-border);
 }
 .pdf-controls button {
-    background: #334155;
-    color: #cbd5e1;
+    background: var(--apple-bg-tertiary);
+    color: var(--apple-text-secondary);
     border: none;
     padding: 6px 12px;
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 13px;
     transition: background 0.15s;
 }
 .pdf-controls button:hover:not(:disabled) {
-    background: #475569;
+    background: var(--apple-bg-elevated);
 }
 .pdf-controls button:disabled {
     opacity: 0.4;
@@ -283,17 +470,17 @@
 }
 .pdf-status {
     font-size: 13px;
-    color: #94a3b8;
+    color: var(--apple-text-secondary);
     display: flex;
     align-items: center;
     gap: 6px;
 }
 
-/* ─── Cited passage card ─── */
+/* ═══ Cited passage ═══ */
 .cited-passage-card {
-    background: #1e293b;
-    border: 1px solid #334155;
-    border-top: 2px solid #475569;
+    background: var(--apple-bg-secondary);
+    border: 1px solid var(--apple-border-primary);
+    border-top: 2px solid var(--apple-border-primary);
     border-radius: 0;
     padding: 0;
     overflow: hidden;
@@ -306,8 +493,8 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.5em 0.75em;
-    border-bottom: 1px solid #334155;
-    background: #0f172a;
+    border-bottom: 1px solid var(--apple-divider);
+    background: var(--apple-bg-primary);
 }
 .cited-passage-body {
     padding: 0.75em;
@@ -315,20 +502,20 @@
     max-height: 160px;
     font-size: 0.8em;
     line-height: 1.5;
-    color: #cbd5e1;
+    color: var(--apple-text-secondary);
 }
 .cited-passage-section {
     display: inline-block;
     font-size: 0.7em;
     font-weight: 600;
-    color: #60a5fa;
-    background: #60a5fa15;
+    color: var(--apple-accent);
+    background: var(--apple-accent-bg);
     padding: 2px 8px;
     border-radius: 4px;
     text-transform: capitalize;
 }
 
-/* ─── Quality badges ─── */
+/* ═══ Quality badges ═══ */
 .quality-badge {
     display: inline-flex;
     align-items: center;
@@ -341,7 +528,7 @@
     border-style: solid;
 }
 
-/* ─── Metric tooltips ─── */
+/* ═══ Tooltips ═══ */
 .metric-tip {
     position: relative;
     cursor: help;
@@ -353,21 +540,21 @@
     bottom: calc(100% + 6px);
     left: 50%;
     transform: translateX(-50%);
-    background: #1f2937;
-    color: #d1d5db;
+    background: var(--apple-bg-elevated);
+    color: var(--apple-text-secondary);
     font-size: 11px;
     font-weight: 400;
     line-height: 1.4;
     padding: 6px 10px;
     border-radius: 8px;
-    border: 1px solid #374151;
+    border: 1px solid var(--apple-border-primary);
     white-space: normal;
     width: max-content;
     max-width: 260px;
     z-index: 50;
     pointer-events: none;
     transition: opacity 0.15s ease, visibility 0.15s ease;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--apple-shadow-md);
 }
 .metric-tip .tip-text::after {
     content: '';
@@ -376,18 +563,18 @@
     left: 50%;
     transform: translateX(-50%);
     border: 5px solid transparent;
-    border-top-color: #374151;
+    border-top-color: var(--apple-border-primary);
 }
 .metric-tip:hover .tip-text {
     visibility: visible;
     opacity: 1;
 }
 
-/* ─── Score bar ─── */
+/* ═══ Score bar ═══ */
 .score-bar {
     height: 6px;
     border-radius: 3px;
-    background: #1f2937;
+    background: var(--apple-bg-tertiary);
     overflow: hidden;
     width: 96px;
 }

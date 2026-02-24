@@ -1887,6 +1887,15 @@ async def serve_service_worker():
     return FileResponse(sw_path, media_type="application/javascript")
 
 
+@app.get("/favicon.svg", response_class=FileResponse)
+async def serve_favicon():
+    """Serve the favicon from dist root."""
+    favicon_path = FRONTEND_DIST / "favicon.svg"
+    if not favicon_path.exists():
+        raise HTTPException(status_code=404, detail="Favicon not found")
+    return FileResponse(favicon_path, media_type="image/svg+xml")
+
+
 @app.get("/", response_class=FileResponse)
 async def serve_frontend():
     """Serve the React frontend."""

@@ -3,7 +3,7 @@
 import json
 import os
 import tempfile
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -839,3 +839,75 @@ class TestJudgeRetryLogic:
         result = judge.score_relevance("Q?", "Answer.")
         assert result["score"] == 3.0
         assert mock_backend.generate.call_count == 2
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Runner Judge Exception Isolation Tests (lines 148-153)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestRunnerJudgeExceptionIsolation:
+    """Cover lines 148-149 and 152-153: runner-level except blocks for judge calls."""
+
+    def test_faithfulness_exception_caught_at_runner_level(self):
+        """When judge.score_faithfulness raises, the runner catches it (line 148-149)."""
+        judge = MagicMock()
+        judge.score_faithfulness.side_effect = Exception("OOM in judge")
+        judge.score_relevance.return_value = {"score": 4.0, "reasoning": "Good"}
+
+        gen = MagicMock()
+        gen.answer.return_value = _make_generator_result()
+
+        entry = _make_entry()
+        runner = EvalRunner(retriever=MagicMock(), generator=gen, judge=judge, benchmark=[entry])
+        result = runner.run_single(entry)
+
+        # Faithfulness should be empty (exception caught), relevance should succeed
+        assert result.faithfulness is None or result.faithfulness == {}
+        assert result.relevance.get("score") == 4.0
+        assert result.error is None
+
+    def test_relevance_exception_caught_at_runner_level(self):
+        """When judge.score_relevance raises, the runner catches it (line 152-153)."""
+        judge = MagicMock()
+        judge.score_faithfulness.return_value = {"score": 5.0, "reasoning": "Perfect"}
+        judge.score_relevance.side_effect = Exception("Timeout in judge")
+
+        gen = MagicMock()
+        gen.answer.return_value = _make_generator_result()
+
+        entry = _make_entry()
+        runner = EvalRunner(retriever=MagicMock(), generator=gen, judge=judge, benchmark=[entry])
+        result = runner.run_single(entry)
+
+        # Faithfulness should succeed, relevance should be empty (exception caught)
+        assert result.faithfulness.get("score") == 5.0
+        assert result.relevance is None or result.relevance == {}
+        assert result.error is None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CUDA Cache Clear in run_all (line 188)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestCudaCacheClearInRunAll:
+    """Cover line 188: _clear_cuda_cache called every 10 entries in run_all."""
+
+    def test_cuda_cache_cleared_every_10_entries(self):
+        """run_all with 10+ entries triggers _clear_cuda_cache."""
+        gen = MagicMock()
+        gen.answer.return_value = {
+            "answer": "Answer [Source 1].",
+            "results": [],
+            "filtered_results": [],
+            "deflected": True,
+            "deflection_reason": "Off topic",
+            "scores": [],
+        }
+        entries = [_make_entry(id=f"q{i}", should_deflect=True) for i in range(11)]
+        runner = EvalRunner(retriever=MagicMock(), generator=gen, benchmark=entries)
+
+        with patch("rag_bench.eval.runner._clear_cuda_cache") as mock_clear:
+            runner.run_all()
+            assert mock_clear.call_count == 1  # Called after entry 10

@@ -21,8 +21,8 @@ const OFFLINE_HTML = `<!DOCTYPE html>
 <body>
   <span class="dot"></span>
   <h2>RAG-Bench is Offline</h2>
-  <p>The server is not reachable right now. Please try again later.</p>
-  <p class="dim">Hosted on a spare personal machine — uptime is best-effort.</p>
+  <p>Can't reach the server right now. Try again in a bit.</p>
+  <p class="dim">Runs on a spare machine at home, so it goes down sometimes.</p>
 </body>
 </html>`;
 

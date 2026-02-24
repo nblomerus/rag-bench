@@ -311,24 +311,25 @@ export function PaperViewer({ paper, highlightChunkId, highlightText, onClose, i
                     <div className="flex items-center gap-2 min-w-0">
                         {!isEmpty && (
                             <button onClick={onClose}
-                                className="text-gray-400 hover:text-gray-200 p-1 rounded hover:bg-gray-700 flex-shrink-0"
+                                className="p-1 rounded-lg flex-shrink-0 transition-colors"
+                                style={{ color: 'var(--apple-text-secondary)' }}
                                 title="Close">
                                 <XIcon size={16} />
                             </button>
                         )}
-                        <span className="text-xs text-gray-300 truncate font-medium">
+                        <span className="text-xs truncate font-medium" style={{ color: 'var(--apple-text-primary)' }}>
                             {isEmpty ? 'Reference Viewer' : paper.title}
                         </span>
                     </div>
                     {!isEmpty && (
                         <div className="flex items-center gap-2 flex-shrink-0">
                             {paper.year > 0 && (
-                                <span className="text-[10px] text-gray-500">{paper.year}</span>
+                                <span className="text-[11px]" style={{ color: 'var(--apple-text-quaternary)' }}>{paper.year}</span>
                             )}
                             {paper.arxiv_id && (
                                 <a href={`https://arxiv.org/abs/${paper.arxiv_id}`}
                                     target="_blank" rel="noopener noreferrer"
-                                    className="text-[10px] text-blue-400 hover:text-blue-300">
+                                    className="text-[11px]" style={{ color: 'var(--apple-accent)' }}>
                                     arXiv:{paper.arxiv_id}
                                 </a>
                             )}
@@ -339,12 +340,12 @@ export function PaperViewer({ paper, highlightChunkId, highlightText, onClose, i
 
             {/* Content area */}
             {isEmpty ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-gray-500 text-center p-8">
-                    <div className="w-16 h-16 bg-gray-800/30 rounded-full flex items-center justify-center mb-4">
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-8" style={{ color: 'var(--apple-text-quaternary)' }}>
+                    <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4" style={{ background: 'var(--apple-bg-tertiary)' }}>
                         <EyeIcon size={32} />
                     </div>
-                    <h3 className="text-sm font-medium text-gray-400 mb-2">No reference selected</h3>
-                    <p className="text-xs text-gray-600 max-w-xs">
+                    <h3 className="text-sm font-medium mb-2" style={{ color: 'var(--apple-text-secondary)' }}>No reference selected</h3>
+                    <p className="text-xs max-w-xs" style={{ color: 'var(--apple-text-quaternary)' }}>
                         Click the eye icon next to any source to view the full paper with highlighted citations.
                     </p>
                 </div>
@@ -366,7 +367,7 @@ export function PaperViewer({ paper, highlightChunkId, highlightText, onClose, i
                             Next &rarr;
                         </button>
                         {searchStatus && (
-                            <span className="text-xs text-amber-400 ml-2">{searchStatus}</span>
+                            <span className="text-xs ml-2" style={{ color: 'var(--apple-yellow)' }}>{searchStatus}</span>
                         )}
                     </div>
 
@@ -392,7 +393,7 @@ export function PaperViewer({ paper, highlightChunkId, highlightText, onClose, i
                         <div className="cited-passage-card">
                             <div className="cited-passage-header">
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-semibold text-amber-400">
+                                    <span className="text-[10px] font-semibold" style={{ color: 'var(--apple-yellow)' }}>
                                         Referenced passage
                                     </span>
                                     {citedChunk.section && (
@@ -409,20 +410,20 @@ export function PaperViewer({ paper, highlightChunkId, highlightText, onClose, i
                     )}
                 </div>
             ) : hasPdf && !pdfError && !pdfDoc ? (
-                <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
+                <div className="flex-1 flex items-center justify-center text-sm" style={{ color: 'var(--apple-text-quaternary)' }}>
                     <div className="loading-dots">
                         <span></span><span></span><span></span>
                     </div>
                     <span className="ml-2">Loading PDF...</span>
                 </div>
             ) : !isEmpty ? (
-                <div className="flex-1 flex items-center justify-center text-gray-500 text-sm p-8 text-center">
+                <div className="flex-1 flex items-center justify-center text-sm p-8 text-center" style={{ color: 'var(--apple-text-quaternary)' }}>
                     <div>
                         <p className="mb-2">PDF not available for this paper.</p>
                         {paper && paper.arxiv_id && (
                             <a href={`https://arxiv.org/pdf/${paper.arxiv_id}`}
                                 target="_blank" rel="noopener noreferrer"
-                                className="text-blue-400 hover:text-blue-300 text-xs">
+                                className="text-xs" style={{ color: 'var(--apple-accent)' }}>
                                 Open on arXiv directly
                             </a>
                         )}

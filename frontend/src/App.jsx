@@ -4,7 +4,8 @@ import { TabNavigation } from './components/TabNavigation'
 import { AskTab } from './tabs/AskTab'
 import { BenchmarksTab } from './tabs/BenchmarksTab'
 import { ProductionTab } from './tabs/ProductionTab'
-import { BookIcon, Spinner } from './components/Icons'
+import { RLogoIcon, GitHubIcon, Spinner } from './components/Icons'
+import { ThemeToggle } from './components/ThemeToggle'
 import { API_BASE } from './utils/api'
 
 function AppContent() {
@@ -41,22 +42,34 @@ function AppContent() {
     }, [])
 
     return (
-        <div className="h-screen flex flex-col bg-gray-950 text-gray-100">
+        <div className="h-screen flex flex-col" style={{ background: 'var(--apple-bg-primary)', color: 'var(--apple-text-primary)' }}>
             {/* Header */}
-            <header className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-gray-800">
+            <header className="flex-shrink-0 flex items-center justify-between px-6 py-3 glass-thick border-b apple-divider sticky top-0 z-30">
                 <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-blue-600/10 border border-blue-600/20 rounded-lg flex items-center justify-center">
-                        <BookIcon size={16} />
+                    <RLogoIcon size={32} />
+                    <div>
+                        <h1 className="text-[15px] font-semibold tracking-tight" style={{ color: 'var(--apple-text-primary)' }}>RAG-Bench</h1>
+                        <p className="text-[11px]" style={{ color: 'var(--apple-text-tertiary)' }}>RAG Pipeline Benchmark</p>
                     </div>
-                    <h1 className="text-sm font-semibold text-gray-200">RAG-Bench</h1>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-4">
                     <div className="flex items-center gap-1.5">
-                        <span className={`w-1.5 h-1.5 rounded-full ${serverOffline ? 'bg-red-500' : ready ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
-                        <span className="text-[10px] text-gray-500">
+                        <span className={`w-1.5 h-1.5 rounded-full`} style={{ background: serverOffline ? 'var(--apple-red)' : ready ? 'var(--apple-green)' : 'var(--apple-yellow)' }}></span>
+                        <span className="text-[11px]" style={{ color: 'var(--apple-text-quaternary)' }}>
                             {serverOffline ? 'Offline' : ready ? 'Online' : 'Connecting...'}
                         </span>
                     </div>
+                    <a
+                        href="https://github.com/nicholas/rag-bench"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
+                        style={{ color: 'var(--apple-text-tertiary)' }}
+                        title="View on GitHub"
+                    >
+                        <GitHubIcon size={18} />
+                    </a>
+                    <ThemeToggle />
                 </div>
             </header>
 
