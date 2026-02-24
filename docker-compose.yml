@@ -17,11 +17,14 @@ services:
       - NVIDIA_VISIBLE_DEVICES=1
     deploy:
       resources:
+        limits:
+          memory: 20g
         reservations:
           devices:
             - driver: nvidia
               device_ids: ["1"]
               capabilities: [gpu]
+    memswap_limit: 28g
     ports:
       - "8000:8000"
     volumes:
@@ -48,9 +51,6 @@ services:
     container_name: ragbench-frontend
     ports:
       - "3000:80"
-    volumes:
-      - ./frontend/index.html:/usr/share/nginx/html/index.html
-      - ./frontend/public/sw.js:/usr/share/nginx/html/sw.js
     networks:
       - ragbench
     depends_on:
