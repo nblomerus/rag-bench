@@ -93,6 +93,13 @@ class TestSpanLevelF1:
         )
         assert result["span_f1"] == 0.0
 
+    def test_punctuation_only_spans(self):
+        """Cover line 103: both spans tokenize to empty sets."""
+        result = span_level_f1(["!@#"], ["..."])
+        assert result["span_f1"] == 1.0
+        assert result["span_precision"] == 1.0
+        assert result["span_recall"] == 1.0
+
 
 class TestCaseLevelAccuracy:
     """Test case-level binary classification."""

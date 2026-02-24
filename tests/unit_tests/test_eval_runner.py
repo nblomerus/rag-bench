@@ -21,7 +21,7 @@ from rag_bench.eval.report import (
     report_to_json,
     save_report,
 )
-from rag_bench.eval.runner import EvalReport, EvalRunner, SingleEvalResult
+from rag_bench.eval.runner import EvalReport, EvalRunner, SingleEvalResult, _clear_cuda_cache
 
 # ═══════════════════════════════════════════════════════════════════════════
 # JudgeLLM Tests
@@ -665,3 +665,177 @@ class TestRunnerEdgeCases:
         runner = EvalRunner(retriever=mock_retriever, generator=MagicMock(), benchmark=[entry])
         report = runner.run_all(retrieval_only=True)
         assert report.results[0].error == "Retrieval failed"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Judge Error Isolation Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestJudgeErrorIsolation:
+    """Test that faithfulness and relevance judge calls fail independently."""
+
+    def test_faithfulness_failure_does_not_skip_relevance(self):
+        """If faithfulness judge fails, relevance should still run."""
+        mock_backend = MagicMock()
+        call_count = [0]
+
+        def generate_side_effect(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] <= 2:  # faithfulness calls (2 attempts with retry)
+                raise Exception("Faithfulness OOM")
+            return "Score: 4\nReasoning: Relevant answer"
+
+        mock_backend.generate.side_effect = generate_side_effect
+        judge = JudgeLLM(mock_backend)
+
+        gen = MagicMock()
+        gen.answer.return_value = _make_generator_result()
+
+        entry = _make_entry()
+        runner = EvalRunner(retriever=MagicMock(), generator=gen, judge=judge, benchmark=[entry])
+        result = runner.run_single(entry)
+
+        # Faithfulness should fall back to heuristic (non-empty)
+        assert result.faithfulness.get("score", 0) > 0
+        # Relevance should succeed
+        assert result.relevance.get("score", 0) == 4.0
+
+    def test_relevance_failure_preserves_faithfulness(self):
+        """If relevance judge fails, faithfulness should still be recorded."""
+        mock_backend = MagicMock()
+        call_count = [0]
+
+        def generate_side_effect(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] <= 1:  # first call is faithfulness
+                return "Score: 5\nReasoning: Perfect"
+            raise Exception("Relevance timeout")
+
+        mock_backend.generate.side_effect = generate_side_effect
+        judge = JudgeLLM(mock_backend)
+
+        gen = MagicMock()
+        gen.answer.return_value = _make_generator_result()
+
+        entry = _make_entry()
+        runner = EvalRunner(retriever=MagicMock(), generator=gen, judge=judge, benchmark=[entry])
+        result = runner.run_single(entry)
+
+        # Faithfulness should have the score from the LLM
+        assert result.faithfulness.get("score") == 5.0
+        # Relevance should be empty (both attempts failed)
+        # The judge itself has retry logic, so it will try twice then return fallback
+        assert result.error is None  # No top-level error
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CUDA Memory Management Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestCudaMemoryManagement:
+    def test_clear_cuda_cache_without_torch(self):
+        """_clear_cuda_cache should not crash if torch is not available."""
+        import unittest.mock
+
+        with unittest.mock.patch.dict("sys.modules", {"torch": None}):
+            _clear_cuda_cache()  # Should not raise
+
+    def test_clear_cuda_cache_without_gpu(self):
+        """_clear_cuda_cache should handle no CUDA gracefully."""
+        mock_torch = MagicMock()
+        mock_torch.cuda.is_available.return_value = False
+
+        import sys
+        import unittest.mock
+
+        with unittest.mock.patch.dict(sys.modules, {"torch": mock_torch}):
+            _clear_cuda_cache()
+        mock_torch.cuda.empty_cache.assert_not_called()
+
+    def test_oom_retry_in_run_single(self):
+        """CUDA OOM should trigger cache clear and retry."""
+        gen = MagicMock()
+        call_count = [0]
+
+        def answer_side_effect(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise RuntimeError("CUDA out of memory")
+            return _make_generator_result()
+
+        gen.answer.side_effect = answer_side_effect
+
+        entry = _make_entry()
+        runner = EvalRunner(retriever=MagicMock(), generator=gen, benchmark=[entry])
+        result = runner.run_single(entry)
+
+        assert result.error is None
+        assert call_count[0] == 2  # First call OOM, second succeeds
+
+    def test_non_oom_runtime_error_not_retried(self):
+        """Non-OOM RuntimeError should propagate without retry."""
+        gen = MagicMock()
+        gen.answer.side_effect = RuntimeError("Some other error")
+
+        entry = _make_entry()
+        runner = EvalRunner(retriever=MagicMock(), generator=gen, benchmark=[entry])
+        result = runner.run_single(entry)
+
+        assert result.error == "Some other error"
+        gen.answer.assert_called_once()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Judge Retry Logic Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestJudgeRetryLogic:
+    def test_faithfulness_retries_on_failure(self):
+        """Faithfulness should retry once before falling back to heuristic."""
+        mock_backend = MagicMock()
+        mock_backend.generate.side_effect = [
+            Exception("First failure"),
+            "Score: 4\nReasoning: Good",
+        ]
+        judge = JudgeLLM(mock_backend)
+
+        result = judge.score_faithfulness("Q?", "Answer text.", ["Source text."])
+        assert result["score"] == 4.0
+        assert mock_backend.generate.call_count == 2
+
+    def test_faithfulness_falls_back_after_two_failures(self):
+        """Faithfulness falls back to heuristic after 2 failures."""
+        mock_backend = MagicMock()
+        mock_backend.generate.side_effect = Exception("Always fails")
+        judge = JudgeLLM(mock_backend)
+
+        result = judge.score_faithfulness("Q?", "Source text answer.", ["Source text content."])
+        assert result["score"] >= 1.0
+        assert "euristic" in result.get("reasoning", "")  # "Heuristic"
+        assert mock_backend.generate.call_count == 2
+
+    def test_relevance_retries_on_failure(self):
+        """Relevance should retry once before returning default."""
+        mock_backend = MagicMock()
+        mock_backend.generate.side_effect = [
+            Exception("First failure"),
+            "Score: 5\nReasoning: Perfect",
+        ]
+        judge = JudgeLLM(mock_backend)
+
+        result = judge.score_relevance("Q?", "Answer text.")
+        assert result["score"] == 5.0
+        assert mock_backend.generate.call_count == 2
+
+    def test_relevance_returns_default_after_two_failures(self):
+        """Relevance returns 3.0 after 2 failures."""
+        mock_backend = MagicMock()
+        mock_backend.generate.side_effect = Exception("Always fails")
+        judge = JudgeLLM(mock_backend)
+
+        result = judge.score_relevance("Q?", "Answer.")
+        assert result["score"] == 3.0
+        assert mock_backend.generate.call_count == 2

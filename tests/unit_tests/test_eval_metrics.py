@@ -574,3 +574,26 @@ class TestMetricsEdgeCases:
         )
         assert metrics["mrr"] == 1.0
         assert metrics["precision_at_k"] == 1.0 / 5
+
+    def test_extract_cited_bare_format(self):
+        """Cover line 179: bare [N] citation format in body."""
+        nums = extract_cited_source_numbers("claim [1] and [3] here")
+        assert nums == [1, 3]
+
+    def test_extract_cited_bare_format_out_of_range(self):
+        """Bare [N] format filters out numbers > 20."""
+        nums = extract_cited_source_numbers("claim [25] here")
+        assert nums == []
+
+    def test_extract_cited_footer_only_standard(self):
+        """Cover line 184: footer-only [Source N] citations."""
+        answer = "Here is the claim.\n\nSources:\n[Source 1] Paper A\n[Source 3] Paper B"
+        nums = extract_cited_source_numbers(answer)
+        assert nums == [1, 3]
+
+    def test_source_number_to_paper_id_non_dict_metadata(self):
+        """Cover branch 198→200: metadata is a string, not dict."""
+        from rag_bench.eval.metrics import _source_number_to_paper_id
+
+        result = _source_number_to_paper_id(1, [{"metadata": "not a dict"}])
+        assert result == ""

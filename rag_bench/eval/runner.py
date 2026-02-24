@@ -21,6 +21,17 @@ from rag_bench.eval.metrics import (
 logger = logging.getLogger(__name__)
 
 
+def _clear_cuda_cache() -> None:
+    """Free fragmented CUDA memory if torch is available."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
+
+
 @dataclass
 class SingleEvalResult:
     """Result for a single benchmark query."""
@@ -78,7 +89,15 @@ class EvalRunner:
 
         try:
             start = time.time()
-            gen_result = self.generator.answer(entry.question, top_k=5)
+            try:
+                gen_result = self.generator.answer(entry.question, top_k=5)
+            except RuntimeError as e:
+                if "out of memory" in str(e).lower():
+                    logger.warning(f"CUDA OOM for {entry.id}, clearing cache and retrying")
+                    _clear_cuda_cache()
+                    gen_result = self.generator.answer(entry.question, top_k=5)
+                else:
+                    raise
             result.latency_ms = (time.time() - start) * 1000
 
             answer = gen_result.get("answer", "")
@@ -121,11 +140,17 @@ class EvalRunner:
             # Completeness
             result.completeness = compute_completeness(answer, entry.expected_answer_contains)
 
-            # Judge (if available)
+            # Judge (if available) — each call isolated so one failure doesn't skip the other
             if self.judge and sources_for_citation:
                 source_texts = [r.get("text", r.get("text_preview", "")) for r in sources_for_citation]
-                result.faithfulness = self.judge.score_faithfulness(entry.question, answer, source_texts)
-                result.relevance = self.judge.score_relevance(entry.question, answer)
+                try:
+                    result.faithfulness = self.judge.score_faithfulness(entry.question, answer, source_texts)
+                except Exception as e:
+                    logger.warning(f"Judge faithfulness failed for {entry.id}: {e}")
+                try:
+                    result.relevance = self.judge.score_relevance(entry.question, answer)
+                except Exception as e:
+                    logger.warning(f"Judge relevance failed for {entry.id}: {e}")
 
         except Exception as e:
             logger.error(f"Error evaluating {entry.id}: {e}")
@@ -157,6 +182,10 @@ class EvalRunner:
 
             result = self._run_retrieval_only(entry) if retrieval_only else self.run_single(entry)
             results.append(result)
+
+            # Free fragmented CUDA memory every 10 entries to prevent OOM
+            if (i + 1) % 10 == 0:
+                _clear_cuda_cache()
 
         report = EvalReport(
             results=results,

@@ -116,3 +116,25 @@ export async function fetchMetricsSummary() {
     if (!res.ok) throw new Error(`Metrics error: ${res.status}`)
     return res.json()
 }
+
+export async function fetchBenchmarkTrends(runType = 'production') {
+    const res = await fetch(`${API_BASE}/eval/benchmark/trends?run_type=${runType}`)
+    if (!res.ok) throw new Error(`Trends error: ${res.status}`)
+    return res.json()
+}
+
+export async function fetchEvalSchedule() {
+    const res = await fetch(`${API_BASE}/eval/schedule`)
+    if (!res.ok) throw new Error(`Schedule error: ${res.status}`)
+    return res.json()
+}
+
+export async function updateEvalSchedule(enabled, intervalHours = 24) {
+    const res = await fetch(`${API_BASE}/eval/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled, interval_hours: intervalHours }),
+    })
+    if (!res.ok) throw new Error(`Schedule update error: ${res.status}`)
+    return res.json()
+}

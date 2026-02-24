@@ -68,17 +68,21 @@ class JudgeLLM:
         sources_text = "\n\n".join(f"[Source {i + 1}]: {p}" for i, p in enumerate(source_passages))
         prompt = FAITHFULNESS_PROMPT.format(sources=sources_text, answer=answer)
 
-        try:
-            raw = self.llm.generate(
-                prompt,
-                system_prompt="You are an evaluation judge. Be concise and precise.",
-                max_tokens=256,
-            )
-            score, reasoning = self._parse_score(raw)
-            return {"score": score, "reasoning": reasoning, "raw_response": raw}
-        except Exception as e:
-            logger.warning(f"Judge faithfulness LLM call failed: {e}")
-            return self._faithfulness_heuristic(answer, source_passages)
+        for attempt in range(2):
+            try:
+                raw = self.llm.generate(
+                    prompt,
+                    system_prompt="You are an evaluation judge. Be concise and precise.",
+                    max_tokens=256,
+                )
+                score, reasoning = self._parse_score(raw)
+                return {"score": score, "reasoning": reasoning, "raw_response": raw}
+            except Exception as e:
+                if attempt == 0:
+                    logger.warning(f"Judge faithfulness attempt 1 failed, retrying: {e}")
+                else:
+                    logger.warning(f"Judge faithfulness failed after retry: {e}")
+        return self._faithfulness_heuristic(answer, source_passages)
 
     def score_relevance(
         self,
@@ -88,17 +92,21 @@ class JudgeLLM:
         """Rate how well the answer addresses the question (1-5)."""
         prompt = RELEVANCE_PROMPT.format(question=question, answer=answer)
 
-        try:
-            raw = self.llm.generate(
-                prompt,
-                system_prompt="You are an evaluation judge. Be concise and precise.",
-                max_tokens=256,
-            )
-            score, reasoning = self._parse_score(raw)
-            return {"score": score, "reasoning": reasoning, "raw_response": raw}
-        except Exception as e:
-            logger.warning(f"Judge relevance LLM call failed: {e}")
-            return {"score": 3.0, "reasoning": f"LLM judge failed: {e}", "raw_response": ""}
+        for attempt in range(2):
+            try:
+                raw = self.llm.generate(
+                    prompt,
+                    system_prompt="You are an evaluation judge. Be concise and precise.",
+                    max_tokens=256,
+                )
+                score, reasoning = self._parse_score(raw)
+                return {"score": score, "reasoning": reasoning, "raw_response": raw}
+            except Exception as e:
+                if attempt == 0:
+                    logger.warning(f"Judge relevance attempt 1 failed, retrying: {e}")
+                else:
+                    logger.warning(f"Judge relevance failed after retry: {e}")
+        return {"score": 3.0, "reasoning": "LLM judge failed after retry", "raw_response": ""}
 
     def _parse_score(self, response: str) -> tuple[float, str]:
         """

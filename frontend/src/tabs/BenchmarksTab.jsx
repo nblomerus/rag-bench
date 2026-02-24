@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react'
-import { BarChartIcon, Spinner, AlertIcon, SearchIcon, ChevronDown, ChevronUp } from '../components/Icons'
-import { fetchBenchmarkLatest, fetchBenchmarkExamples, queryRAG, detectHallucination } from '../utils/api'
+import React, { useState, useEffect, useRef } from 'react'
+import { BarChartIcon, Spinner, AlertIcon, SearchIcon, ChevronDown, ChevronUp, ZapIcon } from '../components/Icons'
+import { fetchBenchmarkLatest, fetchBenchmarkExamples, queryRAG, detectHallucination, fetchBenchmarkTrends, fetchEvalSchedule, updateEvalSchedule } from '../utils/api'
 import { formatAnswer } from '../utils/render'
 
 // ── Metric definitions with explanations ──────────────────────────────────────
@@ -906,7 +906,231 @@ export function BenchmarksTab() {
                         {showExamples && <RagtruthTryItPanel />}
                     </div>
                 )}
+
+                {/* ── Eval Trends ── */}
+                <TrendsPanel />
+
+                {/* ── Auto-Eval Schedule ── */}
+                <AutoEvalPanel />
             </div>
+        </div>
+    )
+}
+
+
+// ── Trend chart (lightweight SVG sparkline) ──
+
+function TrendChart({ data, series, title, yFormat, height = 140 }) {
+    if (!data || data.length < 2) return null
+
+    const W = 560, H = height, PAD_L = 48, PAD_R = 12, PAD_T = 6, PAD_B = 20
+    const chartW = W - PAD_L - PAD_R
+    const chartH = H - PAD_T - PAD_B
+
+    let maxVal = 0
+    for (const s of series) {
+        for (const d of data) {
+            const v = d[s.key]
+            if (v != null && v > maxVal) maxVal = v
+        }
+    }
+    if (maxVal === 0) maxVal = 1
+
+    const yMax = Math.ceil(maxVal * 10) / 10 || 1
+    function xPos(i) { return PAD_L + (i / (data.length - 1)) * chartW }
+    function yPos(v) { return PAD_T + chartH - (Math.min(v, yMax) / yMax) * chartH }
+
+    const fmtY = yFormat || (v => `${v.toFixed(2)}`)
+
+    // Y-axis ticks
+    const yTicks = [0, yMax / 2, yMax]
+
+    function linePath(s) {
+        return data.map((d, i) => `${i === 0 ? 'M' : 'L'}${xPos(i)},${yPos(d[s.key] || 0)}`).join('')
+    }
+
+    return (
+        <div className="mt-3">
+            <div className="rounded-lg overflow-hidden" style={{ background: '#181b28', border: '1px solid #2a2f3e' }}>
+                <div className="px-3 pt-2.5 pb-1">
+                    <span className="text-[11px] font-medium" style={{ color: '#8b8fa3' }}>{title}</span>
+                </div>
+                <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ background: '#111217', display: 'block' }}>
+                    {yTicks.map((v, i) => (
+                        <g key={i}>
+                            <line x1={PAD_L} y1={yPos(v)} x2={W - PAD_R} y2={yPos(v)} stroke="#1e2130" strokeWidth="1" strokeDasharray="4,3" />
+                            <text x={PAD_L - 6} y={yPos(v) + 3} textAnchor="end" fill="#6c7183" fontSize="8" fontFamily="ui-monospace,monospace">{fmtY(v)}</text>
+                        </g>
+                    ))}
+                    {series.map((s, idx) => (
+                        <path key={idx} d={linePath(s)} fill="none" stroke={s.color} strokeWidth="1.5" strokeLinejoin="round" />
+                    ))}
+                    {/* Dots on last point */}
+                    {series.map((s, idx) => {
+                        const last = data[data.length - 1]
+                        return <circle key={idx} cx={xPos(data.length - 1)} cy={yPos(last[s.key] || 0)} r="3" fill={s.color} />
+                    })}
+                    {/* X-axis labels (first and last) */}
+                    <text x={xPos(0)} y={H - 4} textAnchor="start" fill="#6c7183" fontSize="8" fontFamily="ui-monospace,monospace">
+                        {data[0].timestamp?.slice(5, 10) || ''}
+                    </text>
+                    <text x={xPos(data.length - 1)} y={H - 4} textAnchor="end" fill="#6c7183" fontSize="8" fontFamily="ui-monospace,monospace">
+                        {data[data.length - 1].timestamp?.slice(5, 10) || ''}
+                    </text>
+                </svg>
+                <div className="flex items-center gap-4 px-3 py-1.5 justify-center flex-wrap" style={{ borderTop: '1px solid #1e2130' }}>
+                    {series.map(s => {
+                        const last = data[data.length - 1]
+                        const prev = data.length >= 2 ? data[data.length - 2] : null
+                        const val = last[s.key] || 0
+                        const delta = prev ? val - (prev[s.key] || 0) : 0
+                        const isUp = delta > 0.001
+                        const isDown = delta < -0.001
+                        return (
+                            <span key={s.label} className="flex items-center gap-1.5 text-[10px]" style={{ color: '#b3b8c8' }}>
+                                <span className="inline-block w-3 h-0.5 rounded" style={{ backgroundColor: s.color }} />
+                                {s.label}
+                                <span className="font-mono" style={{ color: s.color }}>{fmtY(val)}</span>
+                                {isUp && <span className="text-green-400">+{delta.toFixed(3)}</span>}
+                                {isDown && <span className="text-red-400">{delta.toFixed(3)}</span>}
+                            </span>
+                        )
+                    })}
+                </div>
+            </div>
+        </div>
+    )
+}
+
+
+function TrendsPanel() {
+    const [trends, setTrends] = useState(null)
+    const [loading, setLoading] = useState(true)
+    const [runType, setRunType] = useState('production')
+
+    useEffect(() => {
+        setLoading(true)
+        fetchBenchmarkTrends(runType)
+            .then(data => setTrends(data?.trends || []))
+            .catch(() => setTrends([]))
+            .finally(() => setLoading(false))
+    }, [runType])
+
+    if (loading) return <div className="text-xs text-gray-500 mt-6"><Spinner size={14} /> Loading trends...</div>
+    if (!trends || trends.length < 2) return null
+
+    return (
+        <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mt-6">
+            <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
+                    <BarChartIcon size={16} /> Eval Trends
+                </h3>
+                <div className="flex gap-1 text-xs">
+                    {['production', 'manual', 'all'].map(t => (
+                        <button
+                            key={t}
+                            onClick={() => setRunType(t)}
+                            className={`px-2 py-0.5 rounded transition-colors ${
+                                runType === t
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-700 text-gray-400 hover:text-gray-200'
+                            }`}
+                        >
+                            {t.charAt(0).toUpperCase() + t.slice(1)}
+                        </button>
+                    ))}
+                </div>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">
+                Metrics across {trends.length} {runType !== 'all' ? runType + ' ' : ''}evaluation runs.
+            </p>
+
+            <TrendChart
+                data={trends}
+                title="Retrieval Quality"
+                series={[
+                    { key: 'retrieval_mrr', color: '#38bdf8', label: 'MRR' },
+                    { key: 'retrieval_ndcg_at_5', color: '#4ade80', label: 'NDCG@5' },
+                    { key: 'retrieval_hit_rate', color: '#facc15', label: 'Hit Rate' },
+                ]}
+            />
+
+            <TrendChart
+                data={trends}
+                title="Generation Quality"
+                series={[
+                    { key: 'avg_citation_precision', color: '#a78bfa', label: 'Citation Prec' },
+                    { key: 'avg_completeness', color: '#34d399', label: 'Completeness' },
+                    { key: 'avg_faithfulness', color: '#f87171', label: 'Faithfulness' },
+                ]}
+            />
+        </div>
+    )
+}
+
+
+function AutoEvalPanel() {
+    const [schedule, setSchedule] = useState(null)
+    const [loading, setLoading] = useState(true)
+    const [toggling, setToggling] = useState(false)
+
+    useEffect(() => {
+        fetchEvalSchedule()
+            .then(setSchedule)
+            .catch(() => setSchedule(null))
+            .finally(() => setLoading(false))
+    }, [])
+
+    async function handleToggle() {
+        if (!schedule) return
+        setToggling(true)
+        try {
+            const updated = await updateEvalSchedule(!schedule.enabled, schedule.interval_hours)
+            setSchedule(updated)
+        } catch { /* silent */ }
+        finally { setToggling(false) }
+    }
+
+    if (loading) return null
+    if (!schedule) return null
+
+    return (
+        <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mt-6">
+            <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
+                    <ZapIcon size={16} /> Scheduled Auto-Eval
+                </h3>
+                <button
+                    onClick={handleToggle}
+                    disabled={toggling}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${schedule.enabled ? 'bg-green-600' : 'bg-gray-600'}`}
+                >
+                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${schedule.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                </button>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                <div className="bg-gray-900 rounded-lg p-2.5">
+                    <div className="text-gray-500 mb-0.5">Status</div>
+                    <div className={schedule.enabled ? 'text-green-400' : 'text-gray-400'}>
+                        {schedule.enabled ? 'Active' : 'Disabled'}
+                    </div>
+                </div>
+                <div className="bg-gray-900 rounded-lg p-2.5">
+                    <div className="text-gray-500 mb-0.5">Interval</div>
+                    <div className="text-gray-200">Every {schedule.interval_hours}h</div>
+                </div>
+                <div className="bg-gray-900 rounded-lg p-2.5">
+                    <div className="text-gray-500 mb-0.5">Last Run</div>
+                    <div className="text-gray-200">{schedule.last_run ? new Date(schedule.last_run).toLocaleDateString() : '—'}</div>
+                </div>
+            </div>
+
+            {schedule.last_run_summary && Object.keys(schedule.last_run_summary).length > 0 && (
+                <div className="mt-3 text-xs text-gray-400">
+                    Last: MRR {schedule.last_run_summary.retrieval_mrr?.toFixed(3) || '—'} · Hit Rate {schedule.last_run_summary.retrieval_hit_rate?.toFixed(3) || '—'} · Latency {Math.round(schedule.last_run_summary.avg_latency_ms || 0)}ms
+                </div>
+            )}
         </div>
     )
 }

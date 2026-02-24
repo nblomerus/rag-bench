@@ -132,7 +132,7 @@ def main():
     print("\n" + generate_terminal_summary(report))
 
     # Save reports
-    json_path, md_path = save_report(report, args.output_dir)
+    json_path, md_path = save_report(report, args.output_dir, run_type="manual")
     print("\nReports saved:")
     print(f"  JSON: {json_path}")
     print(f"  Markdown: {md_path}")

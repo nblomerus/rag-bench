@@ -39,6 +39,8 @@ from rag_bench.api.schemas import (
     EvalRequest,
     EvalResponse,
     EvalResult,
+    EvalScheduleRequest,
+    EvalScheduleStatus,
     EvalSummary,
     FullEvalRequest,
     FullEvalResponse,
@@ -51,6 +53,8 @@ from rag_bench.api.schemas import (
     QueryResponse,
     SourceResult,
     StatsResponse,
+    TrendDataPoint,
+    TrendsResponse,
 )
 from rag_bench.config import (
     CHROMA_DIR,
@@ -58,6 +62,7 @@ from rag_bench.config import (
     DEFAULT_TOP_K,
     EMBEDDING_MODEL,
     EVAL_DIR,
+    EVAL_SCHEDULE_HOURS,
     PROJECT_ROOT,
     RAG_ENV,
     RERANKER_MODEL,
@@ -231,7 +236,16 @@ async def lifespan(app):
         }
     )
 
+    # Start scheduled auto-eval if enabled
+    if _eval_schedule_enabled:
+        _start_eval_schedule()
+        logger.info("Scheduled auto-eval enabled (every %dh)", _eval_schedule_interval)
+
     yield  # App runs here
+
+    # Cancel scheduled eval on shutdown
+    if _eval_schedule_task and not _eval_schedule_task.done():
+        _eval_schedule_task.cancel()
 
     PIPELINE_READY.set(0)
     logger.info("Shutting down RAG pipeline")
@@ -1499,6 +1513,12 @@ async def run_benchmark_evaluation(request: BenchmarkEvalRequest):
             _benchmark_history[:] = _benchmark_history[:50]
         _save_benchmark_history()
 
+        # Save ragbench evals to disk as manual runs
+        if request.benchmark == "ragbench":
+            from rag_bench.eval.report import save_report as _save_report
+
+            _save_report(report, str(PROJECT_ROOT / "eval_results"), run_type="manual")
+
         return BenchmarkEvalResponse(
             benchmark=request.benchmark,
             summary=summary,
@@ -1528,20 +1548,54 @@ async def benchmark_history():
 
 
 EVAL_RESULTS_DIR = PROJECT_ROOT / "eval_results"
+EVAL_PRODUCTION_DIR = EVAL_RESULTS_DIR / "production"
+EVAL_MANUAL_DIR = EVAL_RESULTS_DIR / "manual"
+
+
+def _find_latest_eval(prefer_production: bool = True):
+    """Find the most recent eval JSON file, preferring production if requested."""
+    dirs_to_check = []
+    if prefer_production:
+        dirs_to_check.append(EVAL_PRODUCTION_DIR)
+    dirs_to_check.extend([EVAL_MANUAL_DIR, EVAL_RESULTS_DIR])
+
+    for d in dirs_to_check:
+        if not d.exists():
+            continue
+        files = sorted(
+            (f for f in d.glob("eval_*.json") if f.parent == d),
+            key=lambda p: p.stat().st_mtime,
+        )
+        if files:
+            return files[-1]
+    return None
+
+
+def _collect_eval_files(run_type: str = "all") -> list:
+    """Collect eval JSON files filtered by run_type ('production', 'manual', or 'all')."""
+    files = []
+    if run_type in ("production", "all") and EVAL_PRODUCTION_DIR.exists():
+        files.extend(EVAL_PRODUCTION_DIR.glob("eval_*.json"))
+    if run_type in ("manual", "all") and EVAL_MANUAL_DIR.exists():
+        files.extend(EVAL_MANUAL_DIR.glob("eval_*.json"))
+    # Include legacy root-level files (backward compat)
+    if EVAL_RESULTS_DIR.exists():
+        files.extend(f for f in EVAL_RESULTS_DIR.glob("eval_*.json") if f.parent == EVAL_RESULTS_DIR)
+    return sorted(files, key=lambda p: p.name)
 
 
 @app.get("/api/eval/benchmark/latest/{benchmark}")
 async def benchmark_latest(benchmark: str):
     """Return the latest saved evaluation results for a benchmark."""
     if benchmark == "ragbench":
-        # Load the most recent eval_*.json file
-        files = sorted(EVAL_RESULTS_DIR.glob("eval_*.json"), key=lambda p: p.stat().st_mtime)
-        if not files:
+        latest_file = _find_latest_eval(prefer_production=True)
+        if not latest_file:
             raise HTTPException(status_code=404, detail="No RAG-Bench evaluation results found")
         try:
-            with open(files[-1]) as f:
+            with open(latest_file) as f:
                 data = json.load(f)
-            data["_source_file"] = files[-1].name
+            data["_source_file"] = latest_file.name
+            data["_run_type"] = data.get("metadata", {}).get("run_type", "manual")
             return data
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to load results: {e}") from e
@@ -1664,6 +1718,156 @@ async def ragtruth_detect(body: dict):
         ],
         "latency_ms": round(latency, 1),
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Eval Trends (regression tracking)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@app.get("/api/eval/benchmark/trends", response_model=TrendsResponse)
+async def benchmark_trends(run_type: str = "production"):
+    """Return historical eval metrics for trend visualization.
+
+    Args:
+        run_type: Filter by run type — 'production' (default), 'manual', or 'all'.
+    """
+    if run_type not in ("production", "manual", "all"):
+        raise HTTPException(status_code=400, detail="run_type must be 'production', 'manual', or 'all'")
+
+    files = _collect_eval_files(run_type)
+
+    # Fallback: if production requested but empty, return all (graceful migration)
+    if not files and run_type == "production":
+        files = _collect_eval_files("all")
+
+    trends = []
+    for path in files:
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            summary = data.get("summary", {})
+            meta = data.get("metadata", {})
+            timestamp = meta.get("timestamp", path.stem.replace("eval_", ""))
+            trends.append(
+                TrendDataPoint(
+                    timestamp=timestamp,
+                    run_type=meta.get("run_type", "manual"),
+                    retrieval_mrr=summary.get("retrieval_mrr", 0.0),
+                    retrieval_ndcg_at_5=summary.get("retrieval_ndcg_at_5", 0.0),
+                    retrieval_hit_rate=summary.get("retrieval_hit_rate", 0.0),
+                    avg_citation_precision=summary.get("avg_citation_precision", 0.0),
+                    avg_citation_recall=summary.get("avg_citation_recall", 0.0),
+                    avg_completeness=summary.get("avg_completeness", 0.0),
+                    avg_faithfulness=summary.get("avg_faithfulness", 0.0),
+                    deflection_accuracy=summary.get("deflection_accuracy", 0.0),
+                    avg_latency_ms=summary.get("avg_latency_ms", 0.0),
+                    total_queries=summary.get("total_queries", 0),
+                )
+            )
+        except Exception as e:
+            logger.warning("Failed to read eval file %s: %s", path.name, e)
+
+    return TrendsResponse(trends=trends)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Scheduled Auto-Eval
+# ═══════════════════════════════════════════════════════════════════════════
+
+_eval_schedule_enabled = EVAL_SCHEDULE_HOURS > 0
+_eval_schedule_interval = EVAL_SCHEDULE_HOURS
+_eval_schedule_task: asyncio.Task | None = None
+_eval_schedule_last_run: str | None = None
+_eval_schedule_last_summary: dict = {}
+
+
+async def _scheduled_eval_loop():
+    """Background loop that runs RAG-Bench evals on a schedule."""
+    global _eval_schedule_last_run, _eval_schedule_last_summary
+
+    while True:
+        await asyncio.sleep(_eval_schedule_interval * 3600)
+
+        if not _eval_schedule_enabled or not _generator or _benchmark_running:
+            continue
+
+        logger.info("Starting scheduled auto-eval")
+        try:
+            import random
+            from datetime import datetime
+
+            from rag_bench.eval.benchmark import get_benchmark
+            from rag_bench.eval.judge import JudgeLLM
+            from rag_bench.eval.report import save_report
+            from rag_bench.eval.runner import EvalRunner
+
+            benchmark_entries = get_benchmark()
+            rng = random.Random(42)
+            sample = rng.sample(benchmark_entries, min(20, len(benchmark_entries)))
+
+            judge = JudgeLLM(_generator.llm)
+            runner = EvalRunner(
+                retriever=_retriever,
+                generator=_generator,
+                judge=judge,
+                benchmark=sample,
+            )
+
+            report = await asyncio.get_event_loop().run_in_executor(None, runner.run_all)
+
+            eval_dir = str(PROJECT_ROOT / "eval_results")
+            save_report(report, eval_dir, run_type="production")
+
+            _eval_schedule_last_run = datetime.now().isoformat(timespec="seconds")
+            _eval_schedule_last_summary = report.summary
+            logger.info("Scheduled auto-eval completed: %d queries", len(report.results))
+
+        except Exception as e:
+            logger.error("Scheduled auto-eval failed: %s", e, exc_info=True)
+
+
+def _start_eval_schedule():
+    """Start the eval schedule background task if not already running."""
+    global _eval_schedule_task
+    if _eval_schedule_task is None or _eval_schedule_task.done():
+        _eval_schedule_task = asyncio.create_task(_scheduled_eval_loop())
+
+
+@app.get("/api/eval/schedule", response_model=EvalScheduleStatus)
+async def eval_schedule_status():
+    """Return the current auto-eval schedule configuration."""
+    from datetime import datetime, timedelta
+
+    next_run = None
+    if _eval_schedule_enabled and _eval_schedule_last_run:
+        try:
+            last = datetime.fromisoformat(_eval_schedule_last_run)
+            next_run = (last + timedelta(hours=_eval_schedule_interval)).isoformat(timespec="seconds")
+        except ValueError:
+            pass
+
+    return EvalScheduleStatus(
+        enabled=_eval_schedule_enabled,
+        interval_hours=_eval_schedule_interval,
+        next_run=next_run,
+        last_run=_eval_schedule_last_run,
+        last_run_summary={k: v for k, v in _eval_schedule_last_summary.items() if isinstance(v, (int, float))},
+    )
+
+
+@app.post("/api/eval/schedule", response_model=EvalScheduleStatus)
+async def eval_schedule_configure(request: EvalScheduleRequest):
+    """Enable or disable the auto-eval schedule."""
+    global _eval_schedule_enabled, _eval_schedule_interval
+
+    _eval_schedule_enabled = request.enabled
+    _eval_schedule_interval = request.interval_hours
+
+    if _eval_schedule_enabled:
+        _start_eval_schedule()
+
+    return await eval_schedule_status()
 
 
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"

@@ -14,6 +14,7 @@ services:
       - RAG_LLM_BASE_URL=${RAG_LLM_BASE_URL:-http://ollama:11434}
       - RAG_API_PORT=${RAG_API_PORT:-8000}
       - RAG_ENV=production
+      - RAG_EVAL_SCHEDULE_HOURS=${RAG_EVAL_SCHEDULE_HOURS:-24}
       - PYTHONUNBUFFERED=1
       - CUDA_VISIBLE_DEVICES=1
     deploy:
@@ -29,6 +30,7 @@ services:
     volumes:
       - ./chroma_db:/app/chroma_db
       - ./data:/app/data
+      - ./eval_results:/app/eval_results
       - ./logs:/app/logs
     networks:
       - ragbench

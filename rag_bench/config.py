@@ -88,3 +88,6 @@ VERSION = _version_file.read_text().strip() if _version_file.exists() else "0.0.
 
 # ── Environment ──
 RAG_ENV = os.environ.get("RAG_ENV", "development")
+
+# ── Scheduled Eval ──
+EVAL_SCHEDULE_HOURS = int(os.environ.get("RAG_EVAL_SCHEDULE_HOURS", "24"))
