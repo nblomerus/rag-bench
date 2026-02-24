@@ -17,11 +17,14 @@ services:
       - NVIDIA_VISIBLE_DEVICES=1
     deploy:
       resources:
+        limits:
+          memory: 20g
         reservations:
           devices:
             - driver: nvidia
               device_ids: ["1"]
               capabilities: [gpu]
+    memswap_limit: 28g
     volumes:
       - ./chroma_db:/app/chroma_db
       - ./data:/app/data

@@ -191,28 +191,42 @@ class BM25:
         tokens = re.findall(r"[a-z0-9]+(?:'[a-z]+)?", text)
         return [t for t in tokens if t not in self.STOPWORDS and len(t) > 1]
 
-    def index(self, chunks: list[dict]):
-        """Build the BM25 inverted index from a list of chunk dicts."""
-        self.chunk_ids = [c["chunk_id"] for c in chunks]
-        self.doc_count = len(chunks)
+    def index(self, chunks):
+        """Build the BM25 inverted index from an iterable of chunk dicts.
 
-        # First pass: collect term frequencies per doc and doc lengths
+        Accepts any iterable (list, generator, etc.) to support streaming
+        chunks without buffering all text in memory at once.
+        """
+        from array import array as c_array
+
+        self.chunk_ids = []
+
+        # First pass: collect term frequencies per doc and doc lengths.
+        # Use array.array for postings instead of list[tuple] — each entry
+        # uses ~6 bytes (uint32 + uint16) vs ~72 bytes for a Python tuple,
+        # cutting peak memory by ~12x for large corpora.
         df = Counter()  # document frequency per term
-        postings: dict[str, list[tuple[int, int]]] = {}  # term -> [(doc_idx, tf)]
-        doc_lens = []
+        postings_docs: dict[str, c_array] = {}  # term -> doc indices (uint32)
+        postings_tfs: dict[str, c_array] = {}  # term -> term freqs  (uint16)
+        doc_lens = c_array("f")  # float32
 
         for doc_idx, chunk in enumerate(chunks):
+            self.chunk_ids.append(chunk["chunk_id"])
             tokens = self._tokenize(chunk["text"])
             doc_lens.append(len(tokens))
 
             tf = Counter(tokens)
             for term, freq in tf.items():
                 df[term] += 1
-                if term not in postings:
-                    postings[term] = []
-                postings[term].append((doc_idx, freq))
+                if term not in postings_docs:
+                    postings_docs[term] = c_array("I")  # unsigned 32-bit
+                    postings_tfs[term] = c_array("H")  # unsigned 16-bit
+                postings_docs[term].append(doc_idx)
+                postings_tfs[term].append(min(freq, 65535))
 
-        self.doc_len = np.array(doc_lens, dtype=np.float32)
+        self.doc_count = len(self.chunk_ids)
+
+        self.doc_len = np.frombuffer(doc_lens, dtype=np.float32).copy()
         self.avgdl = float(self.doc_len.mean()) if self.doc_count > 0 else 0.0
 
         # Compute IDF
@@ -222,9 +236,9 @@ class BM25:
 
         # Build inverted index with numpy arrays
         self.inv_index = {}
-        for term, posting_list in postings.items():
-            doc_ids = np.array([p[0] for p in posting_list], dtype=np.uint32)
-            tfs = np.array([p[1] for p in posting_list], dtype=np.float32)
+        for term in postings_docs:
+            doc_ids = np.frombuffer(postings_docs[term], dtype=np.uint32).copy()
+            tfs = np.frombuffer(postings_tfs[term], dtype=np.uint16).astype(np.float32)
             self.inv_index[term] = (doc_ids, tfs)
 
         logger.info(f"BM25 inverted index built: {self.doc_count} docs, {len(self.idf)} unique terms")
@@ -485,31 +499,29 @@ class HybridRetriever:
                 return
             logger.info("BM25 cache stale (chunk count changed), rebuilding...")
 
-        # Build from ChromaDB
-        logger.info(f"Loading {count} chunks for BM25 indexing (with batching)...")
-        all_chunks = []
+        # Build from ChromaDB — stream chunks via generator to avoid
+        # holding all 1.6M+ chunk texts in memory simultaneously.
         batch_size = 200_000
 
-        for offset in range(0, count, batch_size):
-            batch_limit = min(batch_size, count - offset)
-            batch_data = self.collection.get(
-                offset=offset,
-                limit=batch_limit,
-                include=["documents", "metadatas"],
-            )
-
-            for i in range(len(batch_data["ids"])):
-                all_chunks.append(
-                    {
+        def _chunk_stream():
+            loaded = 0
+            for offset in range(0, count, batch_size):
+                batch_limit = min(batch_size, count - offset)
+                batch_data = self.collection.get(
+                    offset=offset,
+                    limit=batch_limit,
+                    include=["documents"],
+                )
+                for i in range(len(batch_data["ids"])):
+                    yield {
                         "chunk_id": batch_data["ids"][i],
                         "text": batch_data["documents"][i],
-                        "metadata": batch_data["metadatas"][i],
                     }
-                )
-            logger.info(f"  Loaded {len(all_chunks)}/{count} chunks for BM25")
+                loaded += len(batch_data["ids"])
+                logger.info(f"  Loaded {loaded}/{count} chunks for BM25")
 
-        logger.info(f"Indexing {len(all_chunks)} chunks into BM25...")
-        self.bm25.index(all_chunks)
+        logger.info(f"Streaming {count} chunks for BM25 indexing...")
+        self.bm25.index(_chunk_stream())
 
         # Save cache for next startup
         try:
