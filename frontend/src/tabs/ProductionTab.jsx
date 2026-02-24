@@ -2,7 +2,21 @@ import React, { useState, useEffect, useRef } from 'react'
 import { fetchStats, fetchBenchmarkHistory, fetchMetricsSummary } from '../utils/api'
 import { CpuIcon, BookIcon, DatabaseIcon, ZapIcon, SearchIcon, BarChartIcon, Spinner } from '../components/Icons'
 
-const MAX_HW_HISTORY = 180 // 30 min at 10s intervals
+const MAX_HW_HISTORY = 4320 // 12h at 10s intervals
+
+const TIME_RANGES = [
+    { key: '30m', label: '30m', ms: 30 * 60 * 1000 },
+    { key: '1h',  label: '1h',  ms: 60 * 60 * 1000 },
+    { key: '3h',  label: '3h',  ms: 3 * 60 * 60 * 1000 },
+    { key: '6h',  label: '6h',  ms: 6 * 60 * 60 * 1000 },
+    { key: '12h', label: '12h', ms: 12 * 60 * 60 * 1000 },
+]
+
+function filterByTime(data, rangeMs) {
+    if (!data || data.length === 0) return data
+    const cutoff = Date.now() - rangeMs
+    return data.filter(d => d.t && new Date(d.t).getTime() >= cutoff)
+}
 
 function formatUptime(seconds) {
     if (!seconds) return '—'
@@ -25,16 +39,16 @@ function TimeChart({ data, series, title, yFormat, height = 180, emptyMessage })
         if (!emptyMessage) return null
         return (
             <div className="mt-3">
-                <div className="rounded-lg overflow-hidden" style={{ background: '#181b28', border: '1px solid #2a2f3e' }}>
+                <div className="rounded-lg overflow-hidden" style={{ background: 'var(--apple-chart-bg)', border: '1px solid var(--apple-chart-border)' }}>
                     <div className="px-3 pt-2.5 pb-1">
-                        <span className="text-[11px] font-medium" style={{ color: '#8b8fa3' }}>{title}</span>
+                        <span className="text-[11px] font-medium" style={{ color: 'var(--apple-chart-label)' }}>{title}</span>
                     </div>
-                    <div className="flex items-center justify-center" style={{ height, background: '#111217' }}>
-                        <span className="text-xs" style={{ color: '#464a58' }}>{emptyMessage}</span>
+                    <div className="flex items-center justify-center" style={{ height, background: 'var(--apple-chart-canvas)' }}>
+                        <span className="text-xs" style={{ color: 'var(--apple-text-quaternary)' }}>{emptyMessage}</span>
                     </div>
-                    <div className="flex items-center gap-4 px-3 py-1.5 justify-center flex-wrap" style={{ borderTop: '1px solid #1e2130' }}>
+                    <div className="flex items-center gap-4 px-3 py-1.5 justify-center flex-wrap" style={{ borderTop: '1px solid var(--apple-chart-grid)' }}>
                         {series.map(s => (
-                            <span key={s.label} className="flex items-center gap-1.5 text-[10px]" style={{ color: '#6c7183' }}>
+                            <span key={s.label} className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--apple-chart-axis)' }}>
                                 <span className="inline-block w-3 h-0.5 rounded" style={{ backgroundColor: s.color, opacity: 0.4 }} />
                                 {s.label}
                             </span>
@@ -123,17 +137,17 @@ function TimeChart({ data, series, title, yFormat, height = 180, emptyMessage })
 
     return (
         <div className="mt-3">
-            <div className="rounded-lg overflow-hidden" style={{ background: '#181b28', border: '1px solid #2a2f3e' }}>
+            <div className="rounded-lg overflow-hidden" style={{ background: 'var(--apple-chart-bg)', border: '1px solid var(--apple-chart-border)' }}>
                 {/* Panel header */}
                 <div className="px-3 pt-2.5 pb-1">
-                    <span className="text-[11px] font-medium" style={{ color: '#8b8fa3' }}>{title}</span>
+                    <span className="text-[11px] font-medium" style={{ color: 'var(--apple-chart-label)' }}>{title}</span>
                 </div>
                 {/* Chart SVG */}
                 <svg
                     ref={svgRef}
                     viewBox={`0 0 ${W} ${H}`}
                     className="w-full"
-                    style={{ background: '#111217', display: 'block' }}
+                    style={{ background: 'var(--apple-chart-canvas)', display: 'block' }}
                     onMouseMove={handleMouseMove}
                     onMouseLeave={() => setHoverIdx(null)}
                 >
@@ -150,9 +164,9 @@ function TimeChart({ data, series, title, yFormat, height = 180, emptyMessage })
                     {yTicks.map((v, i) => (
                         <g key={i}>
                             <line x1={PAD_L} y1={yPos(v)} x2={W - PAD_R} y2={yPos(v)}
-                                stroke="#1e2130" strokeWidth="1" strokeDasharray={v === 0 ? undefined : '4,3'} />
+                                style={{ stroke: 'var(--apple-chart-grid)' }} strokeWidth="1" strokeDasharray={v === 0 ? undefined : '4,3'} />
                             <text x={PAD_L - 8} y={yPos(v) + 3} textAnchor="end"
-                                fill="#6c7183" fontSize="9" fontFamily="ui-monospace,monospace">{fmtY(v)}</text>
+                                style={{ fill: 'var(--apple-chart-axis)' }} fontSize="9" fontFamily="ui-monospace,monospace">{fmtY(v)}</text>
                         </g>
                     ))}
 
@@ -172,15 +186,15 @@ function TimeChart({ data, series, title, yFormat, height = 180, emptyMessage })
                     {hoverIdx != null && (
                         <>
                             <line x1={xPos(hoverIdx)} y1={PAD_T} x2={xPos(hoverIdx)} y2={yBottom}
-                                stroke="#555b6e" strokeWidth="1" strokeDasharray="3,2" />
+                                style={{ stroke: 'var(--apple-chart-axis)' }} strokeWidth="1" strokeDasharray="3,2" />
                             {series.map((s, idx) => {
                                 const v = typeof s.key === 'function' ? s.key(data[hoverIdx]) : data[hoverIdx][s.key]
                                 return <circle key={idx} cx={xPos(hoverIdx)} cy={yPos(v || 0)} r="3.5"
-                                    fill={s.color} stroke="#111217" strokeWidth="1.5" />
+                                    fill={s.color} style={{ stroke: 'var(--apple-chart-canvas)' }} strokeWidth="1.5" />
                             })}
                             <rect x={tipX} y={tipY} width={tipW} height={tipH}
-                                rx="4" fill="#1a1d2e" fillOpacity="0.95" stroke="#2d3148" strokeWidth="1" />
-                            <text x={tipX + 8} y={tipY + 14} fill="#8b8fa3" fontSize="9" fontFamily="ui-monospace,monospace">
+                                rx="4" style={{ fill: 'var(--apple-chart-bg)', stroke: 'var(--apple-chart-border)' }} fillOpacity="0.95" strokeWidth="1" />
+                            <text x={tipX + 8} y={tipY + 14} style={{ fill: 'var(--apple-chart-label)' }} fontSize="9" fontFamily="ui-monospace,monospace">
                                 {data[hoverIdx].t ? new Date(data[hoverIdx].t).toLocaleTimeString() : ''}
                             </text>
                             {series.map((s, i) => {
@@ -189,7 +203,7 @@ function TimeChart({ data, series, title, yFormat, height = 180, emptyMessage })
                                     <g key={i}>
                                         <circle cx={tipX + 12} cy={tipY + tipPadY + 6 + i * tipRowH} r="3" fill={s.color} />
                                         <text x={tipX + 20} y={tipY + tipPadY + 10 + i * tipRowH}
-                                            fill="#b3b8c8" fontSize="9">{s.label}</text>
+                                            style={{ fill: 'var(--apple-chart-label)' }} fontSize="9">{s.label}</text>
                                         <text x={tipX + tipW - 8} y={tipY + tipPadY + 10 + i * tipRowH}
                                             fill={s.color} fontSize="9" fontFamily="ui-monospace,monospace" textAnchor="end">
                                             {fmtY(v || 0)}
@@ -206,7 +220,7 @@ function TimeChart({ data, series, title, yFormat, height = 180, emptyMessage })
                         if (!t) return null
                         return (
                             <text key={i} x={xPos(i)} y={H - 4} textAnchor="middle"
-                                fill="#6c7183" fontSize="9" fontFamily="ui-monospace,monospace">
+                                style={{ fill: 'var(--apple-chart-axis)' }} fontSize="9" fontFamily="ui-monospace,monospace">
                                 {t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </text>
                         )
@@ -214,12 +228,12 @@ function TimeChart({ data, series, title, yFormat, height = 180, emptyMessage })
                 </svg>
 
                 {/* Legend with current values */}
-                <div className="flex items-center gap-4 px-3 py-1.5 justify-center flex-wrap" style={{ borderTop: '1px solid #1e2130' }}>
+                <div className="flex items-center gap-4 px-3 py-1.5 justify-center flex-wrap" style={{ borderTop: '1px solid var(--apple-chart-grid)' }}>
                     {series.map(s => {
                         const idx = hoverIdx != null ? hoverIdx : data.length - 1
                         const val = typeof s.key === 'function' ? s.key(data[idx]) : data[idx][s.key]
                         return (
-                            <span key={s.label} className="flex items-center gap-1.5 text-[10px]" style={{ color: '#b3b8c8' }}>
+                            <span key={s.label} className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--apple-chart-label)' }}>
                                 <span className="inline-block w-3 h-0.5 rounded" style={{ backgroundColor: s.color }} />
                                 {s.label}
                                 <span className="font-mono" style={{ color: s.color }}>{fmtY(val || 0)}</span>
@@ -239,10 +253,10 @@ function UsageBar({ percent, color = 'blue', label, detail }) {
     return (
         <div>
             <div className="flex justify-between text-xs mb-1">
-                <span className="text-gray-400">{label}</span>
-                <span className="text-gray-300">{detail}</span>
+                <span style={{ color: 'var(--apple-text-secondary)' }}>{label}</span>
+                <span style={{ color: 'var(--apple-text-primary)' }}>{detail}</span>
             </div>
-            <div className="w-full bg-gray-700 rounded-full h-2">
+            <div className="w-full rounded-full h-2" style={{ background: 'var(--apple-bg-tertiary)' }}>
                 <div className={`${barColor} h-2 rounded-full transition-all duration-500`} style={{ width: `${Math.min(percent, 100)}%` }} />
             </div>
         </div>
@@ -250,33 +264,32 @@ function UsageBar({ percent, color = 'blue', label, detail }) {
 }
 
 function StatCard({ label, value, sub, color = 'gray' }) {
-    const colors = {
-        green: 'text-green-400', yellow: 'text-yellow-400', red: 'text-red-400',
-        blue: 'text-blue-400', gray: 'text-gray-200',
+    const colorVar = {
+        green: 'var(--apple-green)', yellow: 'var(--apple-yellow)', red: 'var(--apple-red)',
+        blue: 'var(--apple-accent)', gray: 'var(--apple-text-primary)',
     }
     return (
-        <div className="bg-gray-900 rounded-lg p-3">
-            <div className="text-xs text-gray-500 mb-1">{label}</div>
-            <p className={`text-lg font-bold ${colors[color] || colors.gray}`}>{value}</p>
-            {sub && <p className="text-xs text-gray-500 mt-0.5">{sub}</p>}
+        <div className="rounded-lg p-3" style={{ background: 'var(--apple-bg-tertiary)' }}>
+            <div className="text-xs mb-1" style={{ color: 'var(--apple-text-tertiary)' }}>{label}</div>
+            <p className="text-lg font-bold" style={{ color: colorVar[color] || colorVar.gray }}>{value}</p>
+            {sub && <p className="text-xs mt-0.5" style={{ color: 'var(--apple-text-tertiary)' }}>{sub}</p>}
         </div>
     )
 }
 
 function TempBadge({ temp }) {
-    if (temp == null) return <span className="text-gray-500">—</span>
-    const color = temp >= 85 ? 'text-red-400' : temp >= 70 ? 'text-yellow-400' : 'text-green-400'
-    return <span className={`font-mono ${color}`}>{temp}°C</span>
+    if (temp == null) return <span style={{ color: 'var(--apple-text-quaternary)' }}>—</span>
+    return <span className="font-mono" style={{ color: temp >= 85 ? 'var(--apple-red)' : temp >= 70 ? 'var(--apple-yellow)' : 'var(--apple-green)' }}>{temp}°C</span>
 }
 
 function StatusChip({ status, count }) {
-    const styles = {
-        success: 'bg-green-900/40 text-green-400 border-green-800/50',
-        deflected: 'bg-yellow-900/40 text-yellow-400 border-yellow-800/50',
-        error: 'bg-red-900/40 text-red-400 border-red-800/50',
+    const chipStyle = {
+        success: { background: 'var(--apple-green-bg)', color: 'var(--apple-green)', borderColor: 'var(--apple-green-border)' },
+        deflected: { background: 'var(--apple-yellow-bg)', color: 'var(--apple-yellow)', borderColor: 'var(--apple-yellow-border)' },
+        error: { background: 'var(--apple-red-bg)', color: 'var(--apple-red)', borderColor: 'var(--apple-red-border)' },
     }
     return (
-        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border ${styles[status] || styles.success}`}>
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs border" style={chipStyle[status] || chipStyle.success}>
             {status} <span className="font-bold">{count}</span>
         </span>
     )
@@ -290,6 +303,7 @@ export function ProductionTab() {
     const [metrics, setMetrics] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
+    const [timeRange, setTimeRange] = useState('1h')
     const intervalRef = useRef(null)
 
     // Client-side accumulated hardware history (from each poll)
@@ -365,7 +379,7 @@ export function ProductionTab() {
     if (loading) {
         return (
             <div className="flex-1 flex items-center justify-center">
-                <div className="flex items-center gap-2 text-sm text-gray-400">
+                <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--apple-text-secondary)' }}>
                     <Spinner size={16} /> Loading production info...
                 </div>
             </div>
@@ -376,38 +390,59 @@ export function ProductionTab() {
     const hw = metrics?.hardware || {}
     const pipe = metrics?.pipeline || {}
     const qbs = metrics?.queries_by_status || {}
-    const lh = metrics?.latency_history || []
+    const rangeMs = TIME_RANGES.find(r => r.key === timeRange)?.ms || 60 * 60 * 1000
+    const lh = filterByTime(metrics?.latency_history || [], rangeMs)
+    const filteredHw = filterByTime(hwHistory, rangeMs)
+    const filteredGpu = filterByTime(gpuHistory, rangeMs)
 
     return (
         <div className="flex-1 overflow-y-auto">
             <div className="max-w-4xl mx-auto px-4 py-6">
                 {/* Header */}
                 <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 bg-blue-600/10 border border-blue-600/20 rounded-xl flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--apple-accent-bg)', border: '1px solid var(--apple-accent-border)' }}>
                         <CpuIcon size={20} />
                     </div>
                     <div>
-                        <h2 className="text-lg font-semibold text-gray-100">Production</h2>
-                        <p className="text-xs text-gray-500">Live metrics, hardware stats, and deployment info</p>
+                        <h2 className="text-lg font-semibold" style={{ color: 'var(--apple-text-primary)' }}>Production</h2>
+                        <p className="text-xs" style={{ color: 'var(--apple-text-tertiary)' }}>Live metrics, hardware stats, and deployment info</p>
                     </div>
-                    {metrics && (
-                        <div className="ml-auto flex items-center gap-1.5 text-xs text-gray-500">
-                            <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                            Live
+                    <div className="ml-auto flex items-center gap-3">
+                        {/* Time range selector */}
+                        <div className="inline-flex rounded-full p-0.5" style={{ background: 'var(--apple-bg-tertiary)' }}>
+                            {TIME_RANGES.map(r => (
+                                <button
+                                    key={r.key}
+                                    onClick={() => setTimeRange(r.key)}
+                                    className="px-2.5 py-1 rounded-full text-[11px] font-medium transition-all"
+                                    style={{
+                                        background: timeRange === r.key ? 'var(--apple-accent)' : 'transparent',
+                                        color: timeRange === r.key ? '#fff' : 'var(--apple-text-tertiary)',
+                                    }}
+                                >
+                                    {r.label}
+                                </button>
+                            ))}
                         </div>
-                    )}
+                        {metrics && (
+                            <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--apple-text-tertiary)' }}>
+                                <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--apple-green)' }} />
+                                Live
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {error && (
-                    <div className="text-sm text-red-400 bg-red-900/20 border border-red-800/50 rounded-lg px-4 py-3 mb-6">
+                    <div className="text-sm rounded-lg px-4 py-3 mb-6" style={{ color: 'var(--apple-red)', background: 'var(--apple-red-bg)', border: '1px solid var(--apple-red-border)' }}>
                         {error}
                     </div>
                 )}
 
                 {/* Traffic & Users */}
                 {metrics && (
-                    <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
-                        <h3 className="text-sm font-semibold text-gray-200 mb-4 flex items-center gap-2">
+                    <div className="glass-card p-5 mb-6">
+                        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--apple-text-primary)' }}>
                             <BarChartIcon size={16} /> Traffic & Users
                         </h3>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
@@ -441,8 +476,8 @@ export function ProductionTab() {
 
                 {/* Latency */}
                 {metrics && (
-                    <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
-                        <h3 className="text-sm font-semibold text-gray-200 mb-4 flex items-center gap-2">
+                    <div className="glass-card p-5 mb-6">
+                        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--apple-text-primary)' }}>
                             <ZapIcon size={16} /> Latency
                         </h3>
                         {metrics.total_queries > 0 ? (
@@ -478,15 +513,15 @@ export function ProductionTab() {
 
                 {/* Pipeline Breakdown Over Time */}
                 {metrics && (
-                    <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
-                        <h3 className="text-sm font-semibold text-gray-200 mb-4 flex items-center gap-2">
+                    <div className="glass-card p-5 mb-6">
+                        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--apple-text-primary)' }}>
                             <DatabaseIcon size={16} /> Pipeline Breakdown
                         </h3>
                         {/* Avg breakdown bar */}
                         {(pipe.avg_retrieval_ms > 0 || pipe.avg_generation_ms > 0) && (
                             <div className="mb-2">
-                                <div className="text-xs text-gray-500 mb-2">Average Breakdown</div>
-                                <div className="flex h-4 rounded-full overflow-hidden bg-gray-700">
+                                <div className="text-xs mb-2" style={{ color: 'var(--apple-text-tertiary)' }}>Average Breakdown</div>
+                                <div className="flex h-4 rounded-full overflow-hidden" style={{ background: 'var(--apple-bg-tertiary)' }}>
                                     {pipe.avg_retrieval_ms > 0 && (
                                         <div className="bg-blue-500 flex items-center justify-center text-[9px] font-mono text-white"
                                             style={{ width: `${Math.max((pipe.avg_retrieval_ms / lat.avg_ms) * 100, 10)}%` }}
@@ -503,7 +538,7 @@ export function ProductionTab() {
                                             title={`Generation: ${(pipe.avg_generation_ms / 1000).toFixed(2)}s`}>Generation</div>
                                     )}
                                 </div>
-                                <div className="flex gap-4 mt-1.5 text-[10px] text-gray-500">
+                                <div className="flex gap-4 mt-1.5 text-[10px]" style={{ color: 'var(--apple-text-tertiary)' }}>
                                     <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" />Retrieval {(pipe.avg_retrieval_ms / 1000).toFixed(2)}s</span>
                                     <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500" />Rerank {(pipe.avg_reranking_ms / 1000).toFixed(2)}s</span>
                                     <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" />Generation {(pipe.avg_generation_ms / 1000).toFixed(2)}s</span>
@@ -525,8 +560,8 @@ export function ProductionTab() {
 
                 {/* Hardware */}
                 {metrics && hw.cpu_percent != null && (
-                    <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
-                        <h3 className="text-sm font-semibold text-gray-200 mb-4 flex items-center gap-2">
+                    <div className="glass-card p-5 mb-6">
+                        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--apple-text-primary)' }}>
                             <CpuIcon size={16} /> Hardware
                         </h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -536,7 +571,7 @@ export function ProductionTab() {
 
                         {/* CPU & RAM over time */}
                         <TimeChart
-                            data={hwHistory}
+                            data={filteredHw}
                             title="CPU & RAM Over Time"
                             emptyMessage="Collecting data — chart will appear after two polling intervals"
                             yFormat={v => `${Math.round(v)}%`}
@@ -549,9 +584,9 @@ export function ProductionTab() {
                         {hw.gpus && hw.gpus.length > 0 && (
                             <div className="space-y-3 mt-4">
                                 {hw.gpus.map((gpu, i) => (
-                                    <div key={i} className="bg-gray-900 rounded-lg p-3">
+                                    <div key={i} className="rounded-xl p-4" style={{ background: 'var(--apple-bg-tertiary)' }}>
                                         <div className="flex items-center justify-between mb-2">
-                                            <span className="text-xs font-medium text-gray-300">{gpu.name}</span>
+                                            <span className="text-xs font-medium" style={{ color: 'var(--apple-text-primary)' }}>{gpu.name}</span>
                                             <TempBadge temp={gpu.temperature_c} />
                                         </div>
                                         <div className="grid grid-cols-2 gap-3">
@@ -567,7 +602,7 @@ export function ProductionTab() {
                         {hw.gpus && hw.gpus.map((gpu, i) => (
                             <TimeChart
                                 key={`gpu-chart-${i}`}
-                                data={gpuHistory}
+                                data={filteredGpu}
                                 title={`${gpu.name} — Utilization & Temperature`}
                                 emptyMessage="Collecting data — GPU chart will appear after two polling intervals"
                                 yFormat={v => `${Math.round(v)}`}
@@ -583,8 +618,8 @@ export function ProductionTab() {
 
                 {/* Pipeline Configuration */}
                 {stats && (
-                    <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
-                        <h3 className="text-sm font-semibold text-gray-200 mb-4 flex items-center gap-2">
+                    <div className="glass-card p-5 mb-6">
+                        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--apple-text-primary)' }}>
                             <DatabaseIcon size={16} /> Pipeline Configuration
                         </h3>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -596,11 +631,11 @@ export function ProductionTab() {
                                 { label: 'LLM Model', value: stats.llm_model, icon: CpuIcon },
                                 { label: 'Collection', value: stats.collection_name, icon: SearchIcon },
                             ].map(({ label, value, icon: Ic }) => (
-                                <div key={label} className="bg-gray-900 rounded-lg p-3">
-                                    <div className="flex items-center gap-1.5 text-gray-500 text-xs mb-1">
+                                <div key={label} className="rounded-xl p-4" style={{ background: 'var(--apple-bg-tertiary)' }}>
+                                    <div className="flex items-center gap-1.5 text-xs mb-1" style={{ color: 'var(--apple-text-tertiary)' }}>
                                         <Ic size={12} /> {label}
                                     </div>
-                                    <p className="text-sm font-medium text-gray-200">{value}</p>
+                                    <p className="text-sm font-medium" style={{ color: 'var(--apple-text-primary)' }}>{value}</p>
                                 </div>
                             ))}
                         </div>
@@ -608,23 +643,23 @@ export function ProductionTab() {
                 )}
 
                 {/* System Health */}
-                <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
-                    <h3 className="text-sm font-semibold text-gray-200 mb-4 flex items-center gap-2">
+                <div className="glass-card p-5 mb-6">
+                    <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--apple-text-primary)' }}>
                         <ZapIcon size={16} /> System Health
                     </h3>
                     <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-gray-900 rounded-lg p-3">
-                            <div className="text-xs text-gray-500 mb-1">API Status</div>
+                        <div className="rounded-xl p-4" style={{ background: 'var(--apple-bg-tertiary)' }}>
+                            <div className="text-xs mb-1" style={{ color: 'var(--apple-text-tertiary)' }}>API Status</div>
                             <div className="flex items-center gap-2">
-                                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                                <span className="text-sm text-green-400">Online</span>
+                                <span className="w-2 h-2 rounded-full" style={{ background: 'var(--apple-green)' }}></span>
+                                <span className="text-sm" style={{ color: 'var(--apple-green)' }}>Online</span>
                             </div>
                         </div>
-                        <div className="bg-gray-900 rounded-lg p-3">
-                            <div className="text-xs text-gray-500 mb-1">Pipeline Ready</div>
+                        <div className="rounded-xl p-4" style={{ background: 'var(--apple-bg-tertiary)' }}>
+                            <div className="text-xs mb-1" style={{ color: 'var(--apple-text-tertiary)' }}>Pipeline Ready</div>
                             <div className="flex items-center gap-2">
-                                <span className={`w-2 h-2 ${stats ? 'bg-green-500' : 'bg-yellow-500'} rounded-full`}></span>
-                                <span className={`text-sm ${stats ? 'text-green-400' : 'text-yellow-400'}`}>
+                                <span className="w-2 h-2 rounded-full" style={{ background: stats ? 'var(--apple-green)' : 'var(--apple-yellow)' }}></span>
+                                <span className="text-sm" style={{ color: stats ? 'var(--apple-green)' : 'var(--apple-yellow)' }}>
                                     {stats ? 'Ready' : 'Loading'}
                                 </span>
                             </div>
@@ -634,27 +669,27 @@ export function ProductionTab() {
 
                 {/* Recent Queries */}
                 {metrics && metrics.recent_queries && metrics.recent_queries.length > 0 && (
-                    <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
-                        <h3 className="text-sm font-semibold text-gray-200 mb-4 flex items-center gap-2">
+                    <div className="glass-card p-5 mb-6">
+                        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--apple-text-primary)' }}>
                             <SearchIcon size={16} /> Recent Queries
                         </h3>
                         <div className="space-y-1.5 max-h-64 overflow-y-auto">
                             {metrics.recent_queries.slice(0, 20).map((q, i) => (
-                                <div key={i} className="flex items-center gap-3 text-xs bg-gray-900 rounded-lg p-2.5">
-                                    <span className="text-gray-500 font-mono shrink-0 w-16">
+                                <div key={i} className="flex items-center gap-3 text-xs rounded-xl p-2.5" style={{ background: 'var(--apple-bg-tertiary)' }}>
+                                    <span className="font-mono shrink-0 w-16" style={{ color: 'var(--apple-text-quaternary)' }}>
                                         {new Date(q.timestamp).toLocaleTimeString()}
                                     </span>
-                                    <span className="text-gray-300 flex-1 truncate" title={q.question}>
+                                    <span className="flex-1 truncate" style={{ color: 'var(--apple-text-primary)' }} title={q.question}>
                                         {q.question}
                                     </span>
-                                    <span className={`font-mono shrink-0 ${q.latency_ms < 3000 ? 'text-green-400' : q.latency_ms < 8000 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                    <span className="font-mono shrink-0" style={{ color: q.latency_ms < 3000 ? 'var(--apple-green)' : q.latency_ms < 8000 ? 'var(--apple-yellow)' : 'var(--apple-red)' }}>
                                         {(q.latency_ms / 1000).toFixed(1)}s
                                     </span>
-                                    <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                        q.status === 'success' ? 'bg-green-900/40 text-green-400' :
-                                        q.status === 'deflected' ? 'bg-yellow-900/40 text-yellow-400' :
-                                        'bg-red-900/40 text-red-400'
-                                    }`}>
+                                    <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium border" style={
+                                        q.status === 'success' ? { background: 'var(--apple-green-bg)', color: 'var(--apple-green)', borderColor: 'var(--apple-green-border)' } :
+                                        q.status === 'deflected' ? { background: 'var(--apple-yellow-bg)', color: 'var(--apple-yellow)', borderColor: 'var(--apple-yellow-border)' } :
+                                        { background: 'var(--apple-red-bg)', color: 'var(--apple-red)', borderColor: 'var(--apple-red-border)' }
+                                    }>
                                         {q.status}
                                     </span>
                                 </div>
@@ -664,19 +699,19 @@ export function ProductionTab() {
                 )}
 
                 {/* Evaluation History */}
-                <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
-                    <h3 className="text-sm font-semibold text-gray-200 mb-4 flex items-center gap-2">
+                <div className="glass-card p-5">
+                    <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--apple-text-primary)' }}>
                         <BarChartIcon size={16} /> Evaluation History
                     </h3>
                     {history && history.runs && history.runs.length > 0 ? (
                         <div className="space-y-2">
                             {history.runs.map((run, i) => (
-                                <div key={i} className="flex items-center gap-3 text-xs bg-gray-900 rounded-lg p-2.5">
-                                    <span className="text-gray-500 font-mono">{run.timestamp}</span>
-                                    <span className="text-blue-400">{run.benchmark}</span>
-                                    <span className="text-gray-400 flex-1">{run.total_evaluated} entries</span>
+                                <div key={i} className="flex items-center gap-3 text-xs rounded-xl p-2.5" style={{ background: 'var(--apple-bg-tertiary)' }}>
+                                    <span className="font-mono" style={{ color: 'var(--apple-text-quaternary)' }}>{run.timestamp}</span>
+                                    <span style={{ color: 'var(--apple-accent)' }}>{run.benchmark}</span>
+                                    <span className="flex-1" style={{ color: 'var(--apple-text-secondary)' }}>{run.total_evaluated} entries</span>
                                     {run.accuracy !== undefined && (
-                                        <span className={`font-bold ${run.accuracy >= 0.8 ? 'text-green-400' : run.accuracy >= 0.6 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                        <span className="font-bold" style={{ color: run.accuracy >= 0.8 ? 'var(--apple-green)' : run.accuracy >= 0.6 ? 'var(--apple-yellow)' : 'var(--apple-red)' }}>
                                             {(run.accuracy * 100).toFixed(1)}%
                                         </span>
                                     )}
@@ -684,7 +719,7 @@ export function ProductionTab() {
                             ))}
                         </div>
                     ) : (
-                        <p className="text-xs text-gray-600">No evaluation runs recorded yet. Run a benchmark from the Benchmarks tab to see history here.</p>
+                        <p className="text-xs" style={{ color: 'var(--apple-text-quaternary)' }}>No evaluation runs recorded yet. Run a benchmark from the Benchmarks tab to see history here.</p>
                     )}
                 </div>
             </div>

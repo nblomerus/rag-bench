@@ -90,7 +90,7 @@ class RequestTracker:
 
     _BUFFER_SIZE = 1000
     _RECENT_SIZE = 50
-    _TIMESERIES_MAX_POINTS = 100
+    _TIMESERIES_MAX_POINTS = 500
 
     def __init__(self) -> None:
         self.start_time = time.monotonic()

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import ReactDOM from 'react-dom'
 import { BarChartIcon, Spinner, AlertIcon, SearchIcon, ChevronDown, ChevronUp, ZapIcon } from '../components/Icons'
 import { fetchBenchmarkLatest, fetchBenchmarkExamples, queryRAG, detectHallucination, fetchBenchmarkTrends, fetchEvalSchedule, updateEvalSchedule } from '../utils/api'
 import { formatAnswer } from '../utils/render'
@@ -101,27 +102,27 @@ const METRIC_DEFS = {
 }
 
 function getScoreColor(value, def) {
-    if (!def || def.isRaw) return 'text-gray-100'
+    if (!def || def.isRaw) return 'var(--apple-text-primary)'
     if (def.invert) {
-        if (value <= def.good) return 'text-emerald-400'
-        if (value <= def.mid) return 'text-amber-400'
-        return 'text-red-400'
+        if (value <= def.good) return 'var(--apple-green)'
+        if (value <= def.mid) return 'var(--apple-yellow)'
+        return 'var(--apple-red)'
     }
-    if (value >= def.good) return 'text-emerald-400'
-    if (value >= def.mid) return 'text-amber-400'
-    return 'text-red-400'
+    if (value >= def.good) return 'var(--apple-green)'
+    if (value >= def.mid) return 'var(--apple-yellow)'
+    return 'var(--apple-red)'
 }
 
 function getBarColor(value, def) {
-    if (!def || def.isRaw) return '#6b7280'
+    if (!def || def.isRaw) return 'var(--apple-text-quaternary)'
     if (def.invert) {
-        if (value <= def.good) return '#4ade80'
-        if (value <= def.mid) return '#fbbf24'
-        return '#f87171'
+        if (value <= def.good) return 'var(--apple-green)'
+        if (value <= def.mid) return 'var(--apple-yellow)'
+        return 'var(--apple-red)'
     }
-    if (value >= def.good) return '#4ade80'
-    if (value >= def.mid) return '#fbbf24'
-    return '#f87171'
+    if (value >= def.good) return 'var(--apple-green)'
+    if (value >= def.mid) return 'var(--apple-yellow)'
+    return 'var(--apple-red)'
 }
 
 function formatValue(value, def) {
@@ -131,34 +132,89 @@ function formatValue(value, def) {
     return `${(value * 100).toFixed(1)}%`
 }
 
-// ── Metric card component ─────────────────────────────────────────────────────
+// ── Metric card component with ring gauge ────────────────────────────────────
 function MetricCard({ metricKey, value }) {
     const def = METRIC_DEFS[metricKey]
-    const [showTip, setShowTip] = useState(false)
+    const [tipPos, setTipPos] = useState(null)
+    const cardRef = useRef(null)
     const label = def?.label || metricKey.replace(/_/g, ' ')
-    const color = getScoreColor(value, def)
-    const barPct = def?.isRaw ? 0 : Math.min(value * 100, 100)
+    const scoreColor = getScoreColor(value, def)
     const barColor = getBarColor(value, def)
+    const isPercent = !def?.isRaw
+
+    // Ring gauge geometry
+    const R = 28, STROKE = 4
+    const C = 2 * Math.PI * R
+    const pct = isPercent ? Math.min(value, 1) : 0
+    const offset = C * (1 - pct)
+
+    const showTip = () => {
+        if (cardRef.current) {
+            const r = cardRef.current.getBoundingClientRect()
+            setTipPos({ top: r.top, left: r.left + r.width / 2 })
+        }
+    }
 
     return (
         <div
-            className="bg-gray-800/80 border border-gray-700 rounded-xl p-3 relative cursor-help"
-            onMouseEnter={() => setShowTip(true)}
-            onMouseLeave={() => setShowTip(false)}
+            ref={cardRef}
+            className="glass-card p-4 cursor-help"
+            onMouseEnter={showTip}
+            onMouseLeave={() => setTipPos(null)}
         >
-            <div className="text-xs text-gray-500 mb-1 capitalize">{label}</div>
-            <div className={`text-lg font-bold ${color}`}>
-                {formatValue(value, def)}
-            </div>
-            {!def?.isRaw && (
-                <div className="mt-1.5 h-1 bg-gray-700 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full transition-all" style={{ width: `${barPct}%`, background: barColor }} />
+            {isPercent ? (
+                <div className="flex items-center gap-3">
+                    {/* Ring gauge */}
+                    <svg width="64" height="64" viewBox="0 0 64 64" className="shrink-0">
+                        <circle cx="32" cy="32" r={R} fill="none" stroke="var(--apple-bg-tertiary)" strokeWidth={STROKE} />
+                        <circle cx="32" cy="32" r={R} fill="none" stroke={barColor} strokeWidth={STROKE}
+                            strokeDasharray={C} strokeDashoffset={offset}
+                            strokeLinecap="round" transform="rotate(-90 32 32)"
+                            style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
+                        <text x="32" y="34" textAnchor="middle" dominantBaseline="central"
+                            style={{ fill: scoreColor, fontSize: '13px', fontWeight: 700, fontFamily: 'ui-monospace, monospace' }}>
+                            {(value * 100).toFixed(0)}
+                        </text>
+                    </svg>
+                    <div className="min-w-0">
+                        <div className="text-xs capitalize" style={{ color: 'var(--apple-text-tertiary)' }}>{label}</div>
+                        <div className="text-sm font-bold mt-0.5" style={{ color: scoreColor }}>
+                            {formatValue(value, def)}
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                <div>
+                    <div className="text-xs mb-1 capitalize" style={{ color: 'var(--apple-text-tertiary)' }}>{label}</div>
+                    <div className="text-lg font-bold" style={{ color: scoreColor }}>
+                        {formatValue(value, def)}
+                    </div>
                 </div>
             )}
-            {showTip && def?.description && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-xs text-gray-300 w-64 shadow-xl pointer-events-none">
+            {tipPos && def?.description && ReactDOM.createPortal(
+                <div style={{
+                    position: 'fixed',
+                    top: tipPos.top - 6,
+                    left: tipPos.left,
+                    transform: 'translateX(-50%) translateY(-100%)',
+                    background: 'var(--apple-bg-elevated)',
+                    color: 'var(--apple-text-primary)',
+                    fontSize: '12px',
+                    fontWeight: 400,
+                    lineHeight: 1.4,
+                    padding: '8px 12px',
+                    borderRadius: '10px',
+                    border: '1px solid var(--apple-border-primary)',
+                    whiteSpace: 'normal',
+                    width: 'max-content',
+                    maxWidth: '280px',
+                    zIndex: 9999,
+                    pointerEvents: 'none',
+                    boxShadow: 'var(--apple-shadow-md)',
+                }}>
                     {def.description}
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     )
@@ -173,13 +229,13 @@ function TopicRow({ topic, data }) {
     const count = data.total_queries ?? 0
 
     return (
-        <tr className="border-b border-gray-800 hover:bg-gray-800/50 text-xs">
-            <td className="py-2 px-3 text-gray-300 capitalize font-medium">{topic.replace(/_/g, ' ')}</td>
-            <td className="py-2 px-3 text-gray-500 text-center">{count}</td>
-            <td className={`py-2 px-3 text-center ${getScoreColor(mrr, METRIC_DEFS.retrieval_mrr)}`}>{(mrr * 100).toFixed(0)}%</td>
-            <td className={`py-2 px-3 text-center ${getScoreColor(hitRate, METRIC_DEFS.retrieval_hit_rate)}`}>{(hitRate * 100).toFixed(0)}%</td>
-            <td className={`py-2 px-3 text-center ${getScoreColor(citPrec, METRIC_DEFS.avg_citation_precision)}`}>{(citPrec * 100).toFixed(0)}%</td>
-            <td className={`py-2 px-3 text-center ${getScoreColor(completeness, METRIC_DEFS.avg_completeness)}`}>{(completeness * 100).toFixed(0)}%</td>
+        <tr className="hover:opacity-80 text-xs" style={{ borderBottom: '1px solid var(--apple-divider)' }}>
+            <td className="py-2 px-3 capitalize font-medium" style={{ color: 'var(--apple-text-primary)' }}>{topic.replace(/_/g, ' ')}</td>
+            <td className="py-2 px-3 text-center" style={{ color: 'var(--apple-text-tertiary)' }}>{count}</td>
+            <td className="py-2 px-3 text-center" style={{ color: getScoreColor(mrr, METRIC_DEFS.retrieval_mrr) }}>{(mrr * 100).toFixed(0)}%</td>
+            <td className="py-2 px-3 text-center" style={{ color: getScoreColor(hitRate, METRIC_DEFS.retrieval_hit_rate) }}>{(hitRate * 100).toFixed(0)}%</td>
+            <td className="py-2 px-3 text-center" style={{ color: getScoreColor(citPrec, METRIC_DEFS.avg_citation_precision) }}>{(citPrec * 100).toFixed(0)}%</td>
+            <td className="py-2 px-3 text-center" style={{ color: getScoreColor(completeness, METRIC_DEFS.avg_completeness) }}>{(completeness * 100).toFixed(0)}%</td>
         </tr>
     )
 }
@@ -220,7 +276,7 @@ function TryItPanel({ examples }) {
         }
     }
 
-    const diffColor = { easy: 'text-emerald-400', medium: 'text-amber-400', hard: 'text-red-400' }
+    const diffColor = { easy: 'var(--apple-green)', medium: 'var(--apple-yellow)', hard: 'var(--apple-red)' }
 
     return (
         <div>
@@ -229,7 +285,8 @@ function TryItPanel({ examples }) {
                 <select
                     value={filterTopic}
                     onChange={e => { setFilterTopic(e.target.value); setSelectedIdx(null); setResult(null) }}
-                    className="bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2 py-1.5"
+                    className="rounded-md text-xs px-2 py-1.5"
+                    style={{ background: 'var(--apple-bg-tertiary)', color: 'var(--apple-text-primary)', borderColor: 'var(--apple-border-primary)', border: '1px solid var(--apple-border-primary)' }}
                 >
                     <option value="">All topics</option>
                     {topics.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
@@ -237,12 +294,13 @@ function TryItPanel({ examples }) {
                 <select
                     value={filterType}
                     onChange={e => { setFilterType(e.target.value); setSelectedIdx(null); setResult(null) }}
-                    className="bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2 py-1.5"
+                    className="rounded-md text-xs px-2 py-1.5"
+                    style={{ background: 'var(--apple-bg-tertiary)', color: 'var(--apple-text-primary)', borderColor: 'var(--apple-border-primary)', border: '1px solid var(--apple-border-primary)' }}
                 >
                     <option value="">All types</option>
                     {types.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
-                <span className="text-xs text-gray-600">{filtered.length} examples</span>
+                <span className="text-xs" style={{ color: 'var(--apple-text-quaternary)' }}>{filtered.length} examples</span>
             </div>
 
             {/* Question list */}
@@ -253,39 +311,44 @@ function TryItPanel({ examples }) {
                         onClick={() => { setSelectedIdx(i); setResult(null); setError(null) }}
                         className={`w-full text-left px-3 py-2 rounded-lg text-xs transition flex items-center gap-2 ${
                             selectedIdx === i
-                                ? 'bg-blue-600/20 border border-blue-500/40 text-gray-200'
-                                : 'bg-gray-800/50 border border-transparent hover:border-gray-700 text-gray-400'
+                                ? 'border text-white'
+                                : 'border border-transparent hover:opacity-80'
                         }`}
+                        style={selectedIdx === i
+                            ? { background: 'color-mix(in srgb, var(--apple-accent) 20%, transparent)', borderColor: 'color-mix(in srgb, var(--apple-accent) 40%, transparent)', color: 'var(--apple-text-primary)' }
+                            : { background: 'var(--apple-glass-bg)', color: 'var(--apple-text-secondary)' }
+                        }
                     >
-                        <span className={`font-mono text-[10px] ${diffColor[ex.difficulty] || 'text-gray-500'}`}>
+                        <span className="font-mono text-[10px]" style={{ color: diffColor[ex.difficulty] || 'var(--apple-text-tertiary)' }}>
                             {ex.difficulty[0].toUpperCase()}
                         </span>
                         <span className="truncate flex-1">{ex.question}</span>
-                        <span className="text-gray-600 text-[10px] shrink-0">{ex.topic.replace(/_/g, ' ')}</span>
+                        <span className="text-[10px] shrink-0" style={{ color: 'var(--apple-text-quaternary)' }}>{ex.topic.replace(/_/g, ' ')}</span>
                     </button>
                 ))}
             </div>
 
             {/* Selected example details + run */}
             {selected && (
-                <div className="bg-gray-800/60 border border-gray-700 rounded-xl p-4">
+                <div className="glass-card p-5">
                     <div className="flex items-start justify-between mb-3">
                         <div>
-                            <p className="text-sm text-gray-200 font-medium mb-1">{selected.question}</p>
+                            <p className="text-sm font-medium mb-1" style={{ color: 'var(--apple-text-primary)' }}>{selected.question}</p>
                             <div className="flex gap-2 text-[10px]">
-                                <span className="bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded">{selected.query_type}</span>
-                                <span className="bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded">{selected.topic.replace(/_/g, ' ')}</span>
-                                <span className={`px-1.5 py-0.5 rounded ${
-                                    selected.difficulty === 'easy' ? 'bg-emerald-900/40 text-emerald-400' :
-                                    selected.difficulty === 'medium' ? 'bg-amber-900/40 text-amber-400' :
-                                    'bg-red-900/40 text-red-400'
-                                }`}>{selected.difficulty}</span>
+                                <span className="px-1.5 py-0.5 rounded" style={{ background: 'var(--apple-bg-tertiary)', color: 'var(--apple-text-secondary)' }}>{selected.query_type}</span>
+                                <span className="px-1.5 py-0.5 rounded" style={{ background: 'var(--apple-bg-tertiary)', color: 'var(--apple-text-secondary)' }}>{selected.topic.replace(/_/g, ' ')}</span>
+                                <span className="px-1.5 py-0.5 rounded" style={
+                                    selected.difficulty === 'easy' ? { background: 'var(--apple-green-bg)', color: 'var(--apple-green)' } :
+                                    selected.difficulty === 'medium' ? { background: 'var(--apple-yellow-bg)', color: 'var(--apple-yellow)' } :
+                                    { background: 'var(--apple-red-bg)', color: 'var(--apple-red)' }
+                                }>{selected.difficulty}</span>
                             </div>
                         </div>
                         <button
                             onClick={handleTry}
                             disabled={running}
-                            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 shrink-0"
+                            className="disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 shrink-0"
+                            style={{ background: 'var(--apple-accent)' }}
                         >
                             {running ? <><Spinner size={12} /> Running...</> : <><SearchIcon size={12} /> Try it</>}
                         </button>
@@ -293,17 +356,17 @@ function TryItPanel({ examples }) {
 
                     {/* Ground truth */}
                     <div className="mb-3">
-                        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Expected</div>
+                        <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--apple-text-tertiary)' }}>Expected</div>
                         <div className="flex flex-wrap gap-1.5">
-                            <span className="text-xs text-gray-400">
+                            <span className="text-xs" style={{ color: 'var(--apple-text-secondary)' }}>
                                 Sources: {selected.expected_sources.map(s => (
-                                    <span key={s} className="font-mono text-blue-400 mr-1">{s}</span>
+                                    <span key={s} className="font-mono mr-1" style={{ color: 'var(--apple-accent)' }}>{s}</span>
                                 ))}
                             </span>
                             {selected.expected_answer_contains.length > 0 && (
-                                <span className="text-xs text-gray-500 ml-2">
+                                <span className="text-xs ml-2" style={{ color: 'var(--apple-text-tertiary)' }}>
                                     Keywords: {selected.expected_answer_contains.map(k => (
-                                        <span key={k} className="bg-gray-700 text-gray-400 px-1 py-0.5 rounded text-[10px] mr-1">{k}</span>
+                                        <span key={k} className="px-1 py-0.5 rounded text-[10px] mr-1" style={{ background: 'var(--apple-bg-tertiary)', color: 'var(--apple-text-secondary)' }}>{k}</span>
                                     ))}
                                 </span>
                             )}
@@ -312,7 +375,7 @@ function TryItPanel({ examples }) {
 
                     {/* Error */}
                     {error && (
-                        <div className="flex items-center gap-2 text-xs text-red-400 bg-red-900/20 border border-red-800/50 rounded-lg px-3 py-2 mb-3">
+                        <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2 mb-3" style={{ color: 'var(--apple-red)', background: 'var(--apple-red-bg)', border: '1px solid var(--apple-red-border)' }}>
                             <AlertIcon size={14} />
                             <span>{error}</span>
                         </div>
@@ -363,32 +426,32 @@ function TryItPanel({ examples }) {
                         return (
                         <div className="space-y-3">
                             {/* Evaluation scorecard */}
-                            <div className="bg-gray-900/80 border border-gray-700 rounded-lg p-3">
-                                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Evaluation Scorecard</div>
+                            <div className="rounded-xl p-3" style={{ background: 'var(--apple-bg-tertiary)', border: '1px solid var(--apple-border-primary)' }}>
+                                <div className="text-[10px] uppercase tracking-wider mb-2" style={{ color: 'var(--apple-text-tertiary)' }}>Evaluation Scorecard</div>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                     <div className="text-xs">
-                                        <span className="text-gray-500 block mb-0.5">Retrieval</span>
-                                        <span className={`font-bold ${retrievalHit ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        <span className="block mb-0.5" style={{ color: 'var(--apple-text-tertiary)' }}>Retrieval</span>
+                                        <span className="font-bold" style={{ color: retrievalHit ? 'var(--apple-green)' : 'var(--apple-red)' }}>
                                             {retrievalHit ? `Hit (pos ${expectedPosition})` : 'Miss'}
                                         </span>
                                     </div>
                                     <div className="text-xs">
-                                        <span className="text-gray-500 block mb-0.5">Citation</span>
-                                        <span className={`font-bold ${citationCorrect ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        <span className="block mb-0.5" style={{ color: 'var(--apple-text-tertiary)' }}>Citation</span>
+                                        <span className="font-bold" style={{ color: citationCorrect ? 'var(--apple-green)' : 'var(--apple-red)' }}>
                                             {citationCorrect ? 'Correct' : citedPapers.length > 0 ? 'Wrong source' : 'None cited'}
                                         </span>
                                     </div>
                                     <div className="text-xs">
-                                        <span className="text-gray-500 block mb-0.5">Cit. Precision</span>
-                                        <span className={`font-bold ${citationPrecision >= 0.5 ? 'text-emerald-400' : citationPrecision > 0 ? 'text-amber-400' : 'text-red-400'}`}>
+                                        <span className="block mb-0.5" style={{ color: 'var(--apple-text-tertiary)' }}>Cit. Precision</span>
+                                        <span className="font-bold" style={{ color: citationPrecision >= 0.5 ? 'var(--apple-green)' : citationPrecision > 0 ? 'var(--apple-yellow)' : 'var(--apple-red)' }}>
                                             {(citationPrecision * 100).toFixed(0)}%
                                         </span>
                                     </div>
                                     <div className="text-xs">
-                                        <span className="text-gray-500 block mb-0.5">Completeness</span>
-                                        <span className={`font-bold ${completeness >= 0.8 ? 'text-emerald-400' : completeness >= 0.5 ? 'text-amber-400' : 'text-red-400'}`}>
+                                        <span className="block mb-0.5" style={{ color: 'var(--apple-text-tertiary)' }}>Completeness</span>
+                                        <span className="font-bold" style={{ color: completeness >= 0.8 ? 'var(--apple-green)' : completeness >= 0.5 ? 'var(--apple-yellow)' : 'var(--apple-red)' }}>
                                             {(completeness * 100).toFixed(0)}%
-                                            <span className="font-normal text-gray-600 ml-1">({foundKeywords.length}/{expectedKeywords.length})</span>
+                                            <span className="font-normal ml-1" style={{ color: 'var(--apple-text-quaternary)' }}>({foundKeywords.length}/{expectedKeywords.length})</span>
                                         </span>
                                     </div>
                                 </div>
@@ -398,9 +461,11 @@ function TryItPanel({ examples }) {
                                         {expectedKeywords.map(k => {
                                             const found = answerText.includes(k.toLowerCase())
                                             return (
-                                                <span key={k} className={`text-[10px] px-1.5 py-0.5 rounded ${
-                                                    found ? 'bg-emerald-900/30 text-emerald-400' : 'bg-red-900/30 text-red-400'
-                                                }`}>
+                                                <span key={k} className="text-[10px] px-1.5 py-0.5 rounded" style={
+                                                    found
+                                                        ? { background: 'var(--apple-green-bg)', color: 'var(--apple-green)' }
+                                                        : { background: 'var(--apple-red-bg)', color: 'var(--apple-red)' }
+                                                }>
                                                     {found ? '\u2713' : '\u2717'} {k}
                                                 </span>
                                             )
@@ -410,31 +475,33 @@ function TryItPanel({ examples }) {
                             </div>
 
                             <div>
-                                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Generated Answer</div>
-                                <div className="text-xs text-gray-300 bg-gray-900/60 rounded-lg p-3 max-h-48 overflow-y-auto leading-relaxed">
+                                <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--apple-text-tertiary)' }}>Generated Answer</div>
+                                <div className="text-xs rounded-xl p-3 max-h-48 overflow-y-auto leading-relaxed" style={{ background: 'var(--apple-bg-tertiary)', color: 'var(--apple-text-primary)' }}>
                                     {formatAnswer(result.answer)}
                                 </div>
                             </div>
 
                             {/* Sources retrieved */}
                             <div>
-                                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Retrieved Sources</div>
+                                <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--apple-text-tertiary)' }}>Retrieved Sources</div>
                                 <div className="space-y-1">
                                     {sources.map((src, i) => {
                                         const isExpected = expectedPapers.includes(normalizeId(src.paper_id))
                                         const isCited = citedNums.includes(i + 1)
                                         return (
-                                            <div key={i} className={`text-xs px-2 py-1.5 rounded flex items-center gap-2 ${
-                                                isExpected ? 'bg-emerald-900/20 border border-emerald-800/40' : 'bg-gray-900/40'
-                                            }`}>
-                                                <span className={`font-mono w-5 ${isCited ? 'text-blue-400' : 'text-gray-500'}`}>{i + 1}</span>
-                                                <span className={`font-mono text-[10px] ${isExpected ? 'text-emerald-400' : 'text-gray-500'}`}>
+                                            <div key={i} className="text-xs px-2 py-1.5 rounded flex items-center gap-2" style={
+                                                isExpected
+                                                    ? { background: 'var(--apple-green-bg)', border: '1px solid var(--apple-green-border)' }
+                                                    : { background: 'var(--apple-bg-tertiary)' }
+                                            }>
+                                                <span className="font-mono w-5" style={{ color: isCited ? 'var(--apple-accent)' : 'var(--apple-text-tertiary)' }}>{i + 1}</span>
+                                                <span className="font-mono text-[10px]" style={{ color: isExpected ? 'var(--apple-green)' : 'var(--apple-text-tertiary)' }}>
                                                     {normalizeId(src.paper_id) || '?'}
                                                 </span>
-                                                <span className="text-gray-400 truncate flex-1">{src.title || src.text_preview?.slice(0, 80)}</span>
-                                                <span className="text-gray-600 font-mono text-[10px]">{src.score?.toFixed(3)}</span>
-                                                {isExpected && <span className="text-emerald-400 text-[10px]">expected</span>}
-                                                {isCited && <span className="text-blue-400 text-[10px]">cited</span>}
+                                                <span className="truncate flex-1" style={{ color: 'var(--apple-text-secondary)' }}>{src.title || src.text_preview?.slice(0, 80)}</span>
+                                                <span className="font-mono text-[10px]" style={{ color: 'var(--apple-text-quaternary)' }}>{src.score?.toFixed(3)}</span>
+                                                {isExpected && <span className="text-[10px]" style={{ color: 'var(--apple-green)' }}>expected</span>}
+                                                {isCited && <span className="text-[10px]" style={{ color: 'var(--apple-accent)' }}>cited</span>}
                                             </div>
                                         )
                                     })}
@@ -443,9 +510,9 @@ function TryItPanel({ examples }) {
 
                             {/* Quick metrics */}
                             <div className="flex gap-4 text-xs">
-                                <span className="text-gray-500">Latency: <span className="text-gray-300">{Math.round(result.latency_ms)}ms</span></span>
-                                <span className="text-gray-500">Deflected: <span className="text-gray-300">{result.deflected ? 'Yes' : 'No'}</span></span>
-                                <span className="text-gray-500">Backend: <span className="text-gray-300">{result.model}</span></span>
+                                <span style={{ color: 'var(--apple-text-tertiary)' }}>Latency: <span style={{ color: 'var(--apple-text-primary)' }}>{Math.round(result.latency_ms)}ms</span></span>
+                                <span style={{ color: 'var(--apple-text-tertiary)' }}>Deflected: <span style={{ color: 'var(--apple-text-primary)' }}>{result.deflected ? 'Yes' : 'No'}</span></span>
+                                <span style={{ color: 'var(--apple-text-tertiary)' }}>Backend: <span style={{ color: 'var(--apple-text-primary)' }}>{result.model}</span></span>
                             </div>
                         </div>
                         )
@@ -531,7 +598,7 @@ function RagtruthTryItPanel() {
 
         return parts.map((p, i) =>
             p.flagged
-                ? <span key={i} className="bg-amber-900/40 text-amber-300 border-b border-amber-500" title="Potentially unsupported claim">{p.text}</span>
+                ? <span key={i} className="border-b" style={{ background: 'var(--apple-yellow-bg)', color: 'var(--apple-yellow)', borderColor: 'var(--apple-yellow)' }} title="Potentially unsupported claim">{p.text}</span>
                 : <span key={i}>{p.text}</span>
         )
     }
@@ -546,12 +613,14 @@ function RagtruthTryItPanel() {
                     onChange={e => setQuestion(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleRun()}
                     placeholder="Ask a question about AI/ML research..."
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-xs text-gray-200 px-3 py-2 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                    className="flex-1 rounded-lg text-xs px-3 py-2 focus:outline-none"
+                    style={{ background: 'var(--apple-bg-tertiary)', border: '1px solid var(--apple-border-primary)', color: 'var(--apple-text-primary)', '--tw-placeholder-color': 'var(--apple-text-quaternary)' }}
                 />
                 <button
                     onClick={() => handleRun()}
                     disabled={running || !question.trim()}
-                    className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs px-4 py-2 rounded-lg transition flex items-center gap-1.5 shrink-0"
+                    className="disabled:opacity-50 text-white text-xs px-4 py-2 rounded-lg transition flex items-center gap-1.5 shrink-0"
+                    style={{ background: 'var(--apple-accent)' }}
                 >
                     {running ? <><Spinner size={12} /> {step === 'querying' ? 'Querying...' : 'Checking...'}</> : <><SearchIcon size={12} /> Run &amp; Check</>}
                 </button>
@@ -564,7 +633,8 @@ function RagtruthTryItPanel() {
                         key={q}
                         onClick={() => { setQuestion(q); handleRun(q) }}
                         disabled={running}
-                        className="text-[10px] bg-gray-800/60 border border-gray-700 hover:border-gray-600 text-gray-400 hover:text-gray-300 px-2 py-1 rounded-lg transition disabled:opacity-50"
+                        className="text-[10px] px-2 py-1 rounded-lg transition disabled:opacity-50 hover:opacity-80"
+                        style={{ background: 'var(--apple-glass-bg)', border: '1px solid var(--apple-border-primary)', color: 'var(--apple-text-secondary)' }}
                     >
                         {q}
                     </button>
@@ -572,7 +642,7 @@ function RagtruthTryItPanel() {
             </div>
 
             {error && (
-                <div className="flex items-center gap-2 text-xs text-red-400 bg-red-900/20 border border-red-800/50 rounded-lg px-3 py-2 mb-3">
+                <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2 mb-3" style={{ color: 'var(--apple-red)', background: 'var(--apple-red-bg)', border: '1px solid var(--apple-red-border)' }}>
                     <AlertIcon size={14} />
                     <span>{error}</span>
                 </div>
@@ -580,27 +650,27 @@ function RagtruthTryItPanel() {
 
             {/* Pipeline result + detection */}
             {pipelineResult && (
-                <div className="bg-gray-800/60 border border-gray-700 rounded-xl p-4 space-y-3">
+                <div className="glass-card p-5 space-y-3">
                     {/* Detection scorecard */}
                     {detection && (
-                        <div className="bg-gray-900/80 border border-gray-700 rounded-lg p-3">
-                            <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Hallucination Check</div>
+                        <div className="rounded-xl p-3" style={{ background: 'var(--apple-bg-tertiary)', border: '1px solid var(--apple-border-primary)' }}>
+                            <div className="text-[10px] uppercase tracking-wider mb-2" style={{ color: 'var(--apple-text-tertiary)' }}>Hallucination Check</div>
                             <div className="grid grid-cols-3 gap-3">
                                 <div className="text-xs">
-                                    <span className="text-gray-500 block mb-0.5">Verdict</span>
-                                    <span className={`font-bold ${detection.has_hallucination ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                    <span className="block mb-0.5" style={{ color: 'var(--apple-text-tertiary)' }}>Verdict</span>
+                                    <span className="font-bold" style={{ color: detection.has_hallucination ? 'var(--apple-yellow)' : 'var(--apple-green)' }}>
                                         {detection.has_hallucination ? 'Potential issues found' : 'Looks faithful'}
                                     </span>
                                 </div>
                                 <div className="text-xs">
-                                    <span className="text-gray-500 block mb-0.5">Unsupported Spans</span>
-                                    <span className={`font-bold ${(detection.flagged_spans?.length || 0) > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                    <span className="block mb-0.5" style={{ color: 'var(--apple-text-tertiary)' }}>Unsupported Spans</span>
+                                    <span className="font-bold" style={{ color: (detection.flagged_spans?.length || 0) > 0 ? 'var(--apple-yellow)' : 'var(--apple-green)' }}>
                                         {detection.flagged_spans?.length || 0}
                                     </span>
                                 </div>
                                 <div className="text-xs">
-                                    <span className="text-gray-500 block mb-0.5">Latency</span>
-                                    <span className="font-bold text-gray-200">
+                                    <span className="block mb-0.5" style={{ color: 'var(--apple-text-tertiary)' }}>Latency</span>
+                                    <span className="font-bold" style={{ color: 'var(--apple-text-primary)' }}>
                                         {Math.round(pipelineResult.latency_ms)}ms + {detection.latency_ms}ms
                                     </span>
                                 </div>
@@ -610,13 +680,13 @@ function RagtruthTryItPanel() {
 
                     {/* Answer with highlighted spans */}
                     <div>
-                        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">
+                        <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--apple-text-tertiary)' }}>
                             Generated Answer
                             {detection?.flagged_spans?.length > 0 && (
-                                <span className="ml-2 text-amber-400 normal-case">(amber = potentially unsupported)</span>
+                                <span className="ml-2 normal-case" style={{ color: 'var(--apple-yellow)' }}>(amber = potentially unsupported)</span>
                             )}
                         </div>
-                        <div className="text-xs text-gray-300 bg-gray-900/60 rounded-lg p-3 max-h-48 overflow-y-auto leading-relaxed">
+                        <div className="text-xs rounded-xl p-3 max-h-48 overflow-y-auto leading-relaxed" style={{ background: 'var(--apple-bg-tertiary)', color: 'var(--apple-text-primary)' }}>
                             {detection?.flagged_spans?.length > 0
                                 ? renderWithHighlights(pipelineResult.answer || '', detection.flagged_spans)
                                 : formatAnswer(pipelineResult.answer)
@@ -627,12 +697,12 @@ function RagtruthTryItPanel() {
                     {/* Flagged spans detail */}
                     {detection?.flagged_spans?.length > 0 && (
                         <div>
-                            <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Flagged Spans</div>
+                            <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--apple-text-tertiary)' }}>Flagged Spans</div>
                             <div className="space-y-1">
                                 {detection.flagged_spans.map((s, i) => (
-                                    <div key={i} className="text-xs bg-amber-900/20 border border-amber-800/30 rounded px-2 py-1.5">
-                                        <span className="text-amber-400 text-[10px] font-mono mr-2">{s.type}</span>
-                                        <span className="text-gray-300">"{s.text.slice(0, 150)}{s.text.length > 150 ? '...' : ''}"</span>
+                                    <div key={i} className="text-xs rounded px-2 py-1.5" style={{ background: 'var(--apple-yellow-bg)', border: '1px solid var(--apple-yellow-border)' }}>
+                                        <span className="text-[10px] font-mono mr-2" style={{ color: 'var(--apple-yellow)' }}>{s.type}</span>
+                                        <span style={{ color: 'var(--apple-text-primary)' }}>"{s.text.slice(0, 150)}{s.text.length > 150 ? '...' : ''}"</span>
                                     </div>
                                 ))}
                             </div>
@@ -641,13 +711,13 @@ function RagtruthTryItPanel() {
 
                     {/* Sources */}
                     <div>
-                        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Retrieved Sources</div>
+                        <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--apple-text-tertiary)' }}>Retrieved Sources</div>
                         <div className="space-y-1">
                             {(pipelineResult.sources || []).map((src, i) => (
-                                <div key={i} className="text-xs bg-gray-900/40 px-2 py-1.5 rounded flex items-center gap-2">
-                                    <span className="font-mono text-gray-500 w-5">{i + 1}</span>
-                                    <span className="text-gray-400 truncate flex-1">{src.title || src.text_preview?.slice(0, 80)}</span>
-                                    <span className="text-gray-600 font-mono text-[10px]">{src.score?.toFixed(3)}</span>
+                                <div key={i} className="text-xs px-2 py-1.5 rounded flex items-center gap-2" style={{ background: 'var(--apple-bg-tertiary)' }}>
+                                    <span className="font-mono w-5" style={{ color: 'var(--apple-text-tertiary)' }}>{i + 1}</span>
+                                    <span className="truncate flex-1" style={{ color: 'var(--apple-text-secondary)' }}>{src.title || src.text_preview?.slice(0, 80)}</span>
+                                    <span className="font-mono text-[10px]" style={{ color: 'var(--apple-text-quaternary)' }}>{src.score?.toFixed(3)}</span>
                                 </div>
                             ))}
                         </div>
@@ -655,8 +725,8 @@ function RagtruthTryItPanel() {
 
                     {/* Quick metrics */}
                     <div className="flex gap-4 text-xs">
-                        <span className="text-gray-500">Deflected: <span className="text-gray-300">{pipelineResult.deflected ? 'Yes' : 'No'}</span></span>
-                        <span className="text-gray-500">Backend: <span className="text-gray-300">{pipelineResult.model}</span></span>
+                        <span style={{ color: 'var(--apple-text-tertiary)' }}>Deflected: <span style={{ color: 'var(--apple-text-primary)' }}>{pipelineResult.deflected ? 'Yes' : 'No'}</span></span>
+                        <span style={{ color: 'var(--apple-text-tertiary)' }}>Backend: <span style={{ color: 'var(--apple-text-primary)' }}>{pipelineResult.model}</span></span>
                     </div>
                 </div>
             )}
@@ -672,7 +742,6 @@ export function BenchmarksTab() {
     const [examples, setExamples] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
-    const [showTopics, setShowTopics] = useState(false)
     const [showExamples, setShowExamples] = useState(false)
 
     // Load results when benchmark changes
@@ -726,60 +795,54 @@ export function BenchmarksTab() {
     return (
         <div className="flex-1 overflow-y-auto">
             <div className="max-w-5xl mx-auto px-4 py-6">
-                {/* Header */}
-                <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 bg-blue-600/10 border border-blue-600/20 rounded-xl flex items-center justify-center">
-                        <BarChartIcon size={20} />
-                    </div>
-                    <div>
-                        <h2 className="text-lg font-semibold text-gray-100">Benchmark Results</h2>
-                        <p className="text-xs text-gray-500">Pipeline performance against standardized evaluation datasets</p>
-                    </div>
-                </div>
-
-                {/* Benchmark selector */}
-                <div className="flex gap-2 mb-6">
+                {/* Benchmark selector — segmented control */}
+                <div className="inline-flex rounded-full p-0.5 mb-5" style={{ background: 'var(--apple-bg-tertiary)', border: '1px solid var(--apple-border-secondary)' }}>
                     {Object.entries(benchmarkInfo).map(([key, bm]) => (
                         <button
                             key={key}
-                            onClick={() => { setActiveBenchmark(key); setShowTopics(false); setShowExamples(false) }}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                                activeBenchmark === key
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-gray-800 text-gray-400 hover:text-gray-200 border border-gray-700'
+                            onClick={() => { setActiveBenchmark(key); setShowExamples(false) }}
+                            className={`px-5 py-1.5 rounded-full text-xs font-medium transition-all ${
+                                activeBenchmark === key ? 'shadow-sm' : 'hover:opacity-80'
                             }`}
+                            style={activeBenchmark === key
+                                ? { background: 'var(--apple-accent)', color: '#fff' }
+                                : { background: 'transparent', color: 'var(--apple-text-secondary)' }
+                            }
                         >
                             {bm.name}
                         </button>
                     ))}
                 </div>
 
-                {/* Benchmark info card */}
-                <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4 mb-6">
-                    <h3 className="text-sm font-semibold text-gray-200">{info.fullName}</h3>
-                    <p className="text-xs text-gray-500 mt-0.5 mb-2">{info.source}</p>
-                    <p className="text-xs text-gray-400">{info.description}</p>
+                {/* Benchmark info */}
+                <div className="mb-6">
+                    <h3 className="text-sm font-medium" style={{ color: 'var(--apple-text-primary)' }}>{info.fullName}</h3>
+                    <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--apple-text-tertiary)' }}>
+                        {info.description}
+                        <span className="mx-1.5" style={{ color: 'var(--apple-text-quaternary)' }}>&mdash;</span>
+                        <span style={{ color: 'var(--apple-text-quaternary)' }}>{info.source}</span>
+                    </p>
                 </div>
 
                 {/* Loading */}
                 {loading && (
                     <div className="flex items-center justify-center py-16">
                         <Spinner size={24} />
-                        <span className="ml-3 text-sm text-gray-400">Loading results...</span>
+                        <span className="ml-3 text-sm" style={{ color: 'var(--apple-text-secondary)' }}>Loading results...</span>
                     </div>
                 )}
 
                 {/* Error */}
                 {error && !loading && (
                     <div className="flex flex-col items-center justify-center py-16 text-center">
-                        <div className="w-16 h-16 bg-gray-800/50 rounded-full flex items-center justify-center mb-4">
+                        <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4" style={{ background: 'var(--apple-glass-bg)' }}>
                             <BarChartIcon size={28} />
                         </div>
-                        <h3 className="text-sm font-medium text-gray-400 mb-2">No results available</h3>
-                        <p className="text-xs text-gray-600 max-w-sm">
+                        <h3 className="text-sm font-medium mb-2" style={{ color: 'var(--apple-text-secondary)' }}>No results available</h3>
+                        <p className="text-xs max-w-sm" style={{ color: 'var(--apple-text-quaternary)' }}>
                             Run the benchmark evaluation from the command line to generate results:
                         </p>
-                        <code className="mt-2 text-xs bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg border border-gray-700">
+                        <code className="mt-2 text-xs px-3 py-1.5 rounded-lg" style={{ background: 'var(--apple-bg-secondary)', color: 'var(--apple-text-primary)', border: '1px solid var(--apple-border-primary)' }}>
                             {activeBenchmark === 'ragbench' ? 'python -m rag_bench.eval.run' : 'python -m rag_bench.eval.ragtruth'}
                         </code>
                     </div>
@@ -791,8 +854,11 @@ export function BenchmarksTab() {
                         {/* Metric groups */}
                         {Object.entries(groups).map(([groupName, keys]) => (
                             <div key={groupName} className="mb-6">
-                                <h4 className="text-xs text-gray-500 uppercase tracking-wider mb-2">{groupName}</h4>
-                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <div className="w-0.5 h-3.5 rounded-full" style={{ background: 'var(--apple-accent)' }} />
+                                    <h4 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--apple-text-tertiary)' }}>{groupName}</h4>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
                                     {keys.map(k => (
                                         <MetricCard key={k} metricKey={k} value={results.summary[k]} />
                                     ))}
@@ -802,68 +868,66 @@ export function BenchmarksTab() {
 
                         {/* RAGTruth extra summary info */}
                         {activeBenchmark === 'ragtruth' && results.summary && (
-                            <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4 mb-6">
-                                <h4 className="text-xs text-gray-500 uppercase tracking-wider mb-2">Confusion Matrix</h4>
+                            <div className="glass-card p-5 mb-6">
+                                <h4 className="text-xs uppercase tracking-wider mb-2" style={{ color: 'var(--apple-text-tertiary)' }}>Confusion Matrix</h4>
                                 <div className="grid grid-cols-2 gap-3 max-w-sm">
                                     {[
-                                        ['True Negatives', results.summary.true_negatives, 'text-emerald-400'],
-                                        ['True Positives', results.summary.true_positives, 'text-emerald-400'],
-                                        ['False Positives', results.summary.false_positives, 'text-red-400'],
-                                        ['False Negatives', results.summary.false_negatives, 'text-red-400'],
+                                        ['True Negatives', results.summary.true_negatives, 'var(--apple-green)'],
+                                        ['True Positives', results.summary.true_positives, 'var(--apple-green)'],
+                                        ['False Positives', results.summary.false_positives, 'var(--apple-red)'],
+                                        ['False Negatives', results.summary.false_negatives, 'var(--apple-red)'],
                                     ].map(([label, val, color]) => val !== undefined && (
                                         <div key={label} className="text-xs">
-                                            <span className="text-gray-500">{label}: </span>
-                                            <span className={`font-bold ${color}`}>{val}</span>
+                                            <span style={{ color: 'var(--apple-text-tertiary)' }}>{label}: </span>
+                                            <span className="font-bold" style={{ color }}>{val}</span>
                                         </div>
                                     ))}
                                 </div>
                             </div>
                         )}
 
-                        {/* Topic breakdown (RAG-Bench only) */}
-                        {activeBenchmark === 'ragbench' && results.by_topic && (
+                        {/* Eval Trends (right after metrics) */}
+                        <TrendsPanel />
+
+                        {/* Topic breakdown (RAG-Bench only) — always visible */}
+                        {activeBenchmark === 'ragbench' && results.by_topic && Object.keys(results.by_topic).length > 0 && (
                             <div className="mb-6">
-                                <button
-                                    onClick={() => setShowTopics(!showTopics)}
-                                    className="flex items-center gap-2 text-sm text-gray-300 hover:text-gray-100 transition mb-2"
-                                >
-                                    {showTopics ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                                    Performance by Topic
-                                </button>
-                                {showTopics && (
-                                    <div className="bg-gray-800/50 border border-gray-700 rounded-xl overflow-hidden">
-                                        <table className="w-full">
-                                            <thead>
-                                                <tr className="text-[10px] text-gray-500 uppercase tracking-wider border-b border-gray-700">
-                                                    <th className="text-left py-2 px-3">Topic</th>
-                                                    <th className="text-center py-2 px-3">Queries</th>
-                                                    <th className="text-center py-2 px-3">MRR</th>
-                                                    <th className="text-center py-2 px-3">Hit Rate</th>
-                                                    <th className="text-center py-2 px-3">Cit. Prec</th>
-                                                    <th className="text-center py-2 px-3">Complete</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {Object.entries(results.by_topic)
-                                                    .sort((a, b) => (b[1].retrieval_mrr || 0) - (a[1].retrieval_mrr || 0))
-                                                    .map(([topic, data]) => (
-                                                        <TopicRow key={topic} topic={topic} data={data} />
-                                                    ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
+                                <div className="flex items-center gap-2 mb-3">
+                                    <div className="w-0.5 h-3.5 rounded-full" style={{ background: 'var(--apple-accent)' }} />
+                                    <h4 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--apple-text-tertiary)' }}>Performance by Topic</h4>
+                                </div>
+                                <div className="glass-card overflow-hidden">
+                                    <table className="w-full">
+                                        <thead>
+                                            <tr className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--apple-text-tertiary)', borderBottom: '1px solid var(--apple-border-primary)' }}>
+                                                <th className="text-left py-2 px-3">Topic</th>
+                                                <th className="text-center py-2 px-3">Queries</th>
+                                                <th className="text-center py-2 px-3">MRR</th>
+                                                <th className="text-center py-2 px-3">Hit Rate</th>
+                                                <th className="text-center py-2 px-3">Cit. Prec</th>
+                                                <th className="text-center py-2 px-3">Complete</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {Object.entries(results.by_topic)
+                                                .sort((a, b) => (b[1].retrieval_mrr || 0) - (a[1].retrieval_mrr || 0))
+                                                .map(([topic, data]) => (
+                                                    <TopicRow key={topic} topic={topic} data={data} />
+                                                ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         )}
 
                         {/* Timestamp */}
                         {results.timestamp && (
-                            <p className="text-xs text-gray-600 mb-4">
+                            <p className="text-xs mb-4" style={{ color: 'var(--apple-text-quaternary)' }}>
                                 Last evaluated: {new Date(results.timestamp).toLocaleString()}
                             </p>
                         )}
                         {results._source_file && (
-                            <p className="text-xs text-gray-600 mb-4">
+                            <p className="text-xs mb-4" style={{ color: 'var(--apple-text-quaternary)' }}>
                                 Source: {results._source_file}
                                 {results.summary?.total_queries && ` (${results.summary.total_queries} queries)`}
                             </p>
@@ -873,16 +937,17 @@ export function BenchmarksTab() {
 
                 {/* Try it section (RAG-Bench) */}
                 {activeBenchmark === 'ragbench' && examples && (
-                    <div className="mt-6 border-t border-gray-800 pt-6">
+                    <div className="mt-6 pt-6" style={{ borderTop: '1px solid var(--apple-divider)' }}>
                         <button
                             onClick={() => setShowExamples(!showExamples)}
-                            className="flex items-center gap-2 text-sm font-medium text-gray-200 hover:text-gray-100 transition mb-4"
+                            className="flex items-center gap-2 text-sm font-medium transition mb-4 hover:opacity-80"
+                            style={{ color: 'var(--apple-text-primary)' }}
                         >
                             {showExamples ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                             <SearchIcon size={14} />
                             Try a Benchmark Example
                         </button>
-                        <p className="text-xs text-gray-500 mb-4">
+                        <p className="text-xs mb-4" style={{ color: 'var(--apple-text-tertiary)' }}>
                             Pick a question from the benchmark and run it through the pipeline to see how retrieval, generation, and citation work in real time.
                         </p>
                         {showExamples && <TryItPanel examples={examples} />}
@@ -891,24 +956,22 @@ export function BenchmarksTab() {
 
                 {/* Try it section (RAGTruth) */}
                 {activeBenchmark === 'ragtruth' && (
-                    <div className="mt-6 border-t border-gray-800 pt-6">
+                    <div className="mt-6 pt-6" style={{ borderTop: '1px solid var(--apple-divider)' }}>
                         <button
                             onClick={() => setShowExamples(!showExamples)}
-                            className="flex items-center gap-2 text-sm font-medium text-gray-200 hover:text-gray-100 transition mb-4"
+                            className="flex items-center gap-2 text-sm font-medium transition mb-4 hover:opacity-80"
+                            style={{ color: 'var(--apple-text-primary)' }}
                         >
                             {showExamples ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                             <SearchIcon size={14} />
                             Try Hallucination Detection
                         </button>
-                        <p className="text-xs text-gray-500 mb-4">
+                        <p className="text-xs mb-4" style={{ color: 'var(--apple-text-tertiary)' }}>
                             Ask a question about AI/ML research. The pipeline generates an answer, then the hallucination detector checks each sentence against the retrieved sources.
                         </p>
                         {showExamples && <RagtruthTryItPanel />}
                     </div>
                 )}
-
-                {/* ── Eval Trends ── */}
-                <TrendsPanel />
 
                 {/* ── Auto-Eval Schedule ── */}
                 <AutoEvalPanel />
@@ -951,15 +1014,15 @@ function TrendChart({ data, series, title, yFormat, height = 140 }) {
 
     return (
         <div className="mt-3">
-            <div className="rounded-lg overflow-hidden" style={{ background: '#181b28', border: '1px solid #2a2f3e' }}>
+            <div className="rounded-xl overflow-hidden" style={{ background: 'var(--apple-chart-bg)', border: '1px solid var(--apple-chart-border)' }}>
                 <div className="px-3 pt-2.5 pb-1">
-                    <span className="text-[11px] font-medium" style={{ color: '#8b8fa3' }}>{title}</span>
+                    <span className="text-[11px] font-medium" style={{ color: 'var(--apple-chart-label)' }}>{title}</span>
                 </div>
-                <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ background: '#111217', display: 'block' }}>
+                <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ background: 'var(--apple-chart-canvas)', display: 'block' }}>
                     {yTicks.map((v, i) => (
                         <g key={i}>
-                            <line x1={PAD_L} y1={yPos(v)} x2={W - PAD_R} y2={yPos(v)} stroke="#1e2130" strokeWidth="1" strokeDasharray="4,3" />
-                            <text x={PAD_L - 6} y={yPos(v) + 3} textAnchor="end" fill="#6c7183" fontSize="8" fontFamily="ui-monospace,monospace">{fmtY(v)}</text>
+                            <line x1={PAD_L} y1={yPos(v)} x2={W - PAD_R} y2={yPos(v)} style={{ stroke: 'var(--apple-chart-grid)' }} strokeWidth="1" strokeDasharray="4,3" />
+                            <text x={PAD_L - 6} y={yPos(v) + 3} textAnchor="end" style={{ fill: 'var(--apple-chart-axis)' }} fontSize="8" fontFamily="ui-monospace,monospace">{fmtY(v)}</text>
                         </g>
                     ))}
                     {series.map((s, idx) => (
@@ -971,14 +1034,14 @@ function TrendChart({ data, series, title, yFormat, height = 140 }) {
                         return <circle key={idx} cx={xPos(data.length - 1)} cy={yPos(last[s.key] || 0)} r="3" fill={s.color} />
                     })}
                     {/* X-axis labels (first and last) */}
-                    <text x={xPos(0)} y={H - 4} textAnchor="start" fill="#6c7183" fontSize="8" fontFamily="ui-monospace,monospace">
+                    <text x={xPos(0)} y={H - 4} textAnchor="start" style={{ fill: 'var(--apple-chart-axis)' }} fontSize="8" fontFamily="ui-monospace,monospace">
                         {data[0].timestamp?.slice(5, 10) || ''}
                     </text>
-                    <text x={xPos(data.length - 1)} y={H - 4} textAnchor="end" fill="#6c7183" fontSize="8" fontFamily="ui-monospace,monospace">
+                    <text x={xPos(data.length - 1)} y={H - 4} textAnchor="end" style={{ fill: 'var(--apple-chart-axis)' }} fontSize="8" fontFamily="ui-monospace,monospace">
                         {data[data.length - 1].timestamp?.slice(5, 10) || ''}
                     </text>
                 </svg>
-                <div className="flex items-center gap-4 px-3 py-1.5 justify-center flex-wrap" style={{ borderTop: '1px solid #1e2130' }}>
+                <div className="flex items-center gap-4 px-3 py-1.5 justify-center flex-wrap" style={{ borderTop: '1px solid var(--apple-chart-grid)' }}>
                     {series.map(s => {
                         const last = data[data.length - 1]
                         const prev = data.length >= 2 ? data[data.length - 2] : null
@@ -987,12 +1050,12 @@ function TrendChart({ data, series, title, yFormat, height = 140 }) {
                         const isUp = delta > 0.001
                         const isDown = delta < -0.001
                         return (
-                            <span key={s.label} className="flex items-center gap-1.5 text-[10px]" style={{ color: '#b3b8c8' }}>
+                            <span key={s.label} className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--apple-chart-label)' }}>
                                 <span className="inline-block w-3 h-0.5 rounded" style={{ backgroundColor: s.color }} />
                                 {s.label}
                                 <span className="font-mono" style={{ color: s.color }}>{fmtY(val)}</span>
-                                {isUp && <span className="text-green-400">+{delta.toFixed(3)}</span>}
-                                {isDown && <span className="text-red-400">{delta.toFixed(3)}</span>}
+                                {isUp && <span style={{ color: 'var(--apple-green)' }}>+{delta.toFixed(3)}</span>}
+                                {isDown && <span style={{ color: 'var(--apple-red)' }}>{delta.toFixed(3)}</span>}
                             </span>
                         )
                     })}
@@ -1016,13 +1079,13 @@ function TrendsPanel() {
             .finally(() => setLoading(false))
     }, [runType])
 
-    if (loading) return <div className="text-xs text-gray-500 mt-6"><Spinner size={14} /> Loading trends...</div>
+    if (loading) return <div className="text-xs mb-6" style={{ color: 'var(--apple-text-tertiary)' }}><Spinner size={14} /> Loading trends...</div>
     if (!trends || trends.length < 2) return null
 
     return (
-        <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mt-6">
+        <div className="glass-card p-5 mb-6">
             <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
+                <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--apple-text-primary)' }}>
                     <BarChartIcon size={16} /> Eval Trends
                 </h3>
                 <div className="flex gap-1 text-xs">
@@ -1031,17 +1094,19 @@ function TrendsPanel() {
                             key={t}
                             onClick={() => setRunType(t)}
                             className={`px-2 py-0.5 rounded transition-colors ${
-                                runType === t
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-gray-700 text-gray-400 hover:text-gray-200'
+                                runType === t ? 'text-white' : 'hover:opacity-80'
                             }`}
+                            style={runType === t
+                                ? { background: 'var(--apple-accent)' }
+                                : { background: 'var(--apple-bg-tertiary)', color: 'var(--apple-text-secondary)' }
+                            }
                         >
                             {t.charAt(0).toUpperCase() + t.slice(1)}
                         </button>
                     ))}
                 </div>
             </div>
-            <p className="text-xs text-gray-500 mb-3">
+            <p className="text-xs mb-3" style={{ color: 'var(--apple-text-tertiary)' }}>
                 Metrics across {trends.length} {runType !== 'all' ? runType + ' ' : ''}evaluation runs.
             </p>
 
@@ -1095,40 +1160,41 @@ function AutoEvalPanel() {
     if (!schedule) return null
 
     return (
-        <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mt-6">
+        <div className="glass-card p-5 mt-6">
             <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
+                <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--apple-text-primary)' }}>
                     <ZapIcon size={16} /> Scheduled Auto-Eval
                 </h3>
                 <button
                     onClick={handleToggle}
                     disabled={toggling}
-                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${schedule.enabled ? 'bg-green-600' : 'bg-gray-600'}`}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors`}
+                    style={{ background: schedule.enabled ? 'var(--apple-green)' : 'var(--apple-text-quaternary)' }}
                 >
                     <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${schedule.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
                 </button>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
-                <div className="bg-gray-900 rounded-lg p-2.5">
-                    <div className="text-gray-500 mb-0.5">Status</div>
-                    <div className={schedule.enabled ? 'text-green-400' : 'text-gray-400'}>
+                <div className="rounded-xl p-2.5" style={{ background: 'var(--apple-bg-tertiary)' }}>
+                    <div className="mb-0.5" style={{ color: 'var(--apple-text-tertiary)' }}>Status</div>
+                    <div style={{ color: schedule.enabled ? 'var(--apple-green)' : 'var(--apple-text-secondary)' }}>
                         {schedule.enabled ? 'Active' : 'Disabled'}
                     </div>
                 </div>
-                <div className="bg-gray-900 rounded-lg p-2.5">
-                    <div className="text-gray-500 mb-0.5">Interval</div>
-                    <div className="text-gray-200">Every {schedule.interval_hours}h</div>
+                <div className="rounded-xl p-2.5" style={{ background: 'var(--apple-bg-tertiary)' }}>
+                    <div className="mb-0.5" style={{ color: 'var(--apple-text-tertiary)' }}>Interval</div>
+                    <div style={{ color: 'var(--apple-text-primary)' }}>Every {schedule.interval_hours}h</div>
                 </div>
-                <div className="bg-gray-900 rounded-lg p-2.5">
-                    <div className="text-gray-500 mb-0.5">Last Run</div>
-                    <div className="text-gray-200">{schedule.last_run ? new Date(schedule.last_run).toLocaleDateString() : '—'}</div>
+                <div className="rounded-xl p-2.5" style={{ background: 'var(--apple-bg-tertiary)' }}>
+                    <div className="mb-0.5" style={{ color: 'var(--apple-text-tertiary)' }}>Last Run</div>
+                    <div style={{ color: 'var(--apple-text-primary)' }}>{schedule.last_run ? new Date(schedule.last_run).toLocaleDateString() : '\u2014'}</div>
                 </div>
             </div>
 
             {schedule.last_run_summary && Object.keys(schedule.last_run_summary).length > 0 && (
-                <div className="mt-3 text-xs text-gray-400">
-                    Last: MRR {schedule.last_run_summary.retrieval_mrr?.toFixed(3) || '—'} · Hit Rate {schedule.last_run_summary.retrieval_hit_rate?.toFixed(3) || '—'} · Latency {Math.round(schedule.last_run_summary.avg_latency_ms || 0)}ms
+                <div className="mt-3 text-xs" style={{ color: 'var(--apple-text-secondary)' }}>
+                    Last: MRR {schedule.last_run_summary.retrieval_mrr?.toFixed(3) || '\u2014'} · Hit Rate {schedule.last_run_summary.retrieval_hit_rate?.toFixed(3) || '\u2014'} · Latency {Math.round(schedule.last_run_summary.avg_latency_ms || 0)}ms
                 </div>
             )}
         </div>

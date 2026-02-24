@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react'
+import ReactDOM from 'react-dom'
 import { METRIC_TIPS } from './MetricTips'
 
 export function Tip({ id, children }) {
@@ -15,29 +16,30 @@ export function Tip({ id, children }) {
     return (
         <span ref={ref} className="metric-tip" onMouseEnter={show} onMouseLeave={() => setTipPos(null)}>
             {children}
-            {tipPos && (
+            {tipPos && ReactDOM.createPortal(
                 <span style={{
                     position: 'fixed',
                     top: tipPos.top - 6,
                     left: tipPos.left,
                     transform: 'translateX(-50%) translateY(-100%)',
-                    background: '#1f2937',
-                    color: '#d1d5db',
+                    background: 'var(--apple-bg-elevated)',
+                    color: 'var(--apple-text-primary)',
                     fontSize: '11px',
                     fontWeight: 400,
                     lineHeight: 1.4,
                     padding: '6px 10px',
                     borderRadius: '8px',
-                    border: '1px solid #374151',
+                    border: '1px solid var(--apple-border-primary)',
                     whiteSpace: 'normal',
                     width: 'max-content',
                     maxWidth: '260px',
                     zIndex: 9999,
                     pointerEvents: 'none',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+                    boxShadow: 'var(--apple-shadow-md)',
                 }}>
                     {text}
-                </span>
+                </span>,
+                document.body
             )}
         </span>
     )

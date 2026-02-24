@@ -2,16 +2,15 @@ import React from 'react'
 import { Tip } from './Tip'
 
 export function badgeStyle(level) {
-    if (level === 'green') return { background: '#052e16', color: '#4ade80', borderColor: '#166534' }
-    if (level === 'yellow') return { background: '#422006', color: '#fbbf24', borderColor: '#92400e' }
-    return { background: '#450a0a', color: '#f87171', borderColor: '#991b1b' }
+    if (level === 'green') return { background: 'var(--apple-green-bg)', color: 'var(--apple-green)', borderColor: 'var(--apple-green-border)' }
+    if (level === 'yellow') return { background: 'var(--apple-yellow-bg)', color: 'var(--apple-yellow)', borderColor: 'var(--apple-yellow-border)' }
+    return { background: 'var(--apple-red-bg)', color: 'var(--apple-red)', borderColor: 'var(--apple-red-border)' }
 }
 
 export function QualityBadges({ quality }) {
     if (!quality) return null
     const conf = quality.retrieval_confidence || 'unknown'
     const confLevel = conf === 'high' ? 'green' : conf === 'medium' ? 'yellow' : 'red'
-    const confDot = conf === 'high' ? '#4ade80' : conf === 'medium' ? '#fbbf24' : '#f87171'
 
     const perSource = quality.per_source_cited || []
     const anyFooterOnly = perSource.some(s => s.footer_only)
@@ -28,7 +27,7 @@ export function QualityBadges({ quality }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
             <Tip id="retrieval_confidence">
                 <span className="quality-badge" style={badgeStyle(confLevel)}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: confDot, display: 'inline-block' }}></span>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: confLevel === 'green' ? 'var(--apple-green)' : confLevel === 'yellow' ? 'var(--apple-yellow)' : 'var(--apple-red)', display: 'inline-block' }}></span>
                     {conf === 'unknown' ? 'N/A' : conf.charAt(0).toUpperCase() + conf.slice(1)}
                 </span>
             </Tip>

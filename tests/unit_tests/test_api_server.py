@@ -407,6 +407,29 @@ class TestFrontendEndpoint:
             assert response.status_code == 404
 
 
+class TestFaviconEndpoint:
+    """Test the favicon endpoint."""
+
+    def test_favicon_served(self, client, tmp_path):
+        """Test favicon served when it exists."""
+        favicon = tmp_path / "favicon.svg"
+        favicon.write_text('<svg xmlns="http://www.w3.org/2000/svg"></svg>')
+        mock_dist = MagicMock()
+        mock_dist.__truediv__ = lambda self, name: favicon
+        with patch("rag_bench.api.server.FRONTEND_DIST", mock_dist):
+            response = client.get("/favicon.svg")
+            assert response.status_code == 200
+
+    def test_favicon_not_found(self, client, tmp_path):
+        """Test favicon 404 when it doesn't exist."""
+        mock_dist = MagicMock()
+        missing = tmp_path / "missing.svg"
+        mock_dist.__truediv__ = lambda self, name: missing
+        with patch("rag_bench.api.server.FRONTEND_DIST", mock_dist):
+            response = client.get("/favicon.svg")
+            assert response.status_code == 404
+
+
 class TestInvalidRequests:
     """Test invalid request handling."""
 
