@@ -69,7 +69,7 @@ def build_llm_backend(backend: str, model: str = "", base_url: str = ""):
         )
     elif backend == "openai":
         return OpenAICompatibleBackend(
-            model=model or "mistral-7b-instruct",
+            model=model or "gemma2:27b",
             base_url=base_url or "http://localhost:8000/v1",
         )
     else:
