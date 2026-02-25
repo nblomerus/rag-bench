@@ -68,11 +68,11 @@ echo -e "\n${YELLOW}[3/6]${NC} Setting up repository..."
 
 if [ ! -d ".git" ]; then
     echo "Cloning repository..."
-    # Replace with your actual git repository
     git clone https://github.com/nblomerus/rag-bench.git .
 else
     echo "Updating repository..."
-    git pull origin master
+    git fetch origin master
+    git reset --hard origin/master
 fi
 
 echo -e "${GREEN}✓ Repository synced${NC}"
