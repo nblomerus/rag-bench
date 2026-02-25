@@ -180,7 +180,32 @@ prod-shell:
 	@chmod +x scripts/prod-ops.sh
 	@./scripts/prod-ops.sh shell
 
-# Git 
+# Evaluation
+
+eval:
+	@echo "Triggering full evaluation suite (dev)..."
+	@docker compose exec api python -c "\
+		import httpx, json; \
+		c = httpx.Client(base_url='http://localhost:8000', timeout=None); \
+		print('=== RAG-Bench ==='); \
+		r = c.post('/api/eval/benchmark', json={'benchmark': 'ragbench', 'sample_size': 0}); \
+		print(json.dumps(r.json(), indent=2)); \
+		print(); \
+		print('=== RAGTruth ==='); \
+		r = c.post('/api/eval/benchmark', json={'benchmark': 'ragtruth', 'sample_size': 0}); \
+		print(json.dumps(r.json(), indent=2))"
+
+prod-eval:
+	@echo "Triggering full evaluation suite (saved as manual)..."
+	@chmod +x scripts/prod-ops.sh
+	@./scripts/prod-ops.sh eval
+
+prod-eval-store:
+	@echo "Triggering full evaluation suite (saved as production)..."
+	@chmod +x scripts/prod-ops.sh
+	@./scripts/prod-ops.sh eval-production
+
+# Git
 
 prune-branches:
 	git fetch --all --prune
@@ -243,6 +268,11 @@ help:
 	@echo "  prod-status     Check production status"
 	@echo "  prod-shell      Shell into production container"
 	@echo ""
+	@echo "Evaluation:"
+	@echo "  eval            Run full evaluation suite (dev)"
+	@echo "  prod-eval       Run full eval suite, saved as manual"
+	@echo "  prod-eval-store  Run full eval suite, saved as production"
+	@echo ""
 	@echo "Git:"
 	@echo "  prune-branches  Delete local branches removed from remote"
 	@echo ""
@@ -251,4 +281,5 @@ help:
         docker-build docker-build-frontend docker-up docker-down docker-logs docker-ps docker-exec-api docker-clean docker-restart \
         deploy-dev deploy deploy-ssl switch-dev switch-prod env-status backup restore rollback health-monitor \
         monitoring-up monitoring-down monitoring-logs \
-        prod-start prod-stop prod-restart prod-rebuild prod-ingest prod-logs prod-status prod-shell
+        prod-start prod-stop prod-restart prod-rebuild prod-ingest prod-logs prod-status prod-shell \
+        eval prod-eval prod-eval-store

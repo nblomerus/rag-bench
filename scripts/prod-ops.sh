@@ -30,6 +30,10 @@ show_help() {
     echo "  ingest                 Ingest new papers from data/pdfs/"
     echo "  add-pdf <file>         Copy PDF to production and ingest"
     echo ""
+    echo "Evaluation:"
+    echo "  eval                   Run full evaluation suite (saved as manual)"
+    echo "  eval-production        Run full evaluation suite (saved as production)"
+    echo ""
     echo "Development & Debugging:"
     echo "  shell                  Open shell in API container"
     echo "  python                 Open Python REPL in production"
@@ -212,6 +216,54 @@ cmd_rebuild() {
     curl -s http://localhost/api/health && echo " ✓" || echo " ✗ (give it a moment)"
 }
 
+cmd_eval() {
+    check_running
+    echo "📊 Running full evaluation suite (this may take several minutes)..."
+    dc exec -T api python -c "
+import httpx, json
+
+client = httpx.Client(base_url='http://localhost:8000', timeout=None)
+
+print('=== RAG-Bench ===')
+r = client.post('/api/eval/benchmark', json={'benchmark': 'ragbench', 'sample_size': 0})
+print(json.dumps(r.json(), indent=2))
+
+print()
+print('=== RAGTruth ===')
+r = client.post('/api/eval/benchmark', json={'benchmark': 'ragtruth', 'sample_size': 0})
+print(json.dumps(r.json(), indent=2))
+"
+}
+
+cmd_eval_production() {
+    check_running
+    echo "📊 Running production evaluation (this may take several minutes)..."
+    dc exec -T api python -c "
+from rag_bench.eval.benchmark import get_benchmark
+from rag_bench.eval.judge import JudgeLLM
+from rag_bench.eval.report import save_report, generate_terminal_summary
+from rag_bench.eval.runner import EvalRunner
+from rag_bench.core.retriever import Retriever
+from rag_bench.core.generator import Generator
+
+retriever = Retriever()
+generator = Generator()
+judge = JudgeLLM(generator.llm)
+benchmark = get_benchmark()
+
+runner = EvalRunner(
+    retriever=retriever,
+    generator=generator,
+    judge=judge,
+    benchmark=benchmark,
+)
+
+report = runner.run_all()
+save_report(report, 'eval_results', run_type='production')
+print(generate_terminal_summary(report))
+"
+}
+
 cmd_stats() {
     check_running
     echo "📊 Live Resource Usage (Ctrl+C to exit)"
@@ -234,6 +286,12 @@ case "${1:-help}" in
         ;;
     stats)
         cmd_stats
+        ;;
+    eval)
+        cmd_eval
+        ;;
+    eval-production)
+        cmd_eval_production
         ;;
     query)
         shift
