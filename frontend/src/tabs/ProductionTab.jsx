@@ -30,7 +30,7 @@ function formatUptime(seconds) {
 
 // ── Grafana-style SVG time-series chart ──
 
-function TimeChart({ data, series, title, yFormat, height = 180, emptyMessage }) {
+function TimeChart({ data, series, title, yFormat, height = 180, emptyMessage, rangeMs }) {
     const [hoverIdx, setHoverIdx] = useState(null)
     const svgRef = useRef(null)
     const cid = useRef(`tc${Math.random().toString(36).slice(2, 8)}`).current
@@ -81,7 +81,15 @@ function TimeChart({ data, series, title, yFormat, height = 180, emptyMessage })
     for (let v = 0; v <= maxVal + niceStep * 0.5; v += niceStep) yTicks.push(Math.round(v * 100) / 100)
     const yMax = yTicks[yTicks.length - 1] || maxVal * 1.15
 
-    function xPos(i) { return PAD_L + (i / (data.length - 1)) * chartW }
+    // Timestamp-based x positioning anchored to [tMin, tMax]
+    const tMax = Date.now()
+    const tMin = rangeMs ? tMax - rangeMs : (data[0]?.t ? new Date(data[0].t).getTime() : tMax - 60 * 60 * 1000)
+    const tSpan = tMax - tMin || 1
+
+    function xPos(i) {
+        const t = data[i]?.t ? new Date(data[i].t).getTime() : tMin
+        return PAD_L + ((t - tMin) / tSpan) * chartW
+    }
     function yPos(v) { return PAD_T + chartH - (Math.min(v, yMax) / yMax) * chartH }
     const yBottom = PAD_T + chartH
 
@@ -109,10 +117,10 @@ function TimeChart({ data, series, title, yFormat, height = 180, emptyMessage })
 
     const fmtY = yFormat || (v => v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${Math.round(v)}ms`)
 
-    // X-axis time labels (evenly spaced)
-    const xLabelCount = Math.min(5, data.length)
-    const xIndices = Array.from({ length: xLabelCount }, (_, i) =>
-        Math.round(i * (data.length - 1) / (xLabelCount - 1))
+    // X-axis time labels (evenly spaced across the time range, like Grafana)
+    const xLabelCount = 5
+    const xTickTimes = Array.from({ length: xLabelCount }, (_, i) =>
+        tMin + (i / (xLabelCount - 1)) * tSpan
     )
 
     function handleMouseMove(e) {
@@ -215,11 +223,11 @@ function TimeChart({ data, series, title, yFormat, height = 180, emptyMessage })
                     )}
 
                     {/* X-axis time labels */}
-                    {xIndices.map(i => {
-                        const t = data[i]?.t ? new Date(data[i].t) : null
-                        if (!t) return null
+                    {xTickTimes.map((tickMs, i) => {
+                        const t = new Date(tickMs)
+                        const tickX = PAD_L + (i / (xLabelCount - 1)) * chartW
                         return (
-                            <text key={i} x={xPos(i)} y={H - 4} textAnchor="middle"
+                            <text key={i} x={tickX} y={H - 4} textAnchor="middle"
                                 style={{ fill: 'var(--apple-chart-axis)' }} fontSize="9" fontFamily="ui-monospace,monospace">
                                 {t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </text>
@@ -464,6 +472,7 @@ export function ProductionTab() {
                         </div>
                         <TimeChart
                             data={lh}
+                            rangeMs={rangeMs}
                             title="Queries Over Time"
                             emptyMessage="No queries yet"
                             yFormat={v => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${Math.round(v)}`}
@@ -500,6 +509,7 @@ export function ProductionTab() {
                         )}
                         <TimeChart
                             data={lh}
+                            rangeMs={rangeMs}
                             title="Latency Percentiles Over Time"
                             emptyMessage="Waiting for queries — ask a question to see latency data"
                             series={[
@@ -547,6 +557,7 @@ export function ProductionTab() {
                         )}
                         <TimeChart
                             data={lh}
+                            rangeMs={rangeMs}
                             title="Per-Query Pipeline Timing"
                             emptyMessage="Waiting for queries — pipeline timing will appear here"
                             series={[
@@ -572,6 +583,7 @@ export function ProductionTab() {
                         {/* CPU & RAM over time */}
                         <TimeChart
                             data={filteredHw}
+                            rangeMs={rangeMs}
                             title="CPU & RAM Over Time"
                             emptyMessage="Collecting data — chart will appear after two polling intervals"
                             yFormat={v => `${Math.round(v)}%`}
@@ -603,6 +615,7 @@ export function ProductionTab() {
                             <TimeChart
                                 key={`gpu-chart-${i}`}
                                 data={filteredGpu}
+                                rangeMs={rangeMs}
                                 title={`${gpu.name} — Utilization & Temperature`}
                                 emptyMessage="Collecting data — GPU chart will appear after two polling intervals"
                                 yFormat={v => `${Math.round(v)}`}
