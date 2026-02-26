@@ -1,10 +1,10 @@
 # RAG-Bench
 
 [![CI](https://github.com/nblomerus/rag-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/nblomerus/rag-bench/actions/workflows/ci.yml)
-![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen)
-![Python](https://img.shields.io/badge/python-3.11-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Version](https://img.shields.io/badge/version-0.0.19-blue)
+![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/nblomerus/0ccf5c2eaa0512f4cc204b5cadb446c7/raw/coverage.json)
+![Python](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/nblomerus/0ccf5c2eaa0512f4cc204b5cadb446c7/raw/python.json)
+![License](https://img.shields.io/github/license/nblomerus/rag-bench)
+![Version](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/nblomerus/0ccf5c2eaa0512f4cc204b5cadb446c7/raw/version.json)
 
 A self-hosted RAG pipeline for querying 500+ AI/ML research papers. Hybrid retrieval (BM25 + dense embeddings + cross-encoder reranking), LLM generation with inline source citations, in-browser PDF viewing, and a built-in evaluation framework — all running on a single machine.
 
