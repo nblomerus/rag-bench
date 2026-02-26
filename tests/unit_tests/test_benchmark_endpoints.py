@@ -57,8 +57,8 @@ class TestBenchmarkLatest:
         assert body["summary"]["total_queries"] == 10
         assert "_source_file" in body
 
-    def test_ragbench_prefers_production(self, client, tmp_path):
-        """Production file is preferred over manual."""
+    def test_ragbench_returns_most_recent(self, client, tmp_path):
+        """Most recent file (by mtime) wins regardless of directory."""
         prod_dir = tmp_path / "production"
         prod_dir.mkdir()
         manual_dir = tmp_path / "manual"
@@ -66,8 +66,41 @@ class TestBenchmarkLatest:
 
         prod_data = {"summary": {"total_queries": 100}, "metadata": {"run_type": "production"}}
         manual_data = {"summary": {"total_queries": 5}, "metadata": {"run_type": "manual"}}
-        (prod_dir / "eval_20260201_120000.json").write_text(json.dumps(prod_data))
-        (manual_dir / "eval_20260202_120000.json").write_text(json.dumps(manual_data))
+        prod_file = prod_dir / "eval_20260201_120000.json"
+        prod_file.write_text(json.dumps(prod_data))
+        # Give manual file a strictly newer mtime
+        import os
+
+        manual_file = manual_dir / "eval_20260202_120000.json"
+        manual_file.write_text(json.dumps(manual_data))
+        os.utime(prod_file, (1000000, 1000000))  # old
+        os.utime(manual_file, (2000000, 2000000))  # newer
+
+        p1, p2, p3 = self._patch_eval_dirs(tmp_path)
+        with p1, p2, p3:
+            resp = client.get("/api/eval/benchmark/latest/ragbench")
+        assert resp.status_code == 200
+        assert resp.json()["summary"]["total_queries"] == 5
+        assert resp.json()["_run_type"] == "manual"
+
+    def test_ragbench_production_wins_on_tie(self, client, tmp_path):
+        """Production wins when mtime matches manual."""
+        prod_dir = tmp_path / "production"
+        prod_dir.mkdir()
+        manual_dir = tmp_path / "manual"
+        manual_dir.mkdir()
+
+        prod_data = {"summary": {"total_queries": 100}, "metadata": {"run_type": "production"}}
+        manual_data = {"summary": {"total_queries": 5}, "metadata": {"run_type": "manual"}}
+        prod_file = prod_dir / "eval_20260201_120000.json"
+        prod_file.write_text(json.dumps(prod_data))
+        manual_file = manual_dir / "eval_20260201_120000.json"
+        manual_file.write_text(json.dumps(manual_data))
+        # Force identical mtime
+        import os
+
+        os.utime(prod_file, (1000000, 1000000))
+        os.utime(manual_file, (1000000, 1000000))
 
         p1, p2, p3 = self._patch_eval_dirs(tmp_path)
         with p1, p2, p3:
