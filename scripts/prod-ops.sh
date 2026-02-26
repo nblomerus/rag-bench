@@ -239,28 +239,18 @@ cmd_eval_production() {
     check_running
     echo "📊 Running production evaluation (this may take several minutes)..."
     dc exec -T api python -c "
-from rag_bench.eval.benchmark import get_benchmark
-from rag_bench.eval.judge import JudgeLLM
-from rag_bench.eval.report import save_report, generate_terminal_summary
-from rag_bench.eval.runner import EvalRunner
-from rag_bench.core.retriever import Retriever
-from rag_bench.core.generator import Generator
+import httpx, json
 
-retriever = Retriever()
-generator = Generator()
-judge = JudgeLLM(generator.llm)
-benchmark = get_benchmark()
+client = httpx.Client(base_url='http://localhost:8000', timeout=None)
 
-runner = EvalRunner(
-    retriever=retriever,
-    generator=generator,
-    judge=judge,
-    benchmark=benchmark,
-)
+print('=== RAG-Bench ===')
+r = client.post('/api/eval/benchmark', json={'benchmark': 'ragbench', 'sample_size': 0, 'run_type': 'production'})
+print(json.dumps(r.json(), indent=2))
 
-report = runner.run_all()
-save_report(report, 'eval_results', run_type='production')
-print(generate_terminal_summary(report))
+print()
+print('=== RAGTruth ===')
+r = client.post('/api/eval/benchmark', json={'benchmark': 'ragtruth', 'sample_size': 0, 'run_type': 'production'})
+print(json.dumps(r.json(), indent=2))
 "
 }
 

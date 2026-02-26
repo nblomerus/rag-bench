@@ -208,6 +208,7 @@ class FullEvalResponse(BaseModel):
 class BenchmarkEvalRequest(BaseModel):
     benchmark: str = Field(..., description="Benchmark to run: 'ragbench' or 'ragtruth'")
     sample_size: int = Field(default=50, ge=0, le=5000, description="Number of entries to evaluate (0 = all)")
+    run_type: str = Field(default="manual", description="How to persist results: 'manual' or 'production'")
 
 
 class BenchmarkResultItem(BaseModel):

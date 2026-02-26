@@ -1861,11 +1861,14 @@ class RAGGenerator:
         boost_candidates = k * 5 if self.citation_booster else k  # 5x candidates for boosting
         boost_candidates = min(boost_candidates, 50)  # Cap at 50
 
+        _retrieval_start = time.time()
         retrieval = self.retriever.query(
             question,
             top_k=boost_candidates,
             inject_chunks=inject_chunks or None,
         )
+        _retrieval_ms = (time.time() - _retrieval_start) * 1000
+        _reranking_ms = getattr(self.retriever, "_last_reranking_ms", 0.0)
 
         # Check if foundational paper survived retrieval
         if relevant_ids:
@@ -1978,6 +1981,9 @@ class RAGGenerator:
                 "deflected": True,
                 "deflection_reason": reason,
                 "scores": [r.get("score", 0) for r in retrieval],
+                "retrieval_ms": round(_retrieval_ms, 1),
+                "reranking_ms": round(_reranking_ms, 1),
+                "generation_ms": 0.0,
             }
 
         # Step 3: Filter to relevant sources only
@@ -2021,11 +2027,11 @@ class RAGGenerator:
             logger.error(f"LLM generation failed: {e}")
             fallback = TemplateFallbackBackend()
             answer_text = fallback.generate(prompt=prompt)
-        _gen_elapsed = time.time() - _gen_start
+        _generation_ms = (time.time() - _gen_start) * 1000
         try:
             from rag_bench.observability.metrics import GENERATION_DURATION
 
-            GENERATION_DURATION.observe(_gen_elapsed)
+            GENERATION_DURATION.observe(_generation_ms / 1000)
         except Exception:
             pass
 
@@ -2055,6 +2061,9 @@ class RAGGenerator:
                 "deflected": True,
                 "deflection_reason": reason,
                 "scores": [r.get("score", 0) for r in retrieval],
+                "retrieval_ms": round(_retrieval_ms, 1),
+                "reranking_ms": round(_reranking_ms, 1),
+                "generation_ms": round(_generation_ms, 1),
             }
 
         # Step 6: Format citations
@@ -2073,6 +2082,9 @@ class RAGGenerator:
             "deflected": False,
             "deflection_reason": "",
             "scores": [r.get("score", 0) for r in retrieval],
+            "retrieval_ms": round(_retrieval_ms, 1),
+            "reranking_ms": round(_reranking_ms, 1),
+            "generation_ms": round(_generation_ms, 1),
         }
 
     def answer_stream(self, question: str, top_k: int | None = None):
@@ -2121,11 +2133,14 @@ class RAGGenerator:
         boost_candidates = k * 5 if self.citation_booster else k  # 5x candidates for boosting
         boost_candidates = min(boost_candidates, 50)  # Cap at 50
 
+        _retrieval_start = time.time()
         retrieval = self.retriever.query(
             question,
             top_k=boost_candidates,
             inject_chunks=inject_chunks or None,
         )
+        _retrieval_ms = (time.time() - _retrieval_start) * 1000
+        _reranking_ms = getattr(self.retriever, "_last_reranking_ms", 0.0)
 
         # Apply citation boosting (if enabled)
         if self.citation_booster:
@@ -2181,6 +2196,8 @@ class RAGGenerator:
             "results": retrieval,
             "filtered_results": relevant,
             "scores": [r.get("score", 0) for r in retrieval],
+            "retrieval_ms": round(_retrieval_ms, 1),
+            "reranking_ms": round(_reranking_ms, 1),
         }
 
         should_deflect, reason = self.gate.should_deflect(retrieval, question=question)
@@ -2235,6 +2252,7 @@ class RAGGenerator:
         full_text = ""
         has_streaming = hasattr(self.llm, "generate_stream")
 
+        _gen_start = time.time()
         if has_streaming:
             try:
                 for token in self.llm.generate_stream(
@@ -2258,6 +2276,7 @@ class RAGGenerator:
                 fallback = TemplateFallbackBackend()
                 full_text = fallback.generate(prompt=prompt)
             yield {"event": "token", "token": full_text}
+        _generation_ms = (time.time() - _gen_start) * 1000
 
         full_text = postprocess_math(full_text)
 
@@ -2287,6 +2306,9 @@ class RAGGenerator:
             "event": "done",
             "answer": full_text.strip(),
             "sources": citations,
+            "retrieval_ms": round(_retrieval_ms, 1),
+            "reranking_ms": round(_reranking_ms, 1),
+            "generation_ms": round(_generation_ms, 1),
         }
 
     def print_answer(self, question: str, top_k: int | None = None):

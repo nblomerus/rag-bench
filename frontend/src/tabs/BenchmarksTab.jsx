@@ -1069,7 +1069,7 @@ function TrendChart({ data, series, title, yFormat, height = 140 }) {
 function TrendsPanel() {
     const [trends, setTrends] = useState(null)
     const [loading, setLoading] = useState(true)
-    const [runType, setRunType] = useState('production')
+    const runType = 'production'
 
     useEffect(() => {
         setLoading(true)
@@ -1088,26 +1088,9 @@ function TrendsPanel() {
                 <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--apple-text-primary)' }}>
                     <BarChartIcon size={16} /> Eval Trends
                 </h3>
-                <div className="flex gap-1 text-xs">
-                    {['production', 'manual', 'all'].map(t => (
-                        <button
-                            key={t}
-                            onClick={() => setRunType(t)}
-                            className={`px-2 py-0.5 rounded transition-colors ${
-                                runType === t ? 'text-white' : 'hover:opacity-80'
-                            }`}
-                            style={runType === t
-                                ? { background: 'var(--apple-accent)' }
-                                : { background: 'var(--apple-bg-tertiary)', color: 'var(--apple-text-secondary)' }
-                            }
-                        >
-                            {t.charAt(0).toUpperCase() + t.slice(1)}
-                        </button>
-                    ))}
-                </div>
             </div>
             <p className="text-xs mb-3" style={{ color: 'var(--apple-text-tertiary)' }}>
-                Metrics across {trends.length} {runType !== 'all' ? runType + ' ' : ''}evaluation runs.
+                Metrics across {trends.length} production evaluation runs.
             </p>
 
             <TrendChart

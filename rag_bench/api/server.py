@@ -880,9 +880,11 @@ async def query_rag_stream(request: QueryRequest, raw_request: Request):
 
             gen = generator.answer_stream(request.question, top_k=request.top_k)
 
-            # Capture results from the sources event so quality metrics can be computed at done
+            # Capture results and timing from events
             _stream_all_results: list[dict] = []
             _stream_filtered_results: list[dict] = []
+            _stream_retrieval_ms = 0.0
+            _stream_reranking_ms = 0.0
 
             while True:
                 evt = await loop.run_in_executor(None, _next_or_stop, gen)
@@ -892,6 +894,8 @@ async def query_rag_stream(request: QueryRequest, raw_request: Request):
                 if evt["event"] == "sources":
                     _stream_all_results = evt.get("results", [])
                     _stream_filtered_results = evt.get("filtered_results", [])
+                    _stream_retrieval_ms = evt.get("retrieval_ms", 0.0)
+                    _stream_reranking_ms = evt.get("reranking_ms", 0.0)
                     display_results = _stream_filtered_results or _stream_all_results
                     sources = _format_sources(display_results)
                     yield f"data: {json.dumps({'event': 'sources', 'sources': [s.model_dump() for s in sources]})}\n\n"
@@ -914,6 +918,8 @@ async def query_rag_stream(request: QueryRequest, raw_request: Request):
                         latency_ms=latency,
                         status="deflected",
                         question_preview=request.question,
+                        retrieval_ms=_stream_retrieval_ms,
+                        reranking_ms=_stream_reranking_ms,
                         client_ip=client_ip,
                     )
                     UNIQUE_USERS.set(len(_tracker.unique_ips))
@@ -953,6 +959,9 @@ async def query_rag_stream(request: QueryRequest, raw_request: Request):
                         latency_ms=latency,
                         status="success",
                         question_preview=request.question,
+                        retrieval_ms=evt.get("retrieval_ms", 0.0),
+                        generation_ms=evt.get("generation_ms", 0.0),
+                        reranking_ms=evt.get("reranking_ms", 0.0),
                         citation_coverage=quality.citation_coverage,
                         client_ip=client_ip,
                     )
@@ -1517,11 +1526,11 @@ async def run_benchmark_evaluation(request: BenchmarkEvalRequest):
             _benchmark_history[:] = _benchmark_history[:50]
         _save_benchmark_history()
 
-        # Save ragbench evals to disk as manual runs
+        # Save ragbench evals to disk
         if request.benchmark == "ragbench":
             from rag_bench.eval.report import save_report as _save_report
 
-            _save_report(report, str(PROJECT_ROOT / "eval_results"), run_type="manual")
+            _save_report(report, str(PROJECT_ROOT / "eval_results"), run_type=request.run_type)
 
         return BenchmarkEvalResponse(
             benchmark=request.benchmark,
@@ -1557,22 +1566,28 @@ EVAL_MANUAL_DIR = EVAL_RESULTS_DIR / "manual"
 
 
 def _find_latest_eval(prefer_production: bool = True):
-    """Find the most recent eval JSON file, preferring production if requested."""
-    dirs_to_check = []
-    if prefer_production:
-        dirs_to_check.append(EVAL_PRODUCTION_DIR)
-    dirs_to_check.extend([EVAL_MANUAL_DIR, EVAL_RESULTS_DIR])
+    """Find the most recent eval JSON file.
 
-    for d in dirs_to_check:
+    When *prefer_production* is True and a production result exists with the
+    same timestamp as a manual result, the production file wins.  Otherwise
+    the globally most-recent file (by mtime) is returned regardless of
+    directory.
+    """
+    candidates = []
+    for d in (EVAL_PRODUCTION_DIR, EVAL_MANUAL_DIR, EVAL_RESULTS_DIR):
         if not d.exists():
             continue
-        files = sorted(
-            (f for f in d.glob("eval_*.json") if f.parent == d),
-            key=lambda p: p.stat().st_mtime,
-        )
-        if files:
-            return files[-1]
-    return None
+        candidates.extend(f for f in d.glob("eval_*.json") if f.parent == d)
+
+    if not candidates:
+        return None
+
+    # Sort by mtime; on tie, production wins when preferred
+    def _sort_key(p):
+        is_prod = 1 if (prefer_production and p.parent == EVAL_PRODUCTION_DIR) else 0
+        return (p.stat().st_mtime, is_prod)
+
+    return max(candidates, key=_sort_key)
 
 
 def _collect_eval_files(run_type: str = "all") -> list:

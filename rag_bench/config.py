@@ -18,7 +18,7 @@ DATASET_NAME = "jamescalam/ai-arxiv2"
 DATASET_SPLIT = "train"
 
 # ── Embedding Model ──
-EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
+EMBEDDING_MODEL = os.environ.get("RAG_EMBEDDING_MODEL", "BAAI/bge-base-en-v1.5")
 EMBEDDING_DIM = 768
 EMBEDDING_NORMALIZE = True  # BGE models require L2 normalization
 
@@ -68,10 +68,10 @@ SECTION_BLOCKLIST = frozenset(
 # ── Retrieval ──
 DEFAULT_TOP_K = 10
 RELEVANCE_THRESHOLD = 0.3  # minimum cosine similarity to consider relevant
-FIRST_STAGE_K = 200  # candidates per first-stage retriever (BM25 + dense)
-RERANK_CANDIDATES = 100  # candidates passed to cross-encoder reranker
-BM25_WEIGHT = 0.3  # RRF fusion weight for BM25 (reduced at scale)
-DENSE_WEIGHT = 0.7  # RRF fusion weight for dense retrieval
+FIRST_STAGE_K = 500  # candidates per first-stage retriever (BM25 + dense)
+RERANK_CANDIDATES = 200  # candidates passed to cross-encoder reranker
+BM25_WEIGHT = 0.4  # RRF fusion weight for BM25
+DENSE_WEIGHT = 0.6  # RRF fusion weight for dense retrieval
 
 # ── Reranker ──
 RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"

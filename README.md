@@ -95,17 +95,17 @@ python -m rag_bench.cli.pipeline --hybrid       # Chunk, embed, index
 
 Two retrievers run in parallel and their results are fused.
 
-**BM25 (sparse).** Okapi BM25 (`k1=1.5`, `b=0.75`) over all chunks. Queries are tokenized to lowercase alphanumeric tokens with 100+ stopwords removed (standard English + ML-specific: "model", "method", "approach", "results", "proposed"). Top 200 candidates are selected via numpy `argpartition` in O(n).
+**BM25 (sparse).** Okapi BM25 (`k1=1.5`, `b=0.75`) over all chunks. Queries are tokenized to lowercase alphanumeric tokens with standard English stopwords removed. Top 500 candidates are selected via numpy `argpartition` in O(n).
 
-**Dense retrieval.** The query is prefixed with `"Represent this sentence for searching relevant passages: "` (BGE requirement), embedded with the same `bge-base-en-v1.5` model, and searched against the ChromaDB HNSW index. Returns the top 200 nearest neighbors by cosine similarity.
+**Dense retrieval.** The query is prefixed with `"Represent this sentence for searching relevant passages: "` (BGE requirement), embedded with the same `bge-base-en-v1.5` model, and searched against the ChromaDB HNSW index. Returns the top 500 nearest neighbors by cosine similarity.
 
 **Reciprocal Rank Fusion.** Both ranked lists are merged by chunk ID using RRF with `k=60`:
 
 ```
-RRF_score(chunk) = 0.3 / (60 + rank_bm25 + 1) + 0.7 / (60 + rank_dense + 1)
+RRF_score(chunk) = 0.4 / (60 + rank_bm25 + 1) + 0.6 / (60 + rank_dense + 1)
 ```
 
-BM25 gets 30% weight (lower precision at scale), dense gets 70%. The fused list is sorted by combined RRF score.
+BM25 gets 40% weight, dense gets 60%. The fused list is sorted by combined RRF score.
 
 ### Stage 2: Citation Boost
 
@@ -167,10 +167,10 @@ All tunable values live in `config.py`:
 |-----------|-------|---------|
 | `CHUNK_SIZE_CHARS` | 1024 | Characters per chunk |
 | `CHUNK_OVERLAP_CHARS` | 128 | Overlap between chunks |
-| `FIRST_STAGE_K` | 200 | Candidates per retriever |
-| `RERANK_CANDIDATES` | 100 | Candidates sent to cross-encoder |
-| `BM25_WEIGHT` | 0.3 | RRF sparse weight |
-| `DENSE_WEIGHT` | 0.7 | RRF dense weight |
+| `FIRST_STAGE_K` | 500 | Candidates per retriever |
+| `RERANK_CANDIDATES` | 200 | Candidates sent to cross-encoder |
+| `BM25_WEIGHT` | 0.4 | RRF sparse weight |
+| `DENSE_WEIGHT` | 0.6 | RRF dense weight |
 | `DEFAULT_TOP_K` | 10 | Final results to generator |
 | `RELEVANCE_THRESHOLD` | 0.3 | Min score for relevance gate |
 | `EMBEDDING_MODEL` | `BAAI/bge-base-en-v1.5` | Dense encoder (768-dim) |

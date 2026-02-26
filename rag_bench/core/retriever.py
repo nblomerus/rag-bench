@@ -154,23 +154,12 @@ class BM25:
             "him",
             "her",
             "his",
-            # ML-ubiquitous terms (IDF near zero in 19K paper corpus)
-            "model",
-            "models",
-            "method",
-            "methods",
-            "approach",
-            "results",
-            "paper",
-            "proposed",
-            "using",
-            "used",
         }
     )
 
     # Cache format version — bump when the on-disk layout changes so stale
     # caches are automatically rebuilt instead of crashing on load.
-    _CACHE_VERSION = 2
+    _CACHE_VERSION = 3
 
     def __init__(self, k1: float = 1.5, b: float = 0.75):
         self.k1 = k1
@@ -820,6 +809,10 @@ class HybridRetriever:
             RERANKING_DURATION.observe(_rerank_elapsed)
         except Exception:
             pass
+
+        # Attach timing so callers (e.g. generator) can report per-stage breakdown
+        self._last_retrieval_ms = _retrieval_elapsed * 1000
+        self._last_reranking_ms = _rerank_elapsed * 1000
 
         return reranked
 

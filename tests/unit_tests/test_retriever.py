@@ -112,8 +112,7 @@ class TestBM25:
         tokens = bm25._tokenize("BERT-128 model v2.5")
         assert "bert" in tokens
         assert "128" in tokens
-        # "model" is a stopword at scale, filtered out
-        assert "model" not in tokens
+        assert "model" in tokens
         assert "v2" in tokens
         # Single-char tokens ("5") are filtered
         assert "5" not in tokens

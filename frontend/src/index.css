@@ -75,8 +75,12 @@
 
   /* Charts */
   --apple-chart-bg: rgba(28, 28, 30, 0.6);
+  --apple-chart-canvas: rgba(0, 0, 0, 0.25);
   --apple-chart-grid: rgba(255, 255, 255, 0.06);
+  --apple-chart-border: rgba(255, 255, 255, 0.08);
   --apple-chart-text: #6e6e73;
+  --apple-chart-label: #e5e5ea;
+  --apple-chart-axis: rgba(255, 255, 255, 0.45);
 
   /* Scrollbar */
   --apple-scrollbar-thumb: rgba(255, 255, 255, 0.15);
@@ -139,8 +143,12 @@
   --apple-code-block-bg: rgba(242, 242, 247, 0.8);
 
   --apple-chart-bg: rgba(255, 255, 255, 0.8);
+  --apple-chart-canvas: rgba(248, 248, 250, 0.9);
   --apple-chart-grid: rgba(0, 0, 0, 0.06);
+  --apple-chart-border: rgba(0, 0, 0, 0.1);
   --apple-chart-text: #6e6e73;
+  --apple-chart-label: #1d1d1f;
+  --apple-chart-axis: rgba(0, 0, 0, 0.45);
 
   --apple-scrollbar-thumb: rgba(0, 0, 0, 0.15);
 }
