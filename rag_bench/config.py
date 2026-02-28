@@ -11,7 +11,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 EVAL_DIR = PROJECT_ROOT / "rag_bench" / "eval"
 LOG_DIR = PROJECT_ROOT / "logs"
-CHROMA_DIR = PROJECT_ROOT / "chroma_db"
+CHROMA_DIR = Path(os.environ.get("RAG_CHROMA_DIR", str(PROJECT_ROOT / "chroma_db")))
 
 # ── Dataset ──
 DATASET_NAME = "jamescalam/ai-arxiv2"
