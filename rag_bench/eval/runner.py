@@ -10,6 +10,7 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+from rag_bench.config import DEFAULT_TOP_K
 from rag_bench.eval.benchmark import BenchmarkEntry, get_benchmark
 from rag_bench.eval.judge import JudgeLLM
 from rag_bench.eval.metrics import (
@@ -90,12 +91,12 @@ class EvalRunner:
         try:
             start = time.time()
             try:
-                gen_result = self.generator.answer(entry.question, top_k=5)
+                gen_result = self.generator.answer(entry.question, top_k=DEFAULT_TOP_K)
             except RuntimeError as e:
                 if "out of memory" in str(e).lower():
                     logger.warning(f"CUDA OOM for {entry.id}, clearing cache and retrying")
                     _clear_cuda_cache()
-                    gen_result = self.generator.answer(entry.question, top_k=5)
+                    gen_result = self.generator.answer(entry.question, top_k=DEFAULT_TOP_K)
                 else:
                     raise
             result.latency_ms = (time.time() - start) * 1000
@@ -120,7 +121,7 @@ class EvalRunner:
                     all_results,
                     entry.expected_sources,
                     entry.acceptable_sources or None,
-                    k=5,
+                    k=DEFAULT_TOP_K,
                 )
 
             # Skip generation metrics for deflections
@@ -218,7 +219,7 @@ class EvalRunner:
 
         try:
             start = time.time()
-            retrieval_results = self.retriever.query(entry.question, top_k=5)
+            retrieval_results = self.retriever.query(entry.question, top_k=DEFAULT_TOP_K)
             result.latency_ms = (time.time() - start) * 1000
 
             if entry.expected_sources:
@@ -226,7 +227,7 @@ class EvalRunner:
                     retrieval_results,
                     entry.expected_sources,
                     entry.acceptable_sources or None,
-                    k=5,
+                    k=DEFAULT_TOP_K,
                 )
         except Exception as e:
             logger.error(f"Error in retrieval-only for {entry.id}: {e}")
