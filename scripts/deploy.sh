@@ -88,6 +88,23 @@ if [ ! -f ".env.prod" ]; then
     cp .env.example .env.prod
     echo -e "${GREEN}✓ Created .env.prod from .env.example${NC}"
     echo -e "${YELLOW}  Edit .env.prod to override defaults if needed${NC}"
+else
+    # Warn about keys whose values differ between .env.example and .env.prod
+    _drift_found=0
+    while IFS='=' read -r key example_val; do
+        [[ -z "$key" || "$key" == \#* ]] && continue
+        prod_val=$(grep -m1 "^${key}=" .env.prod 2>/dev/null | cut -d'=' -f2-)
+        if [ -z "$prod_val" ]; then
+            [ $_drift_found -eq 0 ] && echo -e "${YELLOW}  ⚠ .env.prod drift detected:${NC}" && _drift_found=1
+            echo -e "${YELLOW}    NEW in .env.example:  ${key}=${example_val}${NC}"
+        elif [ "$prod_val" != "$example_val" ]; then
+            [ $_drift_found -eq 0 ] && echo -e "${YELLOW}  ⚠ .env.prod drift detected:${NC}" && _drift_found=1
+            echo -e "${YELLOW}    ${key}:  prod=${prod_val}  example=${example_val}${NC}"
+        fi
+    done < <(grep -E '^[A-Z_]+=.' .env.example)
+    if [ $_drift_found -eq 1 ]; then
+        echo -e "${YELLOW}  Review .env.prod and update if needed.${NC}"
+    fi
 fi
 
 echo -e "${GREEN}✓ Environment configured${NC}"
