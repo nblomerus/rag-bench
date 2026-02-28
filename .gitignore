@@ -49,6 +49,9 @@ node_modules/
 # Experiments
 experiments/
 
+# Learning
+learning/
+
 # Backups
 backups/
 *.tar.gz
