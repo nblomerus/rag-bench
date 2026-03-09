@@ -38,6 +38,7 @@ from rag_bench.config import (
     MIN_SECTION_LENGTH,
 )
 from rag_bench.core.chunker import chunk_all_papers
+from rag_bench.core.configs import EmbedderConfig, RetrieverConfig
 from rag_bench.core.embedder import Embedder
 from rag_bench.core.hybrid_ingest import hybrid_ingest
 from rag_bench.core.retriever import HybridRetriever
@@ -170,14 +171,16 @@ def step_index(chunks: list[dict]) -> Embedder:
     logger.info("=" * 60)
 
     start = time.time()
-    embedder = Embedder(
+    embedder_config = EmbedderConfig(
         model_name=EMBEDDING_MODEL,
-        chroma_path=CHROMA_DIR,
+        chroma_path=str(CHROMA_DIR),
         collection_name=COLLECTION_NAME,
         distance_metric=DISTANCE_METRIC,
+        batch_size=EMBEDDING_BATCH_SIZE,
     )
+    embedder = Embedder(config=embedder_config)
 
-    embedder.index_chunks(chunks, batch_size=EMBEDDING_BATCH_SIZE)
+    embedder.index_chunks(chunks, batch_size=embedder_config.batch_size)
     elapsed = time.time() - start
 
     # Invalidate the paper count cache so the API recomputes it on next startup
@@ -202,11 +205,12 @@ def step_test():
     logger.info("STEP 4: Running test queries")
     logger.info("=" * 60)
 
-    retriever = HybridRetriever(
+    retriever_config = RetrieverConfig(
         embedding_model=EMBEDDING_MODEL,
-        chroma_path=CHROMA_DIR,
+        chroma_path=str(CHROMA_DIR),
         collection_name=COLLECTION_NAME,
     )
+    retriever = HybridRetriever(config=retriever_config)
 
     eval_path = EVAL_DIR / "eval_queries.json"
     with open(eval_path) as f:
