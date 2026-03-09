@@ -18,10 +18,12 @@ import time
 
 import requests
 
+from rag_bench.core.types import GenerationResult, RetrievalResult
 from rag_bench.utils.text import clean_latex_artifacts, fix_encoding
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_OLLAMA_MODEL = "gemma2:27b"
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Math post-processing — wrap bare math expressions in LaTeX delimiters
@@ -1771,6 +1773,156 @@ class RAGGenerator:
         """Check if the question asks for a subjective opinion."""
         q_lower = question.lower()
         return any(p in q_lower for p in self._OPINION_PATTERNS)
+
+    @staticmethod
+    def _retrieval_results_to_dicts(context: list[RetrievalResult]) -> list[dict]:
+        """Convert typed RetrievalResult objects to the dict format used internally."""
+        return [
+            {
+                "chunk_id": r.chunk.chunk_id,
+                "text": r.chunk.text,
+                "score": r.relevance_score,
+                "rerank_score": r.rerank_score,
+                "metadata": dict(r.chunk.metadata),
+                "sources": list(r.sources),
+            }
+            for r in context
+        ]
+
+    def generate(self, query: str, context: list[RetrievalResult]) -> GenerationResult:
+        """Protocol-conforming generation from pre-retrieved context.
+
+        Accepts already-retrieved results and runs gating, filtering,
+        prompt construction, LLM generation, and citation formatting.
+        Returns a typed GenerationResult.
+        """
+        retrieval = self._retrieval_results_to_dicts(context)
+
+        # Off-topic pre-check
+        if not self._is_on_topic(query):
+            reason = (
+                "This question does not appear to be about AI/ML research. "
+                "I can only answer questions about machine learning, deep learning, "
+                "and related research topics."
+            )
+            return GenerationResult(
+                answer=DEFLECTION_RESPONSE.format(reason=reason),
+                deflected=True,
+                deflection_reason=reason,
+                results=context,
+                scores=[r.relevance_score for r in context],
+            )
+
+        # Opinion pre-check
+        if self._is_opinion_question(query):
+            reason = (
+                "I provide information from research papers rather than personal opinions. "
+                "Try rephrasing as a factual comparison, e.g. "
+                "'Compare X and Y based on published benchmarks.'"
+            )
+            return GenerationResult(
+                answer=DEFLECTION_RESPONSE.format(reason=reason),
+                deflected=True,
+                deflection_reason=reason,
+                results=context,
+                scores=[r.relevance_score for r in context],
+            )
+
+        # Relevance gate
+        should_deflect, reason = self.gate.should_deflect(retrieval, question=query)
+
+        if not should_deflect and retrieval:
+            is_synthesis = self.gate._is_multi_document_query(query)
+            overlap_threshold = (
+                self.gate.keyword_overlap_threshold * 0.6 if is_synthesis else self.gate.keyword_overlap_threshold
+            )
+            top_texts = " ".join(r["text"] for r in retrieval[:3])
+            overlap = self.gate._compute_keyword_overlap(query, top_texts)
+            if overlap < overlap_threshold:
+                should_deflect = True
+                reason = (
+                    f"The retrieved passages have low keyword overlap ({overlap:.0%}) "
+                    f"with the question, suggesting this topic isn't covered in the knowledge base."
+                )
+
+            if not should_deflect:
+                should_deflect, entity_reason = self.gate._check_entity_presence(query, retrieval)
+                if should_deflect:
+                    reason = entity_reason
+
+            if not should_deflect:
+                should_deflect, adv_reason = self.gate._check_false_premise(
+                    query,
+                    top_texts,
+                    retrieval_results=retrieval,
+                )
+                if should_deflect:
+                    reason = adv_reason
+
+            if not should_deflect:
+                should_deflect, focal_reason = self.gate._check_focal_terms(query, retrieval)
+                if should_deflect:
+                    reason = focal_reason
+
+        if should_deflect:
+            logger.info(f"Deflecting query: {reason}")
+            return GenerationResult(
+                answer=DEFLECTION_RESPONSE.format(reason=reason),
+                deflected=True,
+                deflection_reason=reason,
+                results=context,
+                scores=[r.relevance_score for r in context],
+            )
+
+        # Filter to relevant sources
+        relevant = self._filter_relevant_sources(retrieval)
+
+        # Build prompt and generate
+        sources_block = self._build_sources_block(relevant)
+        prompt = GENERATION_PROMPT.format(sources_block=sources_block, question=query)
+
+        try:
+            answer_text = self.llm.generate(prompt=prompt, system_prompt=self.system_prompt)
+        except Exception as e:
+            logger.error(f"LLM generation failed: {e}")
+            fallback = TemplateFallbackBackend()
+            answer_text = fallback.generate(prompt=prompt)
+
+        answer_text = postprocess_math(answer_text)
+        answer_text = self._inject_missing_citations(answer_text, relevant)
+
+        # Post-generation alignment check
+        is_tangential, focus_term = self._check_answer_alignment(query, answer_text)
+        if is_tangential:
+            reason = (
+                f"The question asks about '{focus_term}' but this specific detail "
+                f"does not appear in the retrieved sources or the generated answer."
+            )
+            return GenerationResult(
+                answer=(
+                    f"The sources do not contain specific information about "
+                    f"'{focus_term}' for this topic. While related papers were found, "
+                    f"they do not address this particular detail."
+                ),
+                deflected=True,
+                deflection_reason=reason,
+                results=context,
+                scores=[r.relevance_score for r in context],
+            )
+
+        # Format citations
+        citations = self._format_citations(relevant)
+        full_answer = answer_text.strip()
+        if citations:
+            full_answer += "\n\nSources:\n" + "\n".join(citations)
+
+        return GenerationResult(
+            answer=full_answer,
+            deflected=False,
+            sources=citations,
+            results=context,
+            scores=[r.relevance_score for r in context],
+        )
 
     def answer(self, question: str, top_k: int | None = None, context_override: str | None = None) -> dict:
         """Generate a grounded answer with citations.

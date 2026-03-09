@@ -20,6 +20,8 @@ import torch
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
+from rag_bench.core.configs import EmbedderConfig
+
 logger = logging.getLogger(__name__)
 
 
@@ -114,7 +116,14 @@ class Embedder:
         chroma_path: str | Path = "./chroma_db",
         collection_name: str = "ai_ml_papers",
         distance_metric: str = "cosine",
+        *,
+        config: EmbedderConfig | None = None,
     ):
+        if config is not None:
+            model_name = config.model_name
+            chroma_path = config.chroma_path
+            collection_name = config.collection_name
+            distance_metric = config.distance_metric
         logger.info(f"Loading embedding model: {model_name}")
         self.model = _load_embedding_model(model_name)
         logger.info(f"Model loaded. Embedding dimension: {self.model.get_sentence_embedding_dimension()}")

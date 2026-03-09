@@ -59,22 +59,22 @@ from rag_bench.api.schemas import (
 from rag_bench.config import (
     CHROMA_DIR,
     COLLECTION_NAME,
-    DEFAULT_TOP_K,
     EMBEDDING_MODEL,
     EVAL_DIR,
     EVAL_SCHEDULE_HOURS,
     PROJECT_ROOT,
     RAG_ENV,
-    RERANKER_MODEL,
     VERSION,
 )
 from rag_bench.core.citation_boost import CitationBooster
+from rag_bench.core.configs import PipelineConfig
 from rag_bench.core.generator import (
     DEFLECTION_PHRASES,
     RAGGenerator,
     RelevanceGate,
     build_llm_backend,
 )
+from rag_bench.core.pipeline import RAGPipeline, build_pipeline
 from rag_bench.core.retriever import HybridRetriever
 from rag_bench.observability import (
     ACTIVE_REQUESTS,
@@ -100,19 +100,13 @@ setup_logging(
 logger = get_logger(__name__)
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Configuration from environment
-# ═══════════════════════════════════════════════════════════════════════════
-LLM_BACKEND = os.environ.get("RAG_LLM_BACKEND", "ollama")
-LLM_MODEL = os.environ.get("RAG_LLM_MODEL", "gemma2:27b")
-LLM_BASE_URL = os.environ.get("RAG_LLM_BASE_URL", "http://localhost:11434")
-RERANKER_MODEL_OVERRIDE = os.environ.get("RAG_RERANKER_MODEL", RERANKER_MODEL)
-
-
-# ═══════════════════════════════════════════════════════════════════════════
 # Application setup
 # ═══════════════════════════════════════════════════════════════════════════
 
-# Global pipeline instances (loaded once at startup)
+# Global pipeline instance (loaded once at startup via build_pipeline)
+_pipeline: RAGPipeline | None = None
+
+# Convenience aliases — set during lifespan, used by endpoints
 _retriever: HybridRetriever | None = None
 _generator: RAGGenerator | None = None
 _citation_booster: CitationBooster | None = None
@@ -145,10 +139,10 @@ def _save_cached_paper_count(count: int) -> None:
 async def _count_papers_background():
     """Scan all ChromaDB chunks to get the exact unique paper count. Runs after startup."""
     global _total_papers, _papers_counting
-    if not _retriever:
+    if not _pipeline:
         return
 
-    collection = _retriever.collection
+    collection = _pipeline.retriever.collection
     total_chunks = collection.count()
     batch_size = 200_000
     offset = 0
@@ -177,38 +171,28 @@ async def _count_papers_background():
 @asynccontextmanager
 async def lifespan(app):
     """Load the RAG pipeline at startup, clean up on shutdown."""
-    global _retriever, _generator, _citation_booster, _llm_backend_name, _llm_model_name, _total_papers, _papers_counting
+    global \
+        _pipeline, \
+        _retriever, \
+        _generator, \
+        _citation_booster, \
+        _llm_backend_name, \
+        _llm_model_name, \
+        _total_papers, \
+        _papers_counting
 
     logger.info("Loading RAG pipeline...")
     start = time.time()
 
-    _retriever = HybridRetriever(
-        embedding_model=EMBEDDING_MODEL,
-        reranker_model=RERANKER_MODEL_OVERRIDE,
-        chroma_path=CHROMA_DIR,
-        collection_name=COLLECTION_NAME,
-    )
+    config = PipelineConfig.from_env()
+    _pipeline = build_pipeline(config)
 
-    # Initialize citation booster for improved citation quality
-    _citation_booster = CitationBooster(
-        enable_age_boost=True,
-        enable_query_adaptive=True,
-    )
-    logger.info("Citation booster initialized with %d foundational papers", len(_citation_booster.foundational_papers))
-
-    _llm_backend_name = LLM_BACKEND
-    _llm_model_name = LLM_MODEL
-
-    llm = build_llm_backend(LLM_BACKEND, LLM_MODEL, LLM_BASE_URL)
-    gate = RelevanceGate()
-
-    _generator = RAGGenerator(
-        retriever=_retriever,
-        llm_backend=llm,
-        relevance_gate=gate,
-        top_k=DEFAULT_TOP_K,
-        citation_booster=_citation_booster,
-    )
+    # Set convenience aliases for endpoints that access components directly
+    _retriever = _pipeline.retriever
+    _generator = _pipeline.generator
+    _citation_booster = _pipeline.generator.citation_booster if hasattr(_pipeline.generator, "citation_booster") else None
+    _llm_backend_name = config.generator.llm_backend
+    _llm_model_name = config.generator.llm_model
 
     total_chunks = _retriever.collection.count()
     cached = _load_cached_paper_count()
@@ -631,10 +615,10 @@ def _compute_per_source_cited(answer: str, results: list[dict]) -> list[dict]:
 async def health_check():
     """Health check — is the pipeline loaded?"""
     uptime = round(time.time() - _start_time)
-    total_chunks = _retriever.collection.count() if _retriever else 0
+    total_chunks = _retriever.collection.count() if _pipeline else 0
     return {
-        "status": "ok" if _generator else "loading",
-        "pipeline_ready": _generator is not None,
+        "status": "ok" if _pipeline else "loading",
+        "pipeline_ready": _pipeline is not None,
         "version": VERSION,
         "uptime_seconds": uptime,
         "corpus": {
@@ -658,7 +642,7 @@ async def metrics_summary():
 @app.post("/api/query", response_model=QueryResponse)
 async def query_rag(request: QueryRequest, raw_request: Request):
     """Ask a question and get a grounded answer with citations."""
-    if not _generator:
+    if not _pipeline:
         raise HTTPException(status_code=503, detail="Pipeline still loading")
 
     # Quick check for casual / non-research queries
@@ -797,7 +781,7 @@ async def query_rag(request: QueryRequest, raw_request: Request):
 @app.post("/api/query/stream")
 async def query_rag_stream(request: QueryRequest, raw_request: Request):
     """Stream the RAG answer via Server-Sent Events (SSE)."""
-    if not _generator:
+    if not _pipeline:
         raise HTTPException(status_code=503, detail="Pipeline still loading")
 
     # Handle casual queries fast
@@ -986,7 +970,7 @@ async def query_rag_stream(request: QueryRequest, raw_request: Request):
 @app.get("/api/stats", response_model=StatsResponse)
 async def get_stats():
     """Return corpus and pipeline statistics (computed at startup)."""
-    if not _retriever:
+    if not _pipeline:
         raise HTTPException(status_code=503, detail="Pipeline still loading")
 
     return StatsResponse(
@@ -1003,7 +987,7 @@ async def get_stats():
 @app.post("/api/eval", response_model=EvalResponse)
 async def run_evaluation(request: EvalRequest):
     """Run the evaluation suite and return detailed results."""
-    if not _generator:
+    if not _pipeline:
         raise HTTPException(status_code=503, detail="Pipeline still loading")
 
     eval_path = EVAL_DIR / "eval_queries.json"
@@ -1078,7 +1062,7 @@ async def run_evaluation(request: EvalRequest):
 @app.post("/api/eval/full", response_model=FullEvalResponse)
 async def run_full_evaluation(request: FullEvalRequest):
     """Run the comprehensive evaluation suite with retrieval, citation, and faithfulness metrics."""
-    if not _generator or not _retriever:
+    if not _pipeline:
         raise HTTPException(status_code=503, detail="Pipeline still loading")
 
     from rag_bench.eval.judge import JudgeLLM
@@ -1134,7 +1118,7 @@ async def run_full_evaluation(request: FullEvalRequest):
 @app.get("/api/papers", response_model=list[PaperSummary])
 async def list_papers():
     """List all papers in the corpus with basic metadata."""
-    if not _retriever:
+    if not _pipeline:
         raise HTTPException(status_code=503, detail="Pipeline still loading")
 
     total = _retriever.collection.count()
@@ -1231,7 +1215,7 @@ async def _fetch_pdf(arxiv_id: str):
 @app.get("/api/papers/{paper_id:path}/pdf")
 async def get_paper_pdf(paper_id: str):
     """Fetch the arXiv PDF for a paper (cached locally)."""
-    if not _retriever:
+    if not _pipeline:
         raise HTTPException(status_code=503, detail="Pipeline still loading")
 
     arxiv_id = ""
@@ -1277,7 +1261,7 @@ async def get_paper_pdf(paper_id: str):
 @app.get("/api/papers/{paper_id:path}", response_model=PaperDetail)
 async def get_paper(paper_id: str):
     """Get all chunks for a specific paper, ordered by section and chunk index."""
-    if not _retriever:
+    if not _pipeline:
         raise HTTPException(status_code=503, detail="Pipeline still loading")
 
     total = _retriever.collection.count()

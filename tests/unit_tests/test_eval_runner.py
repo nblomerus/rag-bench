@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from rag_bench.core.types import ChunkData, GenerationResult, RetrievalResult
 from rag_bench.eval.benchmark import (
     BenchmarkEntry,
     get_benchmark,
@@ -143,46 +144,44 @@ def _make_entry(**kwargs):
     return BenchmarkEntry(**defaults)
 
 
-def _make_generator_result(**kwargs):
-    defaults = {
-        "answer": "The Transformer uses attention [Source 1].",
-        "results": [
-            {
-                "arxiv_id": "arxiv_1706_03762",
-                "score": 7.0,
-                "text": "Attention mechanism...",
-                "metadata": {"paper_id": "arxiv_1706_03762", "title": "Attention Is All You Need", "section": "abstract"},
-            },
-        ],
-        "filtered_results": [
-            {
-                "arxiv_id": "arxiv_1706_03762",
-                "score": 7.0,
-                "text": "Attention mechanism...",
-                "metadata": {"paper_id": "arxiv_1706_03762", "title": "Attention Is All You Need", "section": "abstract"},
-            },
-        ],
-        "deflected": False,
-        "deflection_reason": "",
-        "scores": [7.0],
-    }
+def _make_retrieval_results():
+    """Build typed RetrievalResult objects for test mocks."""
+    chunk = ChunkData(
+        chunk_id="c1",
+        doc_id="arxiv_1706_03762",
+        text="Attention mechanism...",
+        section="abstract",
+        metadata={"paper_id": "arxiv_1706_03762", "title": "Attention Is All You Need", "section": "abstract"},
+    )
+    return [RetrievalResult(chunk=chunk, relevance_score=7.0, sources=["dense"])]
+
+
+def _make_generation_result(**kwargs):
+    """Build a typed GenerationResult for test mocks."""
+    retrieval = _make_retrieval_results()
+    defaults = dict(
+        answer="The Transformer uses attention [Source 1].",
+        deflected=False,
+        sources=["[1] Vaswani et al."],
+        deflection_reason=None,
+        results=retrieval,
+        scores=[7.0],
+    )
     defaults.update(kwargs)
-    return defaults
+    return GenerationResult(**defaults)
 
 
 class TestEvalRunner:
     @pytest.fixture
     def mock_retriever(self):
         retriever = MagicMock()
-        retriever.query.return_value = [
-            {"arxiv_id": "arxiv_1706_03762", "score": 7.0, "text": "...", "metadata": {"paper_id": "arxiv_1706_03762"}},
-        ]
+        retriever.retrieve.return_value = _make_retrieval_results()
         return retriever
 
     @pytest.fixture
     def mock_generator(self):
         gen = MagicMock()
-        gen.answer.return_value = _make_generator_result()
+        gen.generate.return_value = _make_generation_result()
         return gen
 
     def test_run_single_basic(self, mock_retriever, mock_generator):
@@ -213,7 +212,7 @@ class TestEvalRunner:
         assert result.relevance.get("score") == 4.0
 
     def test_run_single_deflected(self, mock_retriever, mock_generator):
-        mock_generator.answer.return_value = _make_generator_result(
+        mock_generator.generate.return_value = _make_generation_result(
             answer="I can't answer that.",
             deflected=True,
             deflection_reason="Off topic",
@@ -280,12 +279,12 @@ class TestEvalRunner:
         )
         report = runner.run_all(retrieval_only=True)
         # Generator should NOT be called
-        mock_generator.answer.assert_not_called()
+        mock_generator.generate.assert_not_called()
         assert report.summary["total_queries"] == 1
         assert report.metadata["retrieval_only"] is True
 
     def test_error_handling(self, mock_retriever, mock_generator):
-        mock_generator.answer.side_effect = Exception("Connection failed")
+        mock_generator.generate.side_effect = Exception("Connection failed")
         runner = EvalRunner(
             retriever=mock_retriever,
             generator=mock_generator,
@@ -584,24 +583,23 @@ class TestRunnerEdgeCases:
     @pytest.fixture
     def mock_retriever(self):
         retriever = MagicMock()
-        retriever.query.return_value = []
+        retriever.retrieve.return_value = []
         return retriever
 
     @pytest.fixture
     def mock_generator(self):
         gen = MagicMock()
-        gen.answer.return_value = {
-            "answer": "Deflected.",
-            "results": [],
-            "filtered_results": [],
-            "deflected": True,
-            "deflection_reason": "Off topic",
-            "scores": [],
-        }
+        gen.generate.return_value = _make_generation_result(
+            answer="Deflected.",
+            deflected=True,
+            deflection_reason="Off topic",
+            results=[],
+            scores=[],
+        )
         return gen
 
     def test_run_single_no_expected_sources(self, mock_retriever, mock_generator):
-        """Cover branch 99->108: entry with no expected_sources (deflection)."""
+        """Cover branch: entry with no expected_sources (deflection)."""
         entry = BenchmarkEntry(
             id="defl-test",
             question="What is cake?",
@@ -616,7 +614,7 @@ class TestRunnerEdgeCases:
         assert result.retrieval == {}
 
     def test_run_all_filter_difficulty(self, mock_retriever, mock_generator):
-        """Cover line 160: filter_difficulty in run_all."""
+        """Cover filter_difficulty in run_all."""
         entries = [
             BenchmarkEntry(
                 id="q1", question="Q1?", expected_sources=[], query_type="definition", topic="test", difficulty="easy"
@@ -630,13 +628,13 @@ class TestRunnerEdgeCases:
         assert report.summary["total_queries"] == 1
 
     def test_run_all_empty_results_aggregate(self, mock_retriever, mock_generator):
-        """Cover line 223: _aggregate_results with empty list."""
+        """Cover _aggregate_results with empty list."""
         runner = EvalRunner(retriever=mock_retriever, generator=mock_generator, benchmark=[])
         report = runner.run_all(filter_topic="nonexistent_topic")
         assert report.summary == {}
 
     def test_retrieval_only_no_expected_sources(self, mock_retriever):
-        """Cover branch 207->218: retrieval_only with no expected_sources."""
+        """Cover retrieval_only with no expected_sources."""
         entry = BenchmarkEntry(
             id="defl-test",
             question="Off topic?",
@@ -652,8 +650,8 @@ class TestRunnerEdgeCases:
         assert result.retrieval == {}
 
     def test_retrieval_only_error_handling(self, mock_retriever):
-        """Cover lines 214-216: exception in retrieval_only."""
-        mock_retriever.query.side_effect = Exception("Retrieval failed")
+        """Cover exception in retrieval_only."""
+        mock_retriever.retrieve.side_effect = Exception("Retrieval failed")
         entry = BenchmarkEntry(
             id="err-test",
             question="Test?",
@@ -689,11 +687,13 @@ class TestJudgeErrorIsolation:
         mock_backend.generate.side_effect = generate_side_effect
         judge = JudgeLLM(mock_backend)
 
+        retriever = MagicMock()
+        retriever.retrieve.return_value = _make_retrieval_results()
         gen = MagicMock()
-        gen.answer.return_value = _make_generator_result()
+        gen.generate.return_value = _make_generation_result()
 
         entry = _make_entry()
-        runner = EvalRunner(retriever=MagicMock(), generator=gen, judge=judge, benchmark=[entry])
+        runner = EvalRunner(retriever=retriever, generator=gen, judge=judge, benchmark=[entry])
         result = runner.run_single(entry)
 
         # Faithfulness should fall back to heuristic (non-empty)
@@ -715,11 +715,13 @@ class TestJudgeErrorIsolation:
         mock_backend.generate.side_effect = generate_side_effect
         judge = JudgeLLM(mock_backend)
 
+        retriever = MagicMock()
+        retriever.retrieve.return_value = _make_retrieval_results()
         gen = MagicMock()
-        gen.answer.return_value = _make_generator_result()
+        gen.generate.return_value = _make_generation_result()
 
         entry = _make_entry()
-        runner = EvalRunner(retriever=MagicMock(), generator=gen, judge=judge, benchmark=[entry])
+        runner = EvalRunner(retriever=retriever, generator=gen, judge=judge, benchmark=[entry])
         result = runner.run_single(entry)
 
         # Faithfulness should have the score from the LLM
@@ -756,35 +758,40 @@ class TestCudaMemoryManagement:
 
     def test_oom_retry_in_run_single(self):
         """CUDA OOM should trigger cache clear and retry."""
-        gen = MagicMock()
-        call_count = [0]
+        retriever = MagicMock()
+        retrieve_call_count = [0]
 
-        def answer_side_effect(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
+        def retrieve_side_effect(*args, **kwargs):
+            retrieve_call_count[0] += 1
+            if retrieve_call_count[0] == 1:
                 raise RuntimeError("CUDA out of memory")
-            return _make_generator_result()
+            return _make_retrieval_results()
 
-        gen.answer.side_effect = answer_side_effect
+        retriever.retrieve.side_effect = retrieve_side_effect
+
+        gen = MagicMock()
+        gen.generate.return_value = _make_generation_result()
 
         entry = _make_entry()
-        runner = EvalRunner(retriever=MagicMock(), generator=gen, benchmark=[entry])
+        runner = EvalRunner(retriever=retriever, generator=gen, benchmark=[entry])
         result = runner.run_single(entry)
 
         assert result.error is None
-        assert call_count[0] == 2  # First call OOM, second succeeds
+        assert retrieve_call_count[0] == 2  # First call OOM, second succeeds
 
     def test_non_oom_runtime_error_not_retried(self):
         """Non-OOM RuntimeError should propagate without retry."""
+        retriever = MagicMock()
+        retriever.retrieve.side_effect = RuntimeError("Some other error")
+
         gen = MagicMock()
-        gen.answer.side_effect = RuntimeError("Some other error")
 
         entry = _make_entry()
-        runner = EvalRunner(retriever=MagicMock(), generator=gen, benchmark=[entry])
+        runner = EvalRunner(retriever=retriever, generator=gen, benchmark=[entry])
         result = runner.run_single(entry)
 
         assert result.error == "Some other error"
-        gen.answer.assert_called_once()
+        retriever.retrieve.assert_called_once()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -850,16 +857,18 @@ class TestRunnerJudgeExceptionIsolation:
     """Cover lines 148-149 and 152-153: runner-level except blocks for judge calls."""
 
     def test_faithfulness_exception_caught_at_runner_level(self):
-        """When judge.score_faithfulness raises, the runner catches it (line 148-149)."""
+        """When judge.score_faithfulness raises, the runner catches it."""
         judge = MagicMock()
         judge.score_faithfulness.side_effect = Exception("OOM in judge")
         judge.score_relevance.return_value = {"score": 4.0, "reasoning": "Good"}
 
+        retriever = MagicMock()
+        retriever.retrieve.return_value = _make_retrieval_results()
         gen = MagicMock()
-        gen.answer.return_value = _make_generator_result()
+        gen.generate.return_value = _make_generation_result()
 
         entry = _make_entry()
-        runner = EvalRunner(retriever=MagicMock(), generator=gen, judge=judge, benchmark=[entry])
+        runner = EvalRunner(retriever=retriever, generator=gen, judge=judge, benchmark=[entry])
         result = runner.run_single(entry)
 
         # Faithfulness should be empty (exception caught), relevance should succeed
@@ -868,16 +877,18 @@ class TestRunnerJudgeExceptionIsolation:
         assert result.error is None
 
     def test_relevance_exception_caught_at_runner_level(self):
-        """When judge.score_relevance raises, the runner catches it (line 152-153)."""
+        """When judge.score_relevance raises, the runner catches it."""
         judge = MagicMock()
         judge.score_faithfulness.return_value = {"score": 5.0, "reasoning": "Perfect"}
         judge.score_relevance.side_effect = Exception("Timeout in judge")
 
+        retriever = MagicMock()
+        retriever.retrieve.return_value = _make_retrieval_results()
         gen = MagicMock()
-        gen.answer.return_value = _make_generator_result()
+        gen.generate.return_value = _make_generation_result()
 
         entry = _make_entry()
-        runner = EvalRunner(retriever=MagicMock(), generator=gen, judge=judge, benchmark=[entry])
+        runner = EvalRunner(retriever=retriever, generator=gen, judge=judge, benchmark=[entry])
         result = runner.run_single(entry)
 
         # Faithfulness should succeed, relevance should be empty (exception caught)
@@ -896,17 +907,18 @@ class TestCudaCacheClearInRunAll:
 
     def test_cuda_cache_cleared_every_10_entries(self):
         """run_all with 10+ entries triggers _clear_cuda_cache."""
+        retriever = MagicMock()
+        retriever.retrieve.return_value = []
         gen = MagicMock()
-        gen.answer.return_value = {
-            "answer": "Answer [Source 1].",
-            "results": [],
-            "filtered_results": [],
-            "deflected": True,
-            "deflection_reason": "Off topic",
-            "scores": [],
-        }
+        gen.generate.return_value = _make_generation_result(
+            answer="Answer [Source 1].",
+            deflected=True,
+            deflection_reason="Off topic",
+            results=[],
+            scores=[],
+        )
         entries = [_make_entry(id=f"q{i}", should_deflect=True) for i in range(11)]
-        runner = EvalRunner(retriever=MagicMock(), generator=gen, benchmark=entries)
+        runner = EvalRunner(retriever=retriever, generator=gen, benchmark=entries)
 
         with patch("rag_bench.eval.runner._clear_cuda_cache") as mock_clear:
             runner.run_all()

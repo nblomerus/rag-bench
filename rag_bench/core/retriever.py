@@ -17,11 +17,13 @@ import math
 import pickle
 import re
 import time
+from array import array as c_array
 from collections import Counter
 from pathlib import Path
 
 import chromadb
 import numpy as np
+import torch
 from sentence_transformers import CrossEncoder
 
 from rag_bench.config import (
@@ -31,7 +33,9 @@ from rag_bench.config import (
     RERANK_CANDIDATES,
     RERANKER_MODEL,
 )
+from rag_bench.core.configs import RetrieverConfig
 from rag_bench.core.embedder import _load_embedding_model
+from rag_bench.core.types import ChunkData, RetrievalResult
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +190,6 @@ class BM25:
         Accepts any iterable (list, generator, etc.) to support streaming
         chunks without buffering all text in memory at once.
         """
-        from array import array as c_array
 
         self.chunk_ids = []
 
@@ -333,8 +336,6 @@ class CrossEncoderReranker:
 
     def _load_model(self):
         """Load cross-encoder model, preferring GPU when available."""
-        import torch
-
         device = "cuda" if torch.cuda.is_available() else "cpu"
         try:
             self.model = CrossEncoder(self.model_name, device=device)
@@ -442,7 +443,16 @@ class HybridRetriever:
         collection_name: str = "ai_ml_papers",
         bm25_weight: float = BM25_WEIGHT,
         dense_weight: float = DENSE_WEIGHT,
+        *,
+        config: RetrieverConfig | None = None,
     ):
+        if config is not None:
+            embedding_model = config.embedding_model
+            reranker_model = config.reranker_model
+            chroma_path = config.chroma_path
+            collection_name = config.collection_name
+            bm25_weight = config.bm25_weight
+            dense_weight = config.dense_weight
         # Dense retriever (BGE + ChromaDB)
         logger.info("Initializing dense retriever...")
         self.embed_model = _load_embedding_model(embedding_model)
@@ -856,6 +866,29 @@ class HybridRetriever:
             "is_relevant": is_relevant,
             "top_score": top_score,
         }
+
+    def retrieve(self, query: str, top_k: int = 10) -> list[RetrievalResult]:
+        """Protocol-conforming retrieval — returns typed RetrievalResult objects.
+
+        Wraps the existing query() method, converting raw dicts into the
+        typed dataclasses defined in types.py.
+        """
+        raw_results = self.query(query, top_k=top_k)
+        return [
+            RetrievalResult(
+                chunk=ChunkData(
+                    chunk_id=r["chunk_id"],
+                    doc_id=r.get("metadata", {}).get("doc_id", ""),
+                    text=r.get("text", ""),
+                    section=r.get("metadata", {}).get("section", ""),
+                    metadata=r.get("metadata", {}),
+                ),
+                relevance_score=r.get("score", 0.0),
+                rerank_score=r.get("rerank_score"),
+                sources=r.get("sources", []),
+            )
+            for r in raw_results
+        ]
 
     def print_results(self, question: str, top_k: int = 5):
         """Pretty-print hybrid retrieval results."""

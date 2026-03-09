@@ -58,7 +58,12 @@ def mock_pipeline():
         }
     )
 
+    pipeline_mock = Mock()
+    pipeline_mock.retriever = retriever
+    pipeline_mock.generator = generator
+
     with (
+        patch("rag_bench.api.server._pipeline", pipeline_mock),
         patch("rag_bench.api.server._retriever", retriever),
         patch("rag_bench.api.server._generator", generator),
         patch("rag_bench.api.server._llm_backend_name", "ollama"),
@@ -239,7 +244,7 @@ class TestQueryEndpoint:
 
     def test_query_casual_greeting_hi(self, client):
         """Test casual greeting with 'hi'."""
-        with patch("rag_bench.api.server._generator", MagicMock()):
+        with patch("rag_bench.api.server._pipeline", MagicMock()), patch("rag_bench.api.server._generator", MagicMock()):
             response = client.post("/api/query", json={"question": "hi"})
             assert response.status_code == 200
             data = response.json()
@@ -248,7 +253,7 @@ class TestQueryEndpoint:
 
     def test_query_casual_greeting_hello(self, client):
         """Test casual greeting with 'hello'."""
-        with patch("rag_bench.api.server._generator", MagicMock()):
+        with patch("rag_bench.api.server._pipeline", MagicMock()), patch("rag_bench.api.server._generator", MagicMock()):
             response = client.post("/api/query", json={"question": "hello"})
             assert response.status_code == 200
             data = response.json()
@@ -256,7 +261,7 @@ class TestQueryEndpoint:
 
     def test_query_too_short(self, client):
         """Test query that is too short."""
-        with patch("rag_bench.api.server._generator", MagicMock()):
+        with patch("rag_bench.api.server._pipeline", MagicMock()), patch("rag_bench.api.server._generator", MagicMock()):
             response = client.post("/api/query", json={"question": "ab"})
             assert response.status_code == 200
             data = response.json()
@@ -275,7 +280,10 @@ class TestQueryEndpoint:
                 }
             )
         )
-        with patch("rag_bench.api.server._generator", generator_mock):
+        with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
+            patch("rag_bench.api.server._generator", generator_mock),
+        ):
             response = client.post(
                 "/api/query",
                 json={"question": "What is attention?", "top_k": 10},
@@ -304,7 +312,10 @@ class TestQueryEndpoint:
                 }
             )
         )
-        with patch("rag_bench.api.server._generator", generator_mock):
+        with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
+            patch("rag_bench.api.server._generator", generator_mock),
+        ):
             response = client.post("/api/query", json={"question": "Something obscure?"})
             assert response.status_code == 200
             data = response.json()
@@ -324,7 +335,10 @@ class TestStatsEndpoint:
                 {"paper_id": "p2", "arxiv_id": "2103.05675"},
             ]
         }
-        with patch("rag_bench.api.server._retriever", retriever_mock):
+        with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
+            patch("rag_bench.api.server._retriever", retriever_mock),
+        ):
             response = client.get("/api/stats")
             assert response.status_code == 200
             data = response.json()
@@ -371,7 +385,10 @@ class TestListPapersEndpoint:
                 },
             ]
         }
-        with patch("rag_bench.api.server._retriever", retriever_mock):
+        with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
+            patch("rag_bench.api.server._retriever", retriever_mock),
+        ):
             response = client.get("/api/papers")
             assert response.status_code == 200
             data = response.json()
@@ -467,6 +484,7 @@ class TestEvalEndpoint:
     def test_eval_endpoint_basic(self, client):
         """Test eval endpoint."""
         with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
             patch(
                 "rag_bench.api.server._generator",
                 MagicMock(
@@ -509,7 +527,11 @@ class TestEvalEndpoint:
 
     def test_eval_endpoint_file_not_found(self, client):
         """Test eval when queries file not found."""
-        with patch("rag_bench.api.server._generator", MagicMock()), patch("pathlib.Path.exists", return_value=False):
+        with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
+            patch("rag_bench.api.server._generator", MagicMock()),
+            patch("pathlib.Path.exists", return_value=False),
+        ):
             response = client.post("/api/eval", json={"run_all": False})
             assert response.status_code == 404
 
@@ -519,7 +541,7 @@ class TestStreamingEndpoint:
 
     def test_query_stream_casual_greeting(self, client):
         """Test streaming with casual greeting."""
-        with patch("rag_bench.api.server._generator", MagicMock()):
+        with patch("rag_bench.api.server._pipeline", MagicMock()), patch("rag_bench.api.server._generator", MagicMock()):
             response = client.post("/api/query/stream", json={"question": "hello"})
             assert response.status_code == 200
 
@@ -535,7 +557,10 @@ class TestPaperEndpoints:
             {"ids": []},  # Second call returns empty
             {"ids": []},  # Third call returns empty
         ]
-        with patch("rag_bench.api.server._retriever", retriever_mock):
+        with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
+            patch("rag_bench.api.server._retriever", retriever_mock),
+        ):
             response = client.get("/api/papers/nonexistent")
             assert response.status_code == 404
 
@@ -553,7 +578,10 @@ class TestPaperEndpoints:
             {"ids": []},  # Second call
             {"ids": []},  # Third call
         ]
-        with patch("rag_bench.api.server._retriever", retriever_mock):
+        with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
+            patch("rag_bench.api.server._retriever", retriever_mock),
+        ):
             # API returns 502 when it can't extract arxiv_id and fetch fails
             response = client.get("/api/papers/xyz/pdf")
             assert response.status_code in [404, 502]
@@ -587,6 +615,7 @@ class TestQueryWithBackendOverride:
             )
 
             with (
+                patch("rag_bench.api.server._pipeline", MagicMock()),
                 patch("rag_bench.api.server._generator", MagicMock()),
                 patch("rag_bench.api.server._retriever", MagicMock()),
                 patch("rag_bench.api.server._llm_backend_name", "ollama"),
@@ -607,6 +636,7 @@ class TestQueryWithBackendOverride:
     def test_query_with_backend_same_as_current(self, client):
         """Test query when backend is same as current."""
         with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
             patch(
                 "rag_bench.api.server._generator",
                 MagicMock(
@@ -649,6 +679,7 @@ class TestStreamingWithResults:
         generator_mock = MagicMock(answer_stream=MagicMock(return_value=mock_stream()))
 
         with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
             patch("rag_bench.api.server._generator", generator_mock),
             patch("rag_bench.api.server._llm_backend_name", "ollama"),
             patch("rag_bench.api.server._llm_model_name", "mistral"),
@@ -672,6 +703,7 @@ class TestStreamingWithResults:
         generator_mock = MagicMock(answer_stream=MagicMock(return_value=mock_stream()))
 
         with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
             patch("rag_bench.api.server._generator", generator_mock),
             patch("rag_bench.api.server._llm_backend_name", "ollama"),
             patch("rag_bench.api.server._llm_model_name", "mistral"),
@@ -720,7 +752,10 @@ class TestGetPaperDetail:
             }
         ]
 
-        with patch("rag_bench.api.server._retriever", retriever_mock):
+        with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
+            patch("rag_bench.api.server._retriever", retriever_mock),
+        ):
             response = client.get("/api/papers/paper1")
             assert response.status_code == 200
             data = response.json()
@@ -751,7 +786,10 @@ class TestGetPaperDetail:
             }
         ]
 
-        with patch("rag_bench.api.server._retriever", retriever_mock):
+        with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
+            patch("rag_bench.api.server._retriever", retriever_mock),
+        ):
             response = client.get("/api/papers/paper")
             assert response.status_code == 200
             data = response.json()
@@ -805,6 +843,7 @@ class TestApiServerErrorHandling:
     def test_eval_endpoint_with_llm_level_deflection_detection(self, client):
         """Test eval endpoint detecting LLM-level deflection."""
         with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
             patch(
                 "rag_bench.api.server._generator",
                 MagicMock(
@@ -841,6 +880,7 @@ class TestApiServerErrorHandling:
     def test_eval_endpoint_with_empty_scores(self, client):
         """Test eval endpoint when scores list is empty."""
         with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
             patch(
                 "rag_bench.api.server._generator",
                 MagicMock(
@@ -881,6 +921,7 @@ class TestApiServerErrorHandling:
             raise Exception("Stream error test")
 
         with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
             patch(
                 "rag_bench.api.server._generator",
                 MagicMock(answer_stream=MagicMock(return_value=mock_stream_with_error())),
@@ -915,7 +956,10 @@ class TestApiServerErrorHandling:
             },
         ]
 
-        with patch("rag_bench.api.server._retriever", retriever_mock):
+        with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
+            patch("rag_bench.api.server._retriever", retriever_mock),
+        ):
             response = client.get("/api/papers/arxiv_2301.0001")
             assert response.status_code == 200
             data = response.json()
@@ -946,13 +990,17 @@ class TestApiServerErrorHandling:
             },
         ]
 
-        with patch("rag_bench.api.server._retriever", retriever_mock):
+        with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
+            patch("rag_bench.api.server._retriever", retriever_mock),
+        ):
             response = client.get("/api/papers/paper1")
             assert response.status_code == 200
 
     def test_get_paper_pdf_with_exception_in_fetch(self, client):
         """Test PDF fetch error handling."""
         with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
             patch("rag_bench.api.server._retriever", MagicMock()),
             patch("rag_bench.api.server._fetch_pdf", side_effect=Exception("Network error")),
         ):
@@ -964,7 +1012,10 @@ class TestApiServerErrorHandling:
         retriever_mock = MagicMock()
         retriever_mock.collection.count.return_value = 42
 
-        with patch("rag_bench.api.server._retriever", retriever_mock):
+        with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
+            patch("rag_bench.api.server._retriever", retriever_mock),
+        ):
             response = client.get("/api/stats")
             assert response.status_code == 200
             data = response.json()
@@ -1279,6 +1330,7 @@ class TestFullEvalEndpoint:
         mock_generator.llm = MagicMock()
 
         with (
+            patch("rag_bench.api.server._pipeline", MagicMock()),
             patch("rag_bench.api.server._generator", mock_generator),
             patch("rag_bench.api.server._retriever", MagicMock()),
             patch("rag_bench.eval.runner.EvalRunner") as mock_runner_class,

@@ -11,6 +11,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from rag_bench.config import DEFAULT_TOP_K
+from rag_bench.core.types import RetrievalResult
 from rag_bench.eval.benchmark import BenchmarkEntry, get_benchmark
 from rag_bench.eval.judge import JudgeLLM
 from rag_bench.eval.metrics import (
@@ -20,6 +21,21 @@ from rag_bench.eval.metrics import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _retrieval_results_to_dicts(results: list[RetrievalResult]) -> list[dict]:
+    """Convert typed RetrievalResult objects to dicts for metrics functions."""
+    return [
+        {
+            "chunk_id": r.chunk.chunk_id,
+            "text": r.chunk.text,
+            "score": r.relevance_score,
+            "rerank_score": r.rerank_score,
+            "metadata": dict(r.chunk.metadata),
+            "sources": list(r.sources),
+        }
+        for r in results
+    ]
 
 
 def _clear_cuda_cache() -> None:
@@ -90,21 +106,26 @@ class EvalRunner:
 
         try:
             start = time.time()
+
+            # Retrieve first, then generate (using typed Protocol methods)
             try:
-                gen_result = self.generator.answer(entry.question, top_k=DEFAULT_TOP_K)
+                retrieval_results = self.retriever.retrieve(entry.question, top_k=DEFAULT_TOP_K)
+                gen_result = self.generator.generate(entry.question, context=retrieval_results)
             except RuntimeError as e:
                 if "out of memory" in str(e).lower():
                     logger.warning(f"CUDA OOM for {entry.id}, clearing cache and retrying")
                     _clear_cuda_cache()
-                    gen_result = self.generator.answer(entry.question, top_k=DEFAULT_TOP_K)
+                    retrieval_results = self.retriever.retrieve(entry.question, top_k=DEFAULT_TOP_K)
+                    gen_result = self.generator.generate(entry.question, context=retrieval_results)
                 else:
                     raise
             result.latency_ms = (time.time() - start) * 1000
 
-            answer = gen_result.get("answer", "")
-            all_results = gen_result.get("results", [])
-            filtered_results = gen_result.get("filtered_results", [])
-            deflected = gen_result.get("deflected", False)
+            answer = gen_result.answer
+            deflected = gen_result.deflected
+
+            # Convert typed results to dicts for metrics functions
+            all_results_dicts = _retrieval_results_to_dicts(retrieval_results)
 
             result.answer_preview = answer[:200]
 
@@ -118,7 +139,7 @@ class EvalRunner:
             # Retrieval metrics (always compute, even for deflections)
             if entry.expected_sources:
                 result.retrieval = compute_retrieval_metrics(
-                    all_results,
+                    all_results_dicts,
                     entry.expected_sources,
                     entry.acceptable_sources or None,
                     k=DEFAULT_TOP_K,
@@ -128,8 +149,8 @@ class EvalRunner:
             if deflected:
                 return result
 
-            # Citation metrics
-            sources_for_citation = filtered_results if filtered_results else all_results[:5]
+            # Citation metrics — use top 5 results for citation checking
+            sources_for_citation = all_results_dicts[:5]
             result.citation = compute_citation_metrics(
                 answer,
                 sources_for_citation,
@@ -219,12 +240,12 @@ class EvalRunner:
 
         try:
             start = time.time()
-            retrieval_results = self.retriever.query(entry.question, top_k=DEFAULT_TOP_K)
+            retrieval_results = self.retriever.retrieve(entry.question, top_k=DEFAULT_TOP_K)
             result.latency_ms = (time.time() - start) * 1000
 
             if entry.expected_sources:
                 result.retrieval = compute_retrieval_metrics(
-                    retrieval_results,
+                    _retrieval_results_to_dicts(retrieval_results),
                     entry.expected_sources,
                     entry.acceptable_sources or None,
                     k=DEFAULT_TOP_K,

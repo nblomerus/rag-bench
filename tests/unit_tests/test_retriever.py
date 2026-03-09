@@ -165,7 +165,7 @@ class TestBM25:
         # Check some common terms have IDF scores
         assert len(bm25.idf) > 0
         # All IDF scores should be positive
-        for _term, idf in bm25.idf.items():
+        for _, idf in bm25.idf.items():
             assert idf >= 0
 
     def test_query_basic(self, sample_chunks):

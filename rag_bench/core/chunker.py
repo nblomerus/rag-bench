@@ -15,6 +15,8 @@ import re
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from rag_bench.config import MIN_CHUNK_LENGTH, SECTION_BLOCKLIST
+from rag_bench.core.configs import ChunkerConfig
+from rag_bench.core.types import ChunkData
 from rag_bench.utils.text import format_authors
 
 logger = logging.getLogger(__name__)
@@ -52,7 +54,14 @@ class PaperChunker:
         chunk_size: int = 1024,
         chunk_overlap: int = 128,
         min_section_length: int = 50,
+        *,
+        config: ChunkerConfig | None = None,
     ):
+        if config is not None:
+            chunk_size = config.chunk_size
+            chunk_overlap = config.chunk_overlap
+            min_section_length = config.min_section_length
+
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.min_section_length = min_section_length
@@ -73,7 +82,7 @@ class PaperChunker:
             length_function=len,
         )
 
-    def chunk_paper(self, doc: dict) -> list[dict]:
+    def chunk_paper(self, doc: dict) -> list[ChunkData]:
         """
         Chunk a parsed paper into retrieval-ready segments.
 
@@ -81,11 +90,10 @@ class PaperChunker:
             doc: Parsed paper dict with sections, acronyms, metadata.
 
         Returns:
-            List of chunk dicts, each with:
-            - chunk_id, doc_id, text, section
-            - metadata (source_display, title, year, arxiv_id, topic, categories)
+            List of ChunkData, each with chunk_id, doc_id, text, section,
+            and metadata (source_display, title, year, arxiv_id, topic, categories).
         """
-        chunks = []
+        chunks: list[ChunkData] = []
         acronyms = doc.get("acronyms", {})
 
         # Build citation display string
@@ -136,12 +144,12 @@ class PaperChunker:
                 if isinstance(categories, list):
                     categories = ",".join(categories)
 
-                chunk = {
-                    "chunk_id": f"{doc['doc_id']}_{section_name}_{i:03d}",
-                    "doc_id": doc["doc_id"],
-                    "text": chunk_text,
-                    "section": section_name,
-                    "metadata": {
+                chunk = ChunkData(
+                    chunk_id=f"{doc['doc_id']}_{section_name}_{i:03d}",
+                    doc_id=doc["doc_id"],
+                    text=chunk_text,
+                    section=section_name,
+                    metadata={
                         "source_display": source_display,
                         "title": doc["title"],
                         "year": doc["year"],
@@ -150,7 +158,7 @@ class PaperChunker:
                         "topic": doc.get("topic", ""),
                         "categories": categories,
                     },
-                }
+                )
                 chunks.append(chunk)
 
         return chunks
@@ -278,12 +286,12 @@ def chunk_all_papers(
         min_section_length=min_section_length,
     )
 
-    all_chunks = []
+    all_chunks: list[dict] = []
 
     for doc in docs:
         chunker._reset_equation_store()
         paper_chunks = chunker.chunk_paper(doc)
-        all_chunks.extend(paper_chunks)
+        all_chunks.extend(c.to_dict() for c in paper_chunks)
         logger.debug(f"  {doc['title'][:60]}... -> {len(paper_chunks)} chunks")
 
     logger.info(

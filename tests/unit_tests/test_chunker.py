@@ -153,19 +153,19 @@ class TestChunkPaper:
         assert len(chunks) > 0
         # Each chunk should have required fields
         for chunk in chunks:
-            assert "chunk_id" in chunk
-            assert "doc_id" in chunk
-            assert "text" in chunk
-            assert "section" in chunk
-            assert "metadata" in chunk
-            assert chunk["doc_id"] == "arxiv_1234.5678"
+            assert hasattr(chunk, "chunk_id")
+            assert hasattr(chunk, "doc_id")
+            assert hasattr(chunk, "text")
+            assert hasattr(chunk, "section")
+            assert hasattr(chunk, "metadata")
+            assert chunk.doc_id == "arxiv_1234.5678"
 
     def test_chunk_ids_unique(self, sample_paper):
         """Test that chunk IDs are unique."""
         chunker = PaperChunker()
         chunks = chunker.chunk_paper(sample_paper)
 
-        chunk_ids = [c["chunk_id"] for c in chunks]
+        chunk_ids = [c.chunk_id for c in chunks]
         assert len(chunk_ids) == len(set(chunk_ids))
 
     def test_chunk_metadata(self, sample_paper):
@@ -174,7 +174,7 @@ class TestChunkPaper:
         chunks = chunker.chunk_paper(sample_paper)
 
         for chunk in chunks:
-            metadata = chunk["metadata"]
+            metadata = chunk.metadata
             assert "source_display" in metadata
             assert "title" in metadata
             assert "year" in metadata
@@ -192,7 +192,7 @@ class TestChunkPaper:
         chunker = PaperChunker()
         chunks = chunker.chunk_paper(sample_paper)
 
-        sections = {c["section"] for c in chunks}
+        sections = {c.section for c in chunks}
         assert "introduction" in sections or "methods" in sections or "results" in sections
 
 
@@ -210,7 +210,7 @@ class TestEquationHandling:
         chunks = chunker.chunk_paper(paper_with_equations)
 
         # Combine all chunk text
-        all_text = " ".join(c["text"] for c in chunks)
+        all_text = " ".join(c.text for c in chunks)
 
         # Check that equations are preserved
         assert "$$E = mc^2$$" in all_text or "E = mc^2" in all_text
@@ -250,7 +250,7 @@ class TestTableHandling:
         chunker = PaperChunker()
         chunks = chunker.chunk_paper(paper_with_tables)
 
-        all_text = " ".join(c["text"] for c in chunks)
+        all_text = " ".join(c.text for c in chunks)
 
         # Check that table structure is preserved
         assert "| Model | Accuracy | Speed |" in all_text
@@ -430,7 +430,7 @@ class TestEdgeCases:
 
         # All chunks should have reasonable content (includes contextual prefix)
         for chunk in chunks:
-            assert len(chunk["text"].strip()) >= 100
+            assert len(chunk.text.strip()) >= 100
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -490,7 +490,7 @@ class TestChunkerEdgeCasesAndCoverage:
         chunks = chunker.chunk_paper(paper)
         # Should skip the 'intro' section due to small size
         # Should only have chunks from 'method'
-        assert all(c["section"] != "intro" for c in chunks)
+        assert all(c.section != "intro" for c in chunks)
 
     def test_restore_equations_without_equations_stored(self):
         """Test equation restoration when no equations were stored."""
@@ -536,7 +536,7 @@ class TestChunkerEdgeCasesAndCoverage:
         # Chunks should exist
         assert len(chunks) > 0
         # At least one chunk should contain text
-        assert any(len(c["text"]) > 0 for c in chunks)
+        assert any(len(c.text) > 0 for c in chunks)
 
     def test_chunk_paper_with_all_small_sections(self):
         """Test paper where all sections are too small to chunk."""
@@ -626,8 +626,8 @@ class TestSectionBlocklist:
         chunks = chunker.chunk_paper(paper)
 
         # References should be filtered out
-        assert all(c["section"] != "references" for c in chunks)
-        assert any(c["section"] == "introduction" for c in chunks)
+        assert all(c.section != "references" for c in chunks)
+        assert any(c.section == "introduction" for c in chunks)
 
     def test_acknowledgments_section_filtered(self):
         """Test that acknowledgments section is excluded."""
@@ -647,7 +647,7 @@ class TestSectionBlocklist:
         chunker = PaperChunker()
         chunks = chunker.chunk_paper(paper)
 
-        assert all(c["section"] != "acknowledgments" for c in chunks)
+        assert all(c.section != "acknowledgments" for c in chunks)
 
     def test_preamble_section_filtered(self):
         """Test that preamble section is excluded."""
@@ -667,7 +667,7 @@ class TestSectionBlocklist:
         chunker = PaperChunker()
         chunks = chunker.chunk_paper(paper)
 
-        assert all(c["section"] != "preamble" for c in chunks)
+        assert all(c.section != "preamble" for c in chunks)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -698,8 +698,8 @@ class TestMetadataEnrichment:
         chunks = chunker.chunk_paper(paper)
 
         assert len(chunks) > 0
-        assert chunks[0]["metadata"]["topic"] == "rag_retrieval"
-        assert chunks[0]["metadata"]["categories"] == "cs.CL,cs.IR"
+        assert chunks[0].metadata["topic"] == "rag_retrieval"
+        assert chunks[0].metadata["categories"] == "cs.CL,cs.IR"
 
     def test_missing_topic_defaults_to_empty(self):
         """Test that missing topic defaults to empty string."""
@@ -719,8 +719,8 @@ class TestMetadataEnrichment:
         chunks = chunker.chunk_paper(paper)
 
         assert len(chunks) > 0
-        assert chunks[0]["metadata"]["topic"] == ""
-        assert chunks[0]["metadata"]["categories"] == ""
+        assert chunks[0].metadata["topic"] == ""
+        assert chunks[0].metadata["categories"] == ""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -750,7 +750,7 @@ class TestContextualPrefix:
 
         assert len(chunks) > 0
         # Chunk text should start with the title prefix
-        assert chunks[0]["text"].startswith("Attention Is All You Need")
+        assert chunks[0].text.startswith("Attention Is All You Need")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -778,7 +778,7 @@ class TestChunkerBranchCoverage:
 
         assert len(chunks) > 0
         # Should handle string categories correctly
-        assert chunks[0]["metadata"]["categories"] == "cs.CL"
+        assert chunks[0].metadata["categories"] == "cs.CL"
 
     def test_categories_as_empty_string(self):
         """Test handling when categories is empty string."""
@@ -796,4 +796,4 @@ class TestChunkerBranchCoverage:
         chunks = chunker.chunk_paper(paper)
 
         assert len(chunks) > 0
-        assert chunks[0]["metadata"]["categories"] == ""
+        assert chunks[0].metadata["categories"] == ""
