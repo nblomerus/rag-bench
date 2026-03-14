@@ -40,6 +40,29 @@ class QualityMetrics(BaseModel):
     faithfulness_score: float = 0.0
 
 
+class PipelineStage(BaseModel):
+    """A single stage in the retrieval/generation pipeline."""
+
+    name: str  # e.g., "retrieval", "reranking", "crag", "generation"
+    status: str = ""  # "correct", "ambiguous", "incorrect", "skipped", etc.
+    duration_ms: float = 0.0
+    detail: str = ""  # Human-readable description of what happened
+    metadata: dict = {}  # Stage-specific data
+
+
+class PipelineInsight(BaseModel):
+    """Full pipeline decision trace for a single query."""
+
+    query_type: str = "simple"  # "simple" | "multi_hop" | "entity"
+    crag_confidence: str = ""  # "correct" | "ambiguous" | "incorrect"
+    crag_top_score: float = 0.0  # Top-1 rerank score used for CRAG decision
+    crag_action: str = ""  # "pass_through" | "refine_only" | "hyde_rewrite"
+    stages: list[PipelineStage] = []  # Ordered pipeline stages
+    total_candidates: int = 0  # Results before filtering
+    final_results: int = 0  # Results after filtering
+    sources_by_type: dict = {}  # e.g., {"dense": 3, "bm25": 2}
+
+
 class QueryResponse(BaseModel):
     answer: str
     sources: list[SourceResult]
@@ -50,6 +73,7 @@ class QueryResponse(BaseModel):
     backend: str
     model: str
     quality: QualityMetrics = QualityMetrics()
+    pipeline: PipelineInsight | None = None
 
 
 class StatsResponse(BaseModel):
@@ -290,3 +314,32 @@ class EvalScheduleStatus(BaseModel):
     next_run: str | None = None
     last_run: str | None = None
     last_run_summary: dict = {}
+
+
+# ── Knowledge Graph Visualization ──
+
+
+class GraphNode(BaseModel):
+    """A node in the knowledge graph subgraph."""
+
+    id: str  # name_lower (unique key)
+    name: str  # Display name
+    entity_type: str  # MODEL, DATASET, METHOD, etc.
+    matched: bool = False  # True if this entity was matched from the query
+
+
+class GraphEdge(BaseModel):
+    """An edge in the knowledge graph subgraph."""
+
+    source: str  # source node id (name_lower)
+    target: str  # target node id (name_lower)
+    predicate: str  # USES, OUTPERFORMS, etc.
+    weight: int = 1  # How many times this triple was extracted
+
+
+class GraphSubgraph(BaseModel):
+    """A local subgraph around matched entities for visualization."""
+
+    nodes: list[GraphNode] = []
+    edges: list[GraphEdge] = []
+    matched_entities: list[str] = []  # Names of entities matched from query

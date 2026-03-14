@@ -213,8 +213,131 @@ def postprocess_math(text: str) -> str:
     def _pass_var_superscripts(plain: str) -> str:
         return _VAR_SUP_RE.sub(lambda m: f"${m.group(1)}^{{{m.group(2).strip('{}')}}}$", plain)
 
+    # --- Pass 6: Bare LaTeX command sequences outside $ delimiters ---
+    def _pass_bare_latex(plain: str) -> str:
+        """Find runs of LaTeX commands not inside $ and wrap them.
+
+        Uses a character-level scan: when we see a backslash followed by a
+        known command, consume the command and its brace groups, then keep
+        consuming if the next thing is also a LaTeX command (for chained
+        expressions like \\text{softmax}\\left(\\frac{...}{...}\\right)).
+        """
+        _LATEX_CMDS = {
+            "frac",
+            "sqrt",
+            "text",
+            "mathcal",
+            "mathbf",
+            "mathrm",
+            "mathbb",
+            "operatorname",
+            "left",
+            "right",
+            "sum",
+            "prod",
+            "int",
+            "log",
+            "exp",
+            "min",
+            "max",
+            "arg",
+            "lim",
+            "sup",
+            "inf",
+            "cdot",
+            "times",
+            "bar",
+            "hat",
+            "tilde",
+            "vec",
+            "overline",
+        }
+        _DELIMS = set("()[]|.")  # chars that follow \left or \right
+
+        def _extract_cmd(s, pos):
+            """Extract a command name starting at pos (which points to \\)."""
+            j = pos + 1
+            while j < len(s) and s[j].isalpha():
+                j += 1
+            return s[pos + 1 : j], j
+
+        def _skip_ws(s, pos):
+            while pos < len(s) and s[pos] in (" ", "\t"):
+                pos += 1
+            return pos
+
+        def _consume_brace_group(s, pos):
+            """Consume {…} including nested braces. pos must point to '{'."""
+            depth = 1
+            pos += 1
+            while pos < len(s) and depth > 0:
+                if s[pos] == "{":
+                    depth += 1
+                elif s[pos] == "}":
+                    depth -= 1
+                pos += 1
+            return pos
+
+        def _consume_command(s, pos):
+            """Consume a \\cmd and its arguments, returning new pos."""
+            cmd, pos = _extract_cmd(s, pos)
+            pos = _skip_ws(s, pos)
+            # \left and \right consume a delimiter char
+            if cmd in ("left", "right") and pos < len(s) and (s[pos] in _DELIMS or s[pos] == "\\"):
+                if s[pos] == "\\":
+                    # e.g. \left\{ or \right\}
+                    pos += 2
+                else:
+                    pos += 1
+            # Consume brace groups {..}, skipping whitespace only between groups
+            while pos < len(s):
+                peek = _skip_ws(s, pos)
+                if peek < len(s) and s[peek] == "{":
+                    pos = _consume_brace_group(s, peek)
+                else:
+                    break
+            # Consume optional sub/superscripts
+            while pos < len(s) and s[pos] in ("_", "^"):
+                pos += 1
+                if pos < len(s) and s[pos] == "{":
+                    pos = _consume_brace_group(s, pos)
+                elif pos < len(s):
+                    pos += 1  # single char subscript
+            return cmd, pos
+
+        result = []
+        i = 0
+        while i < len(plain):
+            if plain[i] == "\\" and i + 1 < len(plain) and plain[i + 1].isalpha():
+                cmd, _ = _extract_cmd(plain, i)
+                if cmd in _LATEX_CMDS:
+                    start = i
+                    _, i = _consume_command(plain, i)
+                    # Keep consuming chained LaTeX commands
+                    # (e.g. \text{softmax}\left(\frac{...}\right)V)
+                    while i < len(plain):
+                        saved = i
+                        i = _skip_ws(plain, i)
+                        if i < len(plain) and plain[i] == "\\" and i + 1 < len(plain) and plain[i + 1].isalpha():
+                            next_cmd, _ = _extract_cmd(plain, i)
+                            if next_cmd in _LATEX_CMDS:
+                                _, i = _consume_command(plain, i)
+                                continue
+                        # Not a chained command — revert any whitespace consumed
+                        i = saved
+                        break
+                    result.append(f"${plain[start:i]}$")
+                    continue
+            result.append(plain[i])
+            i += 1
+        return "".join(result)
+
     # --- Apply all passes sequentially, re-splitting between each ---
+    # IMPORTANT: _pass_bare_latex runs FIRST so that full LaTeX expressions
+    # like \frac{QK^T}{\sqrt{d_k}} get wrapped in $...$ before simpler passes
+    # (var_subscripts, named_greek) try to transform content inside brace groups.
     passes = [
+        _pass_bare_latex,
         _pass_greek_unicode,
         _pass_unicode_symbols,
         _pass_named_greek,
@@ -233,7 +356,215 @@ def postprocess_math(text: str) -> str:
                 parts.append(transform(content))
         current = "".join(parts)
 
+    # --- Final pass: promote equation-like lines to display math ---
+    # The LLM often wraps only the complex part (e.g. \frac) in $...$
+    # but leaves function names and operators as plain text. Detect these
+    # mixed lines and promote the whole thing to $$...$$.
+    current = _promote_equation_lines(current)
+
     return current
+
+
+# Common natural-language words that signal prose, not equations
+_NL_WORDS = frozenset(
+    [
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "must",
+        "shall",
+        "can",
+        "that",
+        "this",
+        "these",
+        "those",
+        "which",
+        "who",
+        "what",
+        "where",
+        "when",
+        "how",
+        "why",
+        "because",
+        "since",
+        "while",
+        "although",
+        "if",
+        "unless",
+        "until",
+        "after",
+        "before",
+        "during",
+        "between",
+        "through",
+        "about",
+        "above",
+        "below",
+        "from",
+        "into",
+        "onto",
+        "upon",
+        "with",
+        "within",
+        "without",
+        "against",
+        "along",
+        "among",
+        "around",
+        "behind",
+        "beyond",
+        "down",
+        "inside",
+        "outside",
+        "over",
+        "under",
+        "and",
+        "but",
+        "or",
+        "nor",
+        "not",
+        "so",
+        "yet",
+        "both",
+        "either",
+        "neither",
+        "each",
+        "every",
+        "all",
+        "any",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "no",
+        "only",
+        "same",
+        "than",
+        "too",
+        "very",
+        "just",
+        "also",
+        "then",
+        "for",
+        "of",
+        "to",
+        "in",
+        "on",
+        "at",
+        "by",
+        "as",
+        "it",
+        "its",
+        "we",
+        "they",
+        "their",
+        "our",
+        "there",
+        "here",
+    ]
+)
+
+# Math function names → \text{} wrapping
+_MATH_FUNC_NAMES = [
+    "Attention",
+    "softmax",
+    "sigmoid",
+    "tanh",
+    "ReLU",
+    "relu",
+    "GELU",
+    "gelu",
+    "argmax",
+    "argmin",
+    "Softmax",
+    "LayerNorm",
+    "BatchNorm",
+]
+
+_INLINE_MATH_RE = re.compile(r"(?<!\$)\$(?!\$)((?:[^$\\]|\\.)+?)\$(?!\$)")
+
+
+def _promote_equation_lines(text: str) -> str:
+    """Promote lines that are clearly equations from mixed text+inline math to display math.
+
+    Detects lines like: Attention(Q, K, V) = softmax($\\frac{QK^T}{\\sqrt{d_k}}$)V
+    and converts to: $$\\text{Attention}(Q, K, V) = \\text{softmax}\\left(\\frac{...}\\right)V$$
+    """
+    lines = text.split("\n")
+    result = []
+
+    for line in lines:
+        s = line.strip()
+        # Skip empty, already display math, markdown headings/lists
+        if not s or s.startswith("$$") or s.startswith("#") or s.startswith("- ") or s.startswith("* ") or len(s) > 200:
+            result.append(line)
+            continue
+
+        # Must contain = and inline $...$
+        if "=" not in s or not _INLINE_MATH_RE.search(s):
+            result.append(line)
+            continue
+
+        # Remove [Source N] refs for analysis
+        analysis = re.sub(r"\[Source \d+\]", "", s).strip()
+        if not analysis:
+            result.append(line)
+            continue
+
+        # Count natural language words — if too many, it's a sentence not an equation
+        tokens = re.findall(r"[a-zA-Z]+", analysis)
+        if not tokens:
+            result.append(line)
+            continue
+
+        nl_count = sum(1 for t in tokens if t.lower() in _NL_WORDS)
+        if len(tokens) > 0 and nl_count / len(tokens) > 0.3:
+            result.append(line)
+            continue
+
+        # This looks like an equation — promote to display math
+        promoted = s
+
+        # Extract and preserve [Source N] refs (keep outside $$)
+        sources = re.findall(r"\[Source \d+\]", promoted)
+        promoted = re.sub(r"\s*\[Source \d+\]", "", promoted).strip()
+
+        # Strip inline $ delimiters (content becomes part of display math)
+        promoted = _INLINE_MATH_RE.sub(r"\1", promoted)
+
+        # Wrap known function names in \text{}
+        for fname in _MATH_FUNC_NAMES:
+            # Only wrap if not already inside \text{}
+            promoted = re.sub(
+                rf"(?<!\\text\{{){re.escape(fname)}(?!\}})",
+                rf"\\text{{{fname}}}",
+                promoted,
+            )
+
+        source_suffix = " " + " ".join(sources) if sources else ""
+        result.append(f"$${promoted}$${source_suffix}")
+
+    return "\n".join(result)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -288,6 +619,10 @@ CITATION RULES — read before writing:
 - When multiple sources cover the same concept, prefer citing the original/earliest source that introduced it.
 - Do NOT add a bibliography or references section at the end.
 - If the sources are insufficient for a specific claim, say so explicitly.
+
+Answer quality:
+- Give thorough, substantive answers. Don't just state a formula or one-liner — explain what it means, why it matters, and how the components work, drawing from the provided sources.
+- Aim for 3-6 sentences minimum for factual questions.
 
 Formatting rules:
 - Use **markdown** for structure. Use LaTeX for ALL math: $inline$ and $$display$$
@@ -1423,6 +1758,16 @@ class RAGGenerator:
         if not filtered and results:
             filtered = results[:1]
 
+        # Ensure at least 3 sources so the LLM has enough context for
+        # substantive answers, even when one result dominates the scores.
+        min_sources = min(3, len(results))
+        if len(filtered) < min_sources:
+            for r in results:
+                if r not in filtered:
+                    filtered.append(r)
+                if len(filtered) >= min_sources:
+                    break
+
         return filtered
 
     def _format_citations(self, results: list[dict]) -> list[str]:
@@ -1433,6 +1778,48 @@ class RAGGenerator:
             citation = f"[Source {i}] {meta.get('source_display', 'Unknown')} — {meta.get('section', 'Unknown section')}"
             citations.append(citation)
         return citations
+
+    @staticmethod
+    def _strip_uncited_sources(answer_text: str, relevant: list[dict]) -> tuple[str, list[dict]]:
+        """Remove sources not cited in the answer and re-number remaining citations.
+
+        Returns the updated answer text and the filtered list of sources.
+        """
+        # Find all [Source N] references in the answer
+        cited_nums = {int(m) for m in re.findall(r"\[Source\s+(\d+)\]", answer_text)}
+
+        if not cited_nums:
+            # No citations at all — keep everything as-is
+            return answer_text, relevant
+
+        # Build mapping: old 1-based index → new 1-based index (only for cited)
+        old_to_new: dict[int, int] = {}
+        cited_sources: list[dict] = []
+        new_idx = 1
+        for old_idx_0, src in enumerate(relevant):
+            old_idx = old_idx_0 + 1  # 1-based
+            if old_idx in cited_nums:
+                old_to_new[old_idx] = new_idx
+                cited_sources.append(src)
+                new_idx += 1
+
+        if len(cited_sources) == len(relevant):
+            # All sources cited — nothing to strip
+            return answer_text, relevant
+
+        # Re-number citations in the answer text (replace highest first to avoid collision)
+        updated = answer_text
+        for old_num in sorted(old_to_new, reverse=True):
+            new_num = old_to_new[old_num]
+            # Use a placeholder to avoid double-replacement
+            updated = updated.replace(f"[Source {old_num}]", f"[__SRC_{new_num}__]")
+        # Replace placeholders with final citation format
+        updated = re.sub(r"\[__SRC_(\d+)__\]", r"[Source \1]", updated)
+
+        n_stripped = len(relevant) - len(cited_sources)
+        logger.info(f"Stripped {n_stripped} uncited source(s), kept {len(cited_sources)}")
+
+        return updated, cited_sources
 
     # Stopwords for citation overlap computation (class-level to avoid re-creation)
     _CITATION_STOPWORDS = {
@@ -1775,6 +2162,92 @@ class RAGGenerator:
         return any(p in q_lower for p in self._OPINION_PATTERNS)
 
     @staticmethod
+    def _classify_query_type(question: str) -> str:
+        """Classify query complexity using pattern matching (mirrors agent logic)."""
+        q_lower = question.lower()
+        comparison_kw = (
+            "compare",
+            "difference",
+            "versus",
+            "vs",
+            "contrast",
+            "better",
+            "worse",
+            "advantage",
+            "disadvantage",
+            r"how does .* differ",
+            "what is the difference",
+        )
+        multi_hop_kw = (
+            "relationship between",
+            r"how does .* relate",
+            "what led to",
+            "evolution of",
+            "trace the",
+            "step by step",
+            r"explain how .* affects",
+        )
+        for pat in comparison_kw:
+            if re.search(pat, q_lower):
+                return "multi_hop"
+        for pat in multi_hop_kw:
+            if re.search(pat, q_lower):
+                return "multi_hop"
+        return "simple"
+
+    @staticmethod
+    def _evaluate_crag_confidence(results: list[dict]) -> dict:
+        """Evaluate CRAG confidence from reranker scores (mirrors CRAG logic).
+
+        Returns a dict with confidence level, action, and explanation.
+        """
+        if not results:
+            return {
+                "confidence": "unknown",
+                "action": "pass_through",
+                "detail": "No results to evaluate",
+                "top_score": 0.0,
+            }
+
+        scores = [r.get("score", 0.0) for r in results]
+        top_score = scores[0]
+        correct_threshold = 0.90
+        ambiguous_threshold = 0.70
+
+        if top_score >= correct_threshold:
+            confidence = "correct"
+            # Score concentration check
+            if len(scores) >= 3:
+                top3_mean = sum(scores[:3]) / 3
+                gap = top_score - top3_mean
+                if gap < 0.005 and top_score < 0.95:
+                    confidence = "ambiguous"
+        elif top_score >= ambiguous_threshold:
+            confidence = "ambiguous"
+        else:
+            confidence = "incorrect"
+
+        action_map = {
+            "correct": "pass_through",
+            "ambiguous": "refine_only",
+            "incorrect": "hyde_rewrite",
+        }
+        detail_map = {
+            "correct": f"High confidence ({top_score:.3f}) — results are trustworthy",
+            "ambiguous": f"Medium confidence ({top_score:.3f}) — refining low-quality tail",
+            "incorrect": f"Low confidence ({top_score:.3f}) — HyDE rewrite recommended",
+        }
+
+        return {
+            "confidence": confidence,
+            "action": action_map.get(confidence, "pass_through"),
+            "detail": detail_map.get(confidence, ""),
+            "top_score": round(top_score, 4),
+            "threshold_correct": correct_threshold,
+            "threshold_ambiguous": ambiguous_threshold,
+        }
+
+    @staticmethod
     def _retrieval_results_to_dicts(context: list[RetrievalResult]) -> list[dict]:
         """Convert typed RetrievalResult objects to the dict format used internally."""
         return [
@@ -1909,6 +2382,9 @@ class RAGGenerator:
                 results=context,
                 scores=[r.relevance_score for r in context],
             )
+
+        # Strip uncited sources and re-number citations
+        answer_text, relevant = self._strip_uncited_sources(answer_text, relevant)
 
         # Format citations
         citations = self._format_citations(relevant)
@@ -2218,7 +2694,9 @@ class RAGGenerator:
                 "generation_ms": round(_generation_ms, 1),
             }
 
-        # Step 6: Format citations
+        # Step 6: Strip uncited sources and re-number citations
+        answer_text, relevant = self._strip_uncited_sources(answer_text, relevant)
+
         citations = self._format_citations(relevant)
 
         # Append sources to answer
@@ -2271,6 +2749,16 @@ class RAGGenerator:
 
         k = top_k or self.top_k
 
+        # ── Pipeline stage: Query Classification ──
+        query_type = self._classify_query_type(question)
+        yield {
+            "event": "pipeline",
+            "stage": "classify",
+            "status": "done",
+            "detail": f"Query classified as {query_type}",
+            "data": {"query_type": query_type},
+        }
+
         # Identify foundational papers to inject
         inject_chunks = []
         if self.citation_booster:
@@ -2285,6 +2773,14 @@ class RAGGenerator:
         boost_candidates = k * 5 if self.citation_booster else k  # 5x candidates for boosting
         boost_candidates = min(boost_candidates, 50)  # Cap at 50
 
+        # ── Pipeline stage: Retrieval ──
+        yield {
+            "event": "pipeline",
+            "stage": "retrieval",
+            "status": "running",
+            "detail": "Searching with BM25 + dense embeddings...",
+            "data": {},
+        }
         _retrieval_start = time.time()
         retrieval = self.retriever.query(
             question,
@@ -2293,6 +2789,44 @@ class RAGGenerator:
         )
         _retrieval_ms = (time.time() - _retrieval_start) * 1000
         _reranking_ms = getattr(self.retriever, "_last_reranking_ms", 0.0)
+
+        # Count source types
+        _source_counts = {}
+        for r in retrieval:
+            for src in r.get("sources", []):
+                _source_counts[src] = _source_counts.get(src, 0) + 1
+
+        yield {
+            "event": "pipeline",
+            "stage": "retrieval",
+            "status": "done",
+            "detail": f"Retrieved {len(retrieval)} candidates in {_retrieval_ms:.0f}ms",
+            "data": {
+                "candidates": len(retrieval),
+                "duration_ms": round(_retrieval_ms, 1),
+                "sources_by_type": _source_counts,
+            },
+        }
+
+        # ── Pipeline stage: Reranking ──
+        top_score = retrieval[0].get("score", 0.0) if retrieval else 0.0
+        yield {
+            "event": "pipeline",
+            "stage": "reranking",
+            "status": "done",
+            "detail": f"Cross-encoder reranking — top score: {top_score:.3f}",
+            "data": {"top_score": round(top_score, 4), "duration_ms": round(_reranking_ms, 1)},
+        }
+
+        # ── Pipeline stage: CRAG Confidence Evaluation ──
+        crag_result = self._evaluate_crag_confidence(retrieval)
+        yield {
+            "event": "pipeline",
+            "stage": "crag",
+            "status": crag_result["confidence"],
+            "detail": crag_result["detail"],
+            "data": crag_result,
+        }
 
         # Apply citation boosting (if enabled)
         if self.citation_booster:
@@ -2343,6 +2877,18 @@ class RAGGenerator:
                         logger.debug(f"Foundational paper preserved after filtering: {aid}")
                         break
 
+        # ── Pipeline stage: Knowledge Refinement ──
+        filtered_count = len(retrieval) - len(relevant)
+        yield {
+            "event": "pipeline",
+            "stage": "refinement",
+            "status": "done" if filtered_count > 0 else "skipped",
+            "detail": f"Filtered {filtered_count} low-relevance results, kept {len(relevant)}"
+            if filtered_count > 0
+            else f"All {len(relevant)} results above quality threshold",
+            "data": {"filtered": filtered_count, "remaining": len(relevant)},
+        }
+
         yield {
             "event": "sources",
             "results": retrieval,
@@ -2350,6 +2896,9 @@ class RAGGenerator:
             "scores": [r.get("score", 0) for r in retrieval],
             "retrieval_ms": round(_retrieval_ms, 1),
             "reranking_ms": round(_reranking_ms, 1),
+            "query_type": query_type,
+            "crag": crag_result,
+            "sources_by_type": _source_counts,
         }
 
         should_deflect, reason = self.gate.should_deflect(retrieval, question=question)
@@ -2394,6 +2943,15 @@ class RAGGenerator:
                 "reason": reason,
             }
             return
+
+        # ── Pipeline stage: Generation ──
+        yield {
+            "event": "pipeline",
+            "stage": "generation",
+            "status": "running",
+            "detail": "Generating grounded answer with citations...",
+            "data": {"sources_used": len(relevant)},
+        }
 
         sources_block = self._build_sources_block(relevant)
         prompt = GENERATION_PROMPT.format(
@@ -2453,11 +3011,24 @@ class RAGGenerator:
             }
             return
 
+        # ── Pipeline stage: Generation complete ──
+        yield {
+            "event": "pipeline",
+            "stage": "generation",
+            "status": "done",
+            "detail": f"Answer generated in {_generation_ms:.0f}ms",
+            "data": {"duration_ms": round(_generation_ms, 1)},
+        }
+
+        # Strip uncited sources and re-number citations
+        full_text, relevant = self._strip_uncited_sources(full_text, relevant)
+
         citations = self._format_citations(relevant)
         yield {
             "event": "done",
             "answer": full_text.strip(),
             "sources": citations,
+            "filtered_results": relevant,
             "retrieval_ms": round(_retrieval_ms, 1),
             "reranking_ms": round(_reranking_ms, 1),
             "generation_ms": round(_generation_ms, 1),

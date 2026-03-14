@@ -45,9 +45,14 @@ from rag_bench.api.schemas import (
     FullEvalRequest,
     FullEvalResponse,
     FullEvalResult,
+    GraphEdge,
+    GraphNode,
+    GraphSubgraph,
     PaperChunk,
     PaperDetail,
     PaperSummary,
+    PipelineInsight,
+    PipelineStage,
     QualityMetrics,
     QueryRequest,
     QueryResponse,
@@ -609,6 +614,187 @@ def _compute_per_source_cited(answer: str, results: list[dict]) -> list[dict]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Pipeline insight computation
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _compute_pipeline_insight(
+    question: str,
+    all_results: list[dict],
+    filtered_results: list[dict],
+    retrieval_ms: float = 0.0,
+    reranking_ms: float = 0.0,
+) -> PipelineInsight:
+    """Compute pipeline decision trace from retrieval results.
+
+    Shows what the CRAG and agent subsystems decided (or would decide)
+    for this query, based on rerank scores and query patterns.
+    """
+    import re
+
+    scores = [r.get("score", 0.0) for r in all_results] if all_results else []
+    top_score = scores[0] if scores else 0.0
+
+    # ── Query classification (mirrors agent._classify_query) ──
+    q_lower = question.lower()
+    comparison_kw = (
+        "compare",
+        "difference",
+        "versus",
+        "vs",
+        "contrast",
+        "better",
+        "worse",
+        "advantage",
+        "disadvantage",
+        r"how does .* differ",
+        "what is the difference",
+    )
+    multi_hop_kw = (
+        "relationship between",
+        r"how does .* relate",
+        "what led to",
+        "evolution of",
+        "trace the",
+        "step by step",
+        r"explain how .* affects",
+    )
+    query_type = "simple"
+    for pat in comparison_kw:
+        if re.search(pat, q_lower):
+            query_type = "multi_hop"
+            break
+    if query_type == "simple":
+        for pat in multi_hop_kw:
+            if re.search(pat, q_lower):
+                query_type = "multi_hop"
+                break
+
+    # ── CRAG confidence (mirrors crag._score_confidence) ──
+    crag_correct_threshold = 0.90
+    crag_ambiguous_threshold = 0.70
+    crag_refinement_floor = 0.30
+
+    if top_score >= crag_correct_threshold:
+        crag_confidence = "correct"
+        # Check for flat scores (score concentration)
+        if len(scores) >= 3:
+            top3_mean = sum(scores[:3]) / 3
+            gap = top_score - top3_mean
+            if gap < 0.005 and top_score < 0.95:
+                crag_confidence = "ambiguous"
+    elif top_score >= crag_ambiguous_threshold:
+        crag_confidence = "ambiguous"
+    elif scores:
+        crag_confidence = "incorrect"
+    else:
+        crag_confidence = "unknown"
+
+    # CRAG action based on confidence
+    if crag_confidence == "correct":
+        crag_action = "pass_through"
+    elif crag_confidence == "ambiguous":
+        crag_action = "refine_only"
+    else:
+        crag_action = "hyde_rewrite"
+
+    # ── Count sources by retrieval type ──
+    source_types: dict[str, int] = {}
+    for r in all_results:
+        for src in r.get("sources", []):
+            source_types[src] = source_types.get(src, 0) + 1
+
+    # ── Count filtered results ──
+    refined_count = sum(1 for s in scores if s >= crag_refinement_floor)
+
+    # ── Build stage list ──
+    stages = []
+
+    # Stage 1: Retrieval
+    stages.append(
+        PipelineStage(
+            name="retrieval",
+            status="done",
+            duration_ms=round(retrieval_ms, 1),
+            detail=f"Retrieved {len(all_results)} candidates via hybrid search (BM25 + dense)",
+            metadata={"candidates": len(all_results)},
+        )
+    )
+
+    # Stage 2: Reranking
+    stages.append(
+        PipelineStage(
+            name="reranking",
+            status="done",
+            duration_ms=round(reranking_ms, 1),
+            detail=f"Cross-encoder reranking, top score: {top_score:.3f}",
+            metadata={"top_score": round(top_score, 4), "model": "bge-reranker-v2-m3"},
+        )
+    )
+
+    # Stage 3: CRAG evaluation
+    crag_detail_map = {
+        "correct": f"High confidence ({top_score:.3f}) — results are trustworthy",
+        "ambiguous": f"Medium confidence ({top_score:.3f}) — applying knowledge refinement",
+        "incorrect": f"Low confidence ({top_score:.3f}) — would trigger HyDE rewrite",
+        "unknown": "No results to evaluate",
+    }
+    stages.append(
+        PipelineStage(
+            name="crag",
+            status=crag_confidence,
+            duration_ms=0.0,
+            detail=crag_detail_map.get(crag_confidence, ""),
+            metadata={
+                "confidence": crag_confidence,
+                "action": crag_action,
+                "top_score": round(top_score, 4),
+                "threshold_correct": crag_correct_threshold,
+                "threshold_ambiguous": crag_ambiguous_threshold,
+            },
+        )
+    )
+
+    # Stage 4: Knowledge refinement
+    filtered_out = len(all_results) - refined_count
+    stages.append(
+        PipelineStage(
+            name="refinement",
+            status="done" if filtered_out > 0 else "skipped",
+            duration_ms=0.0,
+            detail=(
+                f"Filtered {filtered_out} low-relevance results (floor: {crag_refinement_floor})"
+                if filtered_out > 0
+                else "All results above quality floor"
+            ),
+            metadata={"filtered": filtered_out, "remaining": refined_count, "floor": crag_refinement_floor},
+        )
+    )
+
+    # Stage 5: Generation
+    stages.append(
+        PipelineStage(
+            name="generation",
+            status="pending",
+            duration_ms=0.0,
+            detail="Generating grounded answer with citations",
+            metadata={},
+        )
+    )
+
+    return PipelineInsight(
+        query_type=query_type,
+        crag_confidence=crag_confidence,
+        crag_top_score=round(top_score, 4),
+        crag_action=crag_action,
+        stages=stages,
+        total_candidates=len(all_results),
+        final_results=len(filtered_results) if filtered_results else refined_count,
+        sources_by_type=source_types,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Endpoints
 # ═══════════════════════════════════════════════════════════════════════════
 @app.get("/api/health")
@@ -869,20 +1055,43 @@ async def query_rag_stream(request: QueryRequest, raw_request: Request):
             _stream_filtered_results: list[dict] = []
             _stream_retrieval_ms = 0.0
             _stream_reranking_ms = 0.0
+            _stream_pipeline_stages: list[dict] = []
+            _stream_query_type = "simple"
+            _stream_crag: dict = {}
+            _stream_sources_by_type: dict = {}
 
             while True:
                 evt = await loop.run_in_executor(None, _next_or_stop, gen)
                 if evt is _STOP:
                     break
 
-                if evt["event"] == "sources":
+                if evt["event"] == "pipeline":
+                    # Real-time pipeline stage event from generator
+                    stage_data = {
+                        "stage": evt.get("stage", ""),
+                        "status": evt.get("status", ""),
+                        "detail": evt.get("detail", ""),
+                        "data": evt.get("data", {}),
+                    }
+                    # Update or append stage
+                    existing = next((s for s in _stream_pipeline_stages if s["stage"] == stage_data["stage"]), None)
+                    if existing:
+                        existing.update(stage_data)
+                    else:
+                        _stream_pipeline_stages.append(stage_data)
+
+                    yield f"data: {json.dumps({'event': 'pipeline', **stage_data})}\n\n"
+
+                elif evt["event"] == "sources":
                     _stream_all_results = evt.get("results", [])
                     _stream_filtered_results = evt.get("filtered_results", [])
                     _stream_retrieval_ms = evt.get("retrieval_ms", 0.0)
                     _stream_reranking_ms = evt.get("reranking_ms", 0.0)
-                    display_results = _stream_filtered_results or _stream_all_results
-                    sources = _format_sources(display_results)
-                    yield f"data: {json.dumps({'event': 'sources', 'sources': [s.model_dump() for s in sources]})}\n\n"
+                    _stream_query_type = evt.get("query_type", "simple")
+                    _stream_crag = evt.get("crag", {})
+                    _stream_sources_by_type = evt.get("sources_by_type", {})
+                    # Don't send sources yet — wait until after generation
+                    # so _strip_uncited_sources can filter to only cited ones.
 
                 elif evt["event"] == "deflected":
                     latency = (time.time() - start) * 1000
@@ -913,6 +1122,15 @@ async def query_rag_stream(request: QueryRequest, raw_request: Request):
                     yield f"data: {json.dumps({'event': 'token', 'token': evt['token']})}\n\n"
 
                 elif evt["event"] == "done":
+                    # Update filtered results if the generator stripped uncited sources
+                    if evt.get("filtered_results"):
+                        _stream_filtered_results = evt["filtered_results"]
+
+                    # Send sources after generation so only cited ones are shown
+                    display_results = _stream_filtered_results or _stream_all_results
+                    sources = _format_sources(display_results)
+                    yield f"data: {json.dumps({'event': 'sources', 'sources': [s.model_dump() for s in sources]})}\n\n"
+
                     latency = (time.time() - start) * 1000
                     quality = QualityMetrics()
                     try:
@@ -923,6 +1141,20 @@ async def query_rag_stream(request: QueryRequest, raw_request: Request):
                         )
                     except Exception as qe:
                         logger.warning(f"Stream quality metrics failed: {qe}")
+                    # Build final pipeline summary from accumulated stages
+                    pipeline_summary = {
+                        "query_type": _stream_query_type,
+                        "crag_confidence": _stream_crag.get("confidence", ""),
+                        "crag_top_score": _stream_crag.get("top_score", 0.0),
+                        "crag_action": _stream_crag.get("action", ""),
+                        "stages": _stream_pipeline_stages,
+                        "total_candidates": len(_stream_all_results),
+                        "final_results": (
+                            len(_stream_filtered_results) if _stream_filtered_results else len(_stream_all_results)
+                        ),
+                        "sources_by_type": _stream_sources_by_type,
+                    }
+
                     completion_msg = {
                         "event": "done",
                         "answer": evt["answer"],
@@ -931,6 +1163,7 @@ async def query_rag_stream(request: QueryRequest, raw_request: Request):
                         "backend": _llm_backend_name,
                         "model": _llm_model_name,
                         "quality": quality.model_dump(),
+                        "pipeline": pipeline_summary,
                     }
                     yield f"data: {json.dumps(completion_msg)}\n\n"
 
@@ -1875,6 +2108,117 @@ async def eval_schedule_configure(request: EvalScheduleRequest):
 
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
 FRONTEND_HTML = FRONTEND_DIST / "index.html"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Knowledge Graph visualization
+# ═══════════════════════════════════════════════════════════════════════════
+
+_graph_store = None
+_graph_retriever = None
+
+
+def _get_graph_retriever():
+    """Lazy-init the graph retriever (only when Neo4j is available)."""
+    global _graph_store, _graph_retriever
+    if _graph_retriever is not None:
+        return _graph_retriever
+    try:
+        from rag_bench.core.graph_retriever import GraphRetriever
+        from rag_bench.core.graph_store import GraphStore
+
+        _graph_store = GraphStore()
+        _graph_retriever = GraphRetriever(store=_graph_store)
+        logger.info("Graph retriever initialized for visualization")
+        return _graph_retriever
+    except Exception as e:
+        logger.debug(f"Graph retriever unavailable: {e}")
+        return None
+
+
+@app.get("/api/graph/context", response_model=GraphSubgraph)
+async def get_graph_context(question: str):
+    """Return the local knowledge graph subgraph for a query.
+
+    Matches entities in the question, fetches their 1-hop neighborhood,
+    and returns nodes + edges for frontend visualization.
+    """
+    retriever = _get_graph_retriever()
+    if retriever is None:
+        return GraphSubgraph()
+
+    try:
+        loop = asyncio.get_event_loop()
+
+        # Match entities from the question
+        matched = await loop.run_in_executor(None, retriever._match_entities, question)
+        if not matched:
+            return GraphSubgraph()
+
+        # Build the subgraph: nodes + edges
+        nodes_by_id: dict[str, GraphNode] = {}
+        edges: list[GraphEdge] = []
+        matched_names = []
+
+        for entity in matched[:5]:  # Cap at 5 entities
+            name = entity["name"]
+            name_lower = entity["name_lower"]
+            matched_names.append(name)
+
+            # Add matched entity as a node
+            nodes_by_id[name_lower] = GraphNode(
+                id=name_lower,
+                name=name,
+                entity_type=entity["entity_type"],
+                matched=True,
+            )
+
+            # Fetch triples involving this entity
+            triples = await loop.run_in_executor(None, retriever.store.get_entity_triples, name, 30)
+
+            for t in triples:
+                s_id = t["subject"].lower()
+                o_id = t["object"].lower()
+
+                # Add subject node if new
+                if s_id not in nodes_by_id:
+                    nodes_by_id[s_id] = GraphNode(
+                        id=s_id,
+                        name=t["subject"],
+                        entity_type=t["subject_type"],
+                        matched=False,
+                    )
+
+                # Add object node if new
+                if o_id not in nodes_by_id:
+                    nodes_by_id[o_id] = GraphNode(
+                        id=o_id,
+                        name=t["object"],
+                        entity_type=t["object_type"],
+                        matched=False,
+                    )
+
+                # Add edge (deduplicate by source+target+predicate)
+                edge_key = (s_id, o_id, t["predicate"])
+                if not any((e.source, e.target, e.predicate) == edge_key for e in edges):
+                    edges.append(
+                        GraphEdge(
+                            source=s_id,
+                            target=o_id,
+                            predicate=t["predicate"],
+                            weight=t["weight"],
+                        )
+                    )
+
+        return GraphSubgraph(
+            nodes=list(nodes_by_id.values()),
+            edges=edges,
+            matched_entities=matched_names,
+        )
+
+    except Exception as e:
+        logger.warning(f"Graph context error: {e}")
+        return GraphSubgraph()
+
 
 # Serve built frontend assets (JS, CSS) from dist/assets/
 if (FRONTEND_DIST / "assets").is_dir():
