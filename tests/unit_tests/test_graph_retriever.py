@@ -9,10 +9,12 @@ Tests cover:
 - Edge cases: no matches, empty graph
 """
 
+import pytest
+
+pytest.importorskip("neo4j")
+
 from contextlib import contextmanager
 from unittest.mock import MagicMock
-
-import pytest
 
 from rag_bench.core.graph_retriever import GraphRetriever, GraphRetrieverConfig
 from rag_bench.core.graph_store import GraphStore

@@ -17,6 +17,8 @@ is not available (CI-friendly).  The tests use a fresh database state
 
 import pytest
 
+pytest.importorskip("neo4j")
+
 from rag_bench.core.configs import GraphStoreConfig
 from rag_bench.core.graph_store import GraphStore
 from rag_bench.core.graph_types import Entity, Triple
