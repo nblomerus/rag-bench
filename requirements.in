@@ -18,6 +18,9 @@ langchain-text-splitters
 # Vector Database
 chromadb
 
+# Graph Database
+neo4j>=5.0
+
 # Web server
 requests
 fastapi

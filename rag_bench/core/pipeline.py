@@ -14,6 +14,7 @@ from rag_bench.core.chunker import PaperChunker
 from rag_bench.core.citation_boost import CitationBooster
 from rag_bench.core.configs import PipelineConfig
 from rag_bench.core.embedder import Embedder as BGEEmbedder
+from rag_bench.core.enricher import ContextualEnricher
 from rag_bench.core.generator import (
     RAGGenerator,
     RelevanceGate,
@@ -35,6 +36,7 @@ class RAGPipeline:
 
     config: PipelineConfig
     chunker: PaperChunker
+    enricher: ContextualEnricher | None
     embedder: BGEEmbedder
     retriever: HybridRetriever
     generator: RAGGenerator
@@ -58,6 +60,11 @@ def build_pipeline(config: PipelineConfig | None = None) -> RAGPipeline:
     logger.info(f"Building pipeline '{config.name}'")
 
     chunker = PaperChunker(config=config.chunker)
+
+    enricher = None
+    if config.enricher.enabled:
+        enricher = ContextualEnricher(config=config.enricher)
+        logger.info("Contextual enrichment enabled")
 
     embedder = BGEEmbedder(config=config.embedder)
 
@@ -84,6 +91,7 @@ def build_pipeline(config: PipelineConfig | None = None) -> RAGPipeline:
     return RAGPipeline(
         config=config,
         chunker=chunker,
+        enricher=enricher,
         embedder=embedder,
         retriever=retriever,
         generator=generator,
