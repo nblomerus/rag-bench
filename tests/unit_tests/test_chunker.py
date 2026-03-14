@@ -799,11 +799,6 @@ class TestChunkerBranchCoverage:
         assert chunks[0].metadata["categories"] == ""
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# ChunkerConfig path — covers lines 65-67, 75, 77
-# ══════════════════════════════════════════════════════════════════════════════
-
-
 class TestChunkerConfigPath:
     """Tests that use ChunkerConfig to cover the config= init path."""
 

@@ -11,8 +11,10 @@ Runs the complete pipeline:
 Usage:
     rag-pipeline                          # Run full pipeline (scraped papers only)
     rag-pipeline --hybrid                 # Run with hybrid ingestion (scraped + HF dataset)
+    rag-pipeline --enrich                 # Run with contextual enrichment (requires Ollama)
     rag-pipeline --step ingest --hybrid   # Run only hybrid ingestion
     rag-pipeline --step chunk             # Run only chunking (requires ingest first)
+    rag-pipeline --step enrich --enrich   # Run only enrichment (requires chunk first + Ollama)
     rag-pipeline --step index             # Run only indexing (requires chunk first)
     rag-pipeline --step test              # Run only test queries (requires index first)
 """
@@ -38,10 +40,12 @@ from rag_bench.config import (
     MIN_SECTION_LENGTH,
 )
 from rag_bench.core.chunker import chunk_all_papers
-from rag_bench.core.configs import EmbedderConfig, RetrieverConfig
+from rag_bench.core.configs import EmbedderConfig, EnricherConfig, RetrieverConfig
 from rag_bench.core.embedder import Embedder
+from rag_bench.core.enricher import ContextualEnricher
 from rag_bench.core.hybrid_ingest import hybrid_ingest
 from rag_bench.core.retriever import HybridRetriever
+from rag_bench.core.types import ChunkData
 
 
 def setup_logging():
@@ -163,6 +167,74 @@ def step_chunk(docs: list[dict]) -> list[dict]:
     return chunks
 
 
+def step_enrich(chunks: list[dict], docs: list[dict], enricher_config: EnricherConfig | None = None) -> list[dict]:
+    """Step 2.5: Add contextual headers to chunks using local LLM.
+
+    This step calls Ollama to generate a 2-3 sentence context summary
+    for each chunk, situating it within its source paper.  Results are
+    cached on disk so re-runs skip already-enriched chunks.
+    """
+    logger = logging.getLogger("pipeline.enrich")
+    logger.info("=" * 60)
+    logger.info("STEP 2.5: Contextual enrichment")
+    logger.info("=" * 60)
+
+    config = enricher_config or EnricherConfig(enabled=True)
+    enricher = ContextualEnricher(config=config)
+
+    # Build a lookup from doc_id -> paper dict
+    docs_by_id: dict[str, dict] = {}
+    for doc in docs:
+        docs_by_id[doc["doc_id"]] = doc
+
+    # Group chunks by doc_id so we can enrich per-paper
+    from collections import defaultdict
+
+    chunks_by_doc: dict[str, list[dict]] = defaultdict(list)
+    for chunk in chunks:
+        chunks_by_doc[chunk["doc_id"]].append(chunk)
+
+    start = time.time()
+    enriched_chunks: list[dict] = []
+    total_papers = len(chunks_by_doc)
+
+    for i, (doc_id, doc_chunks) in enumerate(chunks_by_doc.items()):
+        paper = docs_by_id.get(doc_id)
+        if not paper:
+            logger.warning(f"Paper {doc_id} not found in docs, skipping enrichment")
+            enriched_chunks.extend(doc_chunks)
+            continue
+
+        # Convert dicts to ChunkData for the enricher
+        chunk_objects = [
+            ChunkData(
+                chunk_id=c["chunk_id"],
+                doc_id=c["doc_id"],
+                text=c["text"],
+                section=c.get("section", ""),
+                metadata=c.get("metadata", {}),
+            )
+            for c in doc_chunks
+        ]
+
+        enriched = enricher.enrich(chunk_objects, paper)
+        enriched_chunks.extend(c.to_dict() for c in enriched)
+
+        if (i + 1) % 50 == 0:
+            logger.info(f"  Papers enriched: {i + 1}/{total_papers}")
+
+    elapsed = time.time() - start
+    logger.info(f"Enrichment complete: {len(enriched_chunks)} chunks in {elapsed:.1f}s")
+
+    # Save enriched chunks
+    enriched_path = DATA_DIR / "chunks_enriched.json"
+    with open(enriched_path, "w") as f:
+        json.dump(enriched_chunks, f, indent=2, default=str)
+    logger.info(f"Saved enriched chunks to {enriched_path}")
+
+    return enriched_chunks
+
+
 def step_index(chunks: list[dict]) -> Embedder:
     """Step 3: Embed and index chunks."""
     logger = logging.getLogger("pipeline.index")
@@ -257,7 +329,7 @@ def main():
     parser = argparse.ArgumentParser(description="RAG-Bench Pipeline")
     parser.add_argument(
         "--step",
-        choices=["ingest", "chunk", "index", "test", "all"],
+        choices=["ingest", "chunk", "enrich", "index", "test", "all"],
         default="all",
         help="Which pipeline step to run (default: all)",
     )
@@ -265,6 +337,16 @@ def main():
         "--hybrid",
         action="store_true",
         help="Use hybrid ingestion (merge scraped papers + HuggingFace ai-arxiv2 dataset)",
+    )
+    parser.add_argument(
+        "--enrich",
+        action="store_true",
+        help="Enable contextual enrichment (requires Ollama running locally)",
+    )
+    parser.add_argument(
+        "--enrich-model",
+        default="qwen2.5:14b-instruct-q4_K_M",
+        help="Ollama model for enrichment (default: qwen2.5:14b-instruct-q4_K_M)",
     )
     args = parser.parse_args()
 
@@ -303,6 +385,27 @@ def main():
             logger.info(f"Loaded {len(chunks)} cached chunks")
         else:
             chunks = []
+
+    if args.step in ("enrich", "all") and args.enrich:
+        if not chunks:
+            logger.error("No chunks to enrich. Run chunk first.")
+            sys.exit(1)
+        if not docs:
+            # Need paper data for enrichment context
+            docs_path = DATA_DIR / "parsed_papers.json"
+            if docs_path.exists():
+                with open(docs_path) as f:
+                    docs = json.load(f)
+            else:
+                logger.error("No parsed papers found. Run ingest first.")
+                sys.exit(1)
+        enricher_config = EnricherConfig(
+            enabled=True,
+            ollama_model=args.enrich_model,
+        )
+        chunks = step_enrich(chunks, docs, enricher_config)
+    elif args.step == "enrich" and not args.enrich:
+        logger.warning("--step enrich requires --enrich flag. Skipping.")
 
     if args.step in ("index", "all"):
         if not chunks:
