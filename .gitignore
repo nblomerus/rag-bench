@@ -41,6 +41,7 @@ report/
 # ChromaDB
 chroma_db/
 chroma_db.backup/
+chroma_db_*/
 *.restore-backup/
 
 # Node modules
@@ -75,3 +76,17 @@ eval_results/
 # Monitoring runtime data
 monitoring/prometheus-data/
 monitoring/grafana-data/
+
+# Caches (enricher, extractor, community)
+.enricher_cache*/
+.extractor_cache/
+.community_cache/
+
+# Frontend build artifacts
+frontend/dist/
+
+# Screenshots / images
+*.png
+
+# Scripts (experiment one-offs)
+scripts/

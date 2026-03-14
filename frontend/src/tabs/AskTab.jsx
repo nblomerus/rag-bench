@@ -38,7 +38,7 @@ export function AskTab({ ready, serverOffline }) {
 
         setMessages(prev => [...prev, {
             role: 'assistant', content: '', streaming: true,
-            data: { sources: [], deflected: false, deflection_reason: '', latency_ms: 0, backend: '', model: '' },
+            data: { sources: [], deflected: false, deflection_reason: '', latency_ms: 0, backend: '', model: '', question: q },
         }])
         setIsLoading(true)
 
@@ -46,6 +46,20 @@ export function AskTab({ ready, serverOffline }) {
 
         try {
             await queryRAGStream(q, {
+                onPipeline: (stage) => {
+                    setMessages(prev => {
+                        const updated = [...prev]
+                        const msg = updated[updated.length - 1]
+                        if (msg?.role === 'assistant') {
+                            const stages = [...(msg.data?.pipelineStages || [])]
+                            const existing = stages.findIndex(s => s.stage === stage.stage)
+                            if (existing >= 0) stages[existing] = stage
+                            else stages.push(stage)
+                            msg.data = { ...msg.data, pipelineStages: stages }
+                        }
+                        return [...updated]
+                    })
+                },
                 onSources: (sources) => {
                     setMessages(prev => {
                         const updated = [...prev]
@@ -82,6 +96,7 @@ export function AskTab({ ready, serverOffline }) {
                                 backend: evt.backend || '',
                                 model: evt.model || '',
                                 quality: evt.quality || null,
+                                pipeline: evt.pipeline || null,
                             }
                         }
                         return [...updated]

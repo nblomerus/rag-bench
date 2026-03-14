@@ -20,6 +20,10 @@ export function formatAnswer(text) {
     // Step 1: Protect [Source N] citations from markdown mangling
     let processed = text.replace(/\[Source (\d+)\]/g, '%%SOURCE_$1%%')
 
+    // Note: bare LaTeX wrapping is handled server-side by postprocess_math().
+    // Do NOT add client-side regex here — it runs before $$ extraction and
+    // corrupts display math content (nested braces, \text inside $$, etc.).
+
     // Step 2: Protect and render KaTeX math BEFORE markdown processing
     const mathBlocks = []
     let mathIdx = 0
