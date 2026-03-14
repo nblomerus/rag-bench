@@ -13,6 +13,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests as req
 
 from rag_bench.core.enricher import ContextualEnricher, EnricherConfig
 from rag_bench.core.types import ChunkData
@@ -122,8 +123,6 @@ class TestHeaderGeneration:
 
     def test_enrich_handles_llm_failure(self, enricher, sample_chunks, sample_paper):
         """If the LLM fails, chunks should pass through with empty header."""
-        import requests as req
-
         mock_resp = MagicMock()
         mock_resp.raise_for_status.side_effect = req.HTTPError("500 Server Error")
 

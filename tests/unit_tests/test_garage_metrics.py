@@ -1,6 +1,7 @@
 """Tests for GaRAGe evaluation metrics."""
 
 from rag_bench.eval.garage.metrics import (
+    _token_overlap,
     compute_attribution_f1,
     compute_deflection_metrics,
     compute_raf,
@@ -173,14 +174,10 @@ class TestTokenOverlapEdge:
     """Test _token_overlap edge cases."""
 
     def test_empty_text_a(self):
-        from rag_bench.eval.garage.metrics import _token_overlap
-
         result = _token_overlap("", "some text here")
         assert result == 0.0
 
     def test_empty_text_b(self):
-        from rag_bench.eval.garage.metrics import _token_overlap
-
         result = _token_overlap("some text", "")
         assert result == 0.0
 

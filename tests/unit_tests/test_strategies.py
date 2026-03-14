@@ -9,6 +9,8 @@ Tests cover:
 - SemanticConfig / RecursiveConfig validation
 """
 
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pytest
 
@@ -259,8 +261,6 @@ class TestEmbed:
 
     def test_lazy_model_loading_via_sentence_transformers(self):
         """When no embed_fn, SentenceTransformer is lazy-loaded on first call."""
-        from unittest.mock import MagicMock, patch
-
         mock_model = MagicMock()
         mock_model.encode.return_value = np.eye(4, dtype=np.float32)
 
@@ -276,8 +276,6 @@ class TestEmbed:
 
     def test_lazy_model_reused_on_second_call(self):
         """Model should not be reloaded on subsequent _embed calls."""
-        from unittest.mock import MagicMock, patch
-
         mock_model = MagicMock()
         mock_model.encode.return_value = np.array([[1.0, 0.0]], dtype=np.float32)
 

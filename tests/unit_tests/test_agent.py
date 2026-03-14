@@ -23,6 +23,7 @@ from rag_bench.core.agent import (
     QueryType,
     RAGAgent,
 )
+from rag_bench.core.configs import PipelineConfig
 from rag_bench.core.types import ChunkData, GenerationResult, RetrievalResult
 
 # ── Mocks ────────────────────────────────────────────────────────────────────
@@ -398,15 +399,11 @@ class TestAgentConfig:
         assert config.sufficiency_threshold == 0.85
 
     def test_pipeline_config_includes_agent(self):
-        from rag_bench.core.configs import PipelineConfig
-
         pc = PipelineConfig()
         assert hasattr(pc, "agent")
         assert pc.agent.enabled is False
 
     def test_pipeline_config_roundtrip(self):
-        from rag_bench.core.configs import PipelineConfig
-
         pc = PipelineConfig()
         pc.agent.enabled = True
         pc.agent.max_iterations = 5

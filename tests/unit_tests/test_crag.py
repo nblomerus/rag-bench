@@ -14,12 +14,15 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
+from rag_bench.core.configs import CRAGConfig as ConfigsCRAGConfig
+from rag_bench.core.configs import PipelineConfig
 from rag_bench.core.crag import (
     ConfidenceLevel,
     CRAGConfig,
     CRAGRetriever,
     CRAGStats,
 )
+from rag_bench.core.protocols import Retriever
 from rag_bench.core.types import ChunkData, RetrievalResult
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -302,24 +305,18 @@ class TestCRAGConfig:
 
     def test_config_from_configs_module(self):
         """CRAGConfig in configs.py should match defaults in crag.py."""
-        from rag_bench.core.configs import CRAGConfig as ConfigsCRAGConfig
-
         c = ConfigsCRAGConfig()
         assert c.correct_threshold == 0.90
         assert c.hyde_enabled is True
 
     def test_pipeline_config_includes_crag(self):
         """PipelineConfig should have a crag field."""
-        from rag_bench.core.configs import PipelineConfig
-
         pc = PipelineConfig()
         assert hasattr(pc, "crag")
         assert pc.crag.enabled is False
 
     def test_pipeline_config_roundtrip(self):
         """CRAGConfig should survive PipelineConfig serialization."""
-        from rag_bench.core.configs import PipelineConfig
-
         pc = PipelineConfig()
         pc.crag.enabled = True
         pc.crag.correct_threshold = 0.85
@@ -338,8 +335,6 @@ class TestCRAGConfig:
 class TestProtocol:
     def test_conforms_to_retriever_protocol(self):
         """CRAGRetriever should satisfy the Retriever protocol."""
-        from rag_bench.core.protocols import Retriever
-
         mock = MockRetriever([])
         crag = CRAGRetriever(base_retriever=mock)
         assert isinstance(crag, Retriever)

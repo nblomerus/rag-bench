@@ -1,13 +1,15 @@
 """Tests for benchmark-related API endpoints (latest, examples, ragtruth)."""
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from rag_bench.api.server import app
+from rag_bench.api.server import _load_cached_paper_count, _save_benchmark_history, _save_cached_paper_count, app
+from rag_bench.eval.ragtruth.loader import RAGTruthEntry
 
 
 @pytest.fixture
@@ -69,8 +71,6 @@ class TestBenchmarkLatest:
         prod_file = prod_dir / "eval_20260201_120000.json"
         prod_file.write_text(json.dumps(prod_data))
         # Give manual file a strictly newer mtime
-        import os
-
         manual_file = manual_dir / "eval_20260202_120000.json"
         manual_file.write_text(json.dumps(manual_data))
         os.utime(prod_file, (1000000, 1000000))  # old
@@ -97,8 +97,6 @@ class TestBenchmarkLatest:
         manual_file = manual_dir / "eval_20260201_120000.json"
         manual_file.write_text(json.dumps(manual_data))
         # Force identical mtime
-        import os
-
         os.utime(prod_file, (1000000, 1000000))
         os.utime(manual_file, (1000000, 1000000))
 
@@ -237,8 +235,6 @@ class TestRagtruthExamples:
 
     def test_returns_examples(self, client):
         """Load examples from the cached RAGTruth dataset."""
-        from rag_bench.eval.ragtruth.loader import RAGTruthEntry
-
         mock_entries = [
             RAGTruthEntry(
                 id=str(i),
@@ -365,8 +361,6 @@ class TestSaveBenchmarkHistory:
     """Test _save_benchmark_history."""
 
     def test_save_success(self, tmp_path):
-        from rag_bench.api.server import _save_benchmark_history
-
         history_file = tmp_path / "history.json"
         with (
             patch("rag_bench.api.server.BENCHMARK_HISTORY_FILE", history_file),
@@ -379,8 +373,6 @@ class TestSaveBenchmarkHistory:
 
     def test_save_failure(self, tmp_path):
         """Gracefully handles write failure."""
-        from rag_bench.api.server import _save_benchmark_history
-
         bad_path = tmp_path / "no" / "such" / "deep" / "dir" / "history.json"
         with (
             patch("rag_bench.api.server.BENCHMARK_HISTORY_FILE", bad_path),
@@ -693,8 +685,6 @@ class TestPaperCountCache:
     """Test paper count cache helpers."""
 
     def test_load_cached_count_exists(self, tmp_path):
-        from rag_bench.api.server import _load_cached_paper_count
-
         cache_file = tmp_path / ".paper_count"
         cache_file.write_text("42")
         with patch("rag_bench.api.server._PAPER_COUNT_CACHE", cache_file):
@@ -702,24 +692,18 @@ class TestPaperCountCache:
         assert result == 42
 
     def test_load_cached_count_missing(self, tmp_path):
-        from rag_bench.api.server import _load_cached_paper_count
-
         cache_file = tmp_path / ".paper_count"
         with patch("rag_bench.api.server._PAPER_COUNT_CACHE", cache_file):
             result = _load_cached_paper_count()
         assert result is None
 
     def test_save_cached_count(self, tmp_path):
-        from rag_bench.api.server import _save_cached_paper_count
-
         cache_file = tmp_path / ".paper_count"
         with patch("rag_bench.api.server._PAPER_COUNT_CACHE", cache_file):
             _save_cached_paper_count(123)
         assert cache_file.read_text() == "123"
 
     def test_save_cached_count_failure(self):
-        from rag_bench.api.server import _save_cached_paper_count
-
         bad_path = Path("/nonexistent/dir/.paper_count")
         with patch("rag_bench.api.server._PAPER_COUNT_CACHE", bad_path):
             # Should not raise

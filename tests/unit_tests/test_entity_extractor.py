@@ -13,6 +13,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests as req
 
 from rag_bench.core.configs import ExtractorConfig
 from rag_bench.core.entity_extractor import EntityExtractor
@@ -135,8 +136,6 @@ class TestExtraction:
 
     def test_extract_handles_llm_failure(self, extractor, sample_chunks, sample_paper):
         """LLM failure should return empty triples, not crash."""
-        import requests as req
-
         with patch(
             "rag_bench.core.entity_extractor.requests.post",
             side_effect=req.RequestException("Connection refused"),

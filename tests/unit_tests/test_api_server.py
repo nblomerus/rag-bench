@@ -15,6 +15,7 @@ from rag_bench.api.server import (
     _format_sources,
     app,
 )
+from rag_bench.eval.runner import EvalReport, SingleEvalResult
 
 
 @pytest.fixture
@@ -1287,8 +1288,6 @@ class TestFullEvalEndpoint:
 
     def test_full_eval_with_mock_pipeline(self, client):
         """Full eval runs with mocked pipeline."""
-        from rag_bench.eval.runner import EvalReport, SingleEvalResult
-
         mock_report = EvalReport(
             results=[
                 SingleEvalResult(

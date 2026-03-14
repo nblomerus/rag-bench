@@ -10,6 +10,7 @@ from rag_bench.eval.garage.loader import (
     _cache_entries,
     _load_from_cache,
     _parse_entry,
+    _try_load_from_huggingface,
     load_garage,
 )
 
@@ -185,8 +186,6 @@ class TestTryLoadFromHuggingFace:
 
     def test_success(self):
         """Successfully loads data from HuggingFace."""
-        from rag_bench.eval.garage.loader import _try_load_from_huggingface
-
         mock_split = [
             {"id": "1", "question": "Q1", "answer": "A1"},
             {"id": "2", "question": "Q2", "answer": "A2"},
@@ -197,15 +196,11 @@ class TestTryLoadFromHuggingFace:
 
     def test_import_error(self):
         """Raises when datasets library not installed."""
-        from rag_bench.eval.garage.loader import _try_load_from_huggingface
-
         with patch("rag_bench.eval.garage.loader._HAS_DATASETS", False), pytest.raises(ImportError):
             _try_load_from_huggingface()
 
     def test_download_error(self):
         """Raises when HuggingFace download fails."""
-        from rag_bench.eval.garage.loader import _try_load_from_huggingface
-
         with (
             patch("rag_bench.eval.garage.loader.load_dataset", side_effect=RuntimeError("Download failed")),
             pytest.raises(RuntimeError),

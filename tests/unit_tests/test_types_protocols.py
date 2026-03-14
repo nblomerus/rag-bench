@@ -9,6 +9,13 @@ Tests cover:
 
 import pytest
 
+from rag_bench.core.chunker import PaperChunker
+from rag_bench.core.generator import (
+    OllamaBackend,
+    OpenAICompatibleBackend,
+    TemplateFallbackBackend,
+)
+from rag_bench.core.protocols import Chunker, LLMBackend
 from rag_bench.core.types import ChunkData, GenerationResult, RetrievalResult
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -150,9 +157,6 @@ class TestProtocolConformance:
     """
 
     def test_chunker_protocol(self):
-        from rag_bench.core.chunker import PaperChunker
-        from rag_bench.core.protocols import Chunker
-
         assert isinstance(PaperChunker(), Chunker)
 
     def test_retriever_protocol(self):
@@ -173,13 +177,6 @@ class TestProtocolConformance:
 
     def test_llm_backend_protocol(self):
         """Concrete LLM backends satisfy LLMBackend protocol."""
-        from rag_bench.core.generator import (
-            OllamaBackend,
-            OpenAICompatibleBackend,
-            TemplateFallbackBackend,
-        )
-        from rag_bench.core.protocols import LLMBackend
-
         # TemplateFallbackBackend can be instantiated without dependencies
         assert isinstance(TemplateFallbackBackend(), LLMBackend)
 

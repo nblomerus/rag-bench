@@ -2,7 +2,9 @@
 
 import json
 import os
+import sys
 import tempfile
+import unittest.mock
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -754,8 +756,6 @@ class TestJudgeErrorIsolation:
 class TestCudaMemoryManagement:
     def test_clear_cuda_cache_without_torch(self):
         """_clear_cuda_cache should not crash if torch is not available."""
-        import unittest.mock
-
         with unittest.mock.patch.dict("sys.modules", {"torch": None}):
             _clear_cuda_cache()  # Should not raise
 
@@ -763,9 +763,6 @@ class TestCudaMemoryManagement:
         """_clear_cuda_cache should handle no CUDA gracefully."""
         mock_torch = MagicMock()
         mock_torch.cuda.is_available.return_value = False
-
-        import sys
-        import unittest.mock
 
         with unittest.mock.patch.dict(sys.modules, {"torch": mock_torch}):
             _clear_cuda_cache()

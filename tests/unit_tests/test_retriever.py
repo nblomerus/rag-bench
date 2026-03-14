@@ -8,6 +8,8 @@ Tests cover:
 - Edge cases: empty inputs, missing data, error scenarios
 """
 
+import sys
+from io import StringIO
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -643,9 +645,6 @@ class TestRetrieverPrintResults:
     @patch("rag_bench.core.retriever._load_embedding_model")
     def test_print_results_output(self, mock_load_model, mock_chroma, mock_reranker_class):
         """Test print_results prints correctly with relevant results."""
-        import sys
-        from io import StringIO
-
         mock_model = MagicMock()
         mock_model.encode.return_value = np.array([0.1] * 768)
         mock_load_model.return_value = mock_model
@@ -705,9 +704,6 @@ class TestRetrieverPrintResults:
     @patch("rag_bench.core.retriever._load_embedding_model")
     def test_print_results_not_relevant(self, mock_load_model, mock_chroma, mock_reranker_class):
         """Test print_results with non-relevant (low score) results."""
-        import sys
-        from io import StringIO
-
         mock_model = MagicMock()
         mock_model.encode.return_value = np.array([0.1] * 768)
         mock_load_model.return_value = mock_model
