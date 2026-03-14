@@ -9,6 +9,11 @@ Tests cover:
 - Mocked tests: generate_summaries, cache, small graph, get_community_predicates
 """
 
+import pytest
+
+pytest.importorskip("neo4j")
+pytest.importorskip("networkx")
+
 import json
 import tempfile
 from contextlib import contextmanager
@@ -16,7 +21,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import networkx as nx
-import pytest
 
 from rag_bench.core.community_detection import (
     Community,
