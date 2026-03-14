@@ -13,6 +13,19 @@ from rag_bench.core.types import ChunkData, GenerationResult, RetrievalResult
 
 
 @runtime_checkable
+class ChunkingStrategy(Protocol):
+    """Low-level text splitting strategy.
+
+    Accepts a plain text string and returns a list of text segments.
+    PaperChunker delegates the actual splitting to a ChunkingStrategy
+    while owning all pre/post-processing (equation protection, acronym
+    expansion, metadata assembly, etc.).
+    """
+
+    def split_text(self, text: str) -> list[str]: ...
+
+
+@runtime_checkable
 class Chunker(Protocol):
     """Splits a parsed paper into indexable chunks."""
 

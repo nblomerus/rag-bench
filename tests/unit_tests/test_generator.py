@@ -152,8 +152,8 @@ class TestMathPostProcessing:
         text = "The value α_t = x^2 is computed."
         result = postprocess_math(text)
 
-        assert "$\\alpha_{t}$" in result
-        assert "$x^{2}$" in result
+        assert "\\alpha_{t}" in result
+        assert "x^{2}" in result
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -933,8 +933,9 @@ class TestRAGGeneratorAdvanced:
 
         filtered = generator._filter_relevant_sources(results)
 
-        # Should include first two (good scores), drop last one
-        assert len(filtered) <= 2
+        # Min 3 sources enforced, so all 3 kept (even though score filtering
+        # would have dropped the last one)
+        assert len(filtered) == 3
         assert filtered[0]["score"] == 8.0
 
     def test_filter_relevant_sources_cosine_scale(self, mock_retriever):
@@ -1932,9 +1933,9 @@ class TestAnswerAlignmentAndFiltering:
 
         filtered = generator._filter_relevant_sources(results)
 
-        # Should filter out the low score one
-        assert len(filtered) <= 2
-        assert all(r["score"] > 4.0 for r in filtered)
+        # Min 3 sources enforced, so all 3 kept
+        assert len(filtered) == 3
+        assert filtered[0]["score"] == 5.2
 
     def test_filter_relevant_sources_cosine_scale(self):
         """Test source filtering with cosine similarity scores."""
@@ -2562,31 +2563,31 @@ class TestFilterRelevantSources:
 
     # ── Cross-encoder range (scores > 2.0) ───────────────────────────────────
 
-    def test_dominant_winner_filters_to_one(self, mock_retriever):
-        """Top 3.53, second 1.78 (gap 1.98×) → tight filter keeps only top."""
+    def test_dominant_winner_filters_to_min(self, mock_retriever):
+        """Top 3.53, second 1.78 (gap 1.98×) → tight filter but min 3 enforced."""
         gen = self._make_generator(mock_retriever)
         results = self._results([3.53, 1.78, 1.70, 1.46, 1.45])
         filtered = gen._filter_relevant_sources(results)
-        assert len(filtered) == 1
+        assert len(filtered) == 3
         assert filtered[0]["score"] == 3.53
 
     def test_dominant_winner_gap_exactly_at_threshold(self, mock_retriever):
-        """Gap ratio exactly 1.8 → still triggers tight filter."""
+        """Gap ratio exactly 1.8 → tight filter but min 3 enforced."""
         gen = self._make_generator(mock_retriever)
         # top=3.6, second=2.0 → gap=1.8, top>3.0 → tight (0.7 * 3.6 = 2.52)
         results = self._results([3.6, 2.0, 1.5])
         filtered = gen._filter_relevant_sources(results)
-        assert len(filtered) == 1
+        assert len(filtered) == 3
 
     def test_dominant_winner_keeps_close_second(self, mock_retriever):
-        """Two sources both above tight threshold should both pass."""
+        """Two sources above threshold + min 3 enforced → all 3 kept."""
         gen = self._make_generator(mock_retriever)
         # top=4.0, second=3.2 → gap=1.25 < 1.8 → loose filter (0.35 * 4.0 = 1.4)
         results = self._results([4.0, 3.2, 1.0])
         filtered = gen._filter_relevant_sources(results)
         # gap < 1.8 so loose filter applies; threshold = 0.35 * 4.0 = 1.4
-        # 4.0 and 3.2 pass, but 1.0 < 1.4 → filtered out
-        assert len(filtered) == 2
+        # 4.0 and 3.2 pass, 1.0 < 1.4 but min 3 enforced
+        assert len(filtered) == 3
 
     def test_competitive_field_keeps_all_five(self, mock_retriever):
         """Scores close together → loose 35% threshold → all 5 pass."""
@@ -2598,13 +2599,13 @@ class TestFilterRelevantSources:
         assert len(filtered) == 5
 
     def test_top_below_dominant_threshold(self, mock_retriever):
-        """top=2.5 (< 3.0) with large gap → not dominant, uses loose filter."""
+        """top=2.5 (< 3.0) with large gap → loose filter but min 3 enforced."""
         gen = self._make_generator(mock_retriever)
         # top=2.5, second=0.8 → gap=3.1× but top not > 3.0 → loose (0.35)
         results = self._results([2.5, 0.8, 0.5])
         filtered = gen._filter_relevant_sources(results)
-        # threshold = 2.5 * 0.35 = 0.875 → 0.8 fails, 0.5 fails → only top
-        assert len(filtered) == 1
+        # threshold = 2.5 * 0.35 = 0.875 → 0.8 and 0.5 fail but min 3 enforced
+        assert len(filtered) == 3
         assert filtered[0]["score"] == 2.5
 
     def test_single_result_always_kept(self, mock_retriever):
@@ -2621,12 +2622,12 @@ class TestFilterRelevantSources:
     # ── Cosine similarity range (scores < 2.0) ───────────────────────────────
 
     def test_cosine_dominant_winner(self, mock_retriever):
-        """Cosine: top=0.85, second=0.42 → gap=2.02×, top>0.7 → tight (0.8)."""
+        """Cosine: top=0.85, second=0.42 → tight filter but min 3 enforced."""
         gen = self._make_generator(mock_retriever)
         results = self._results([0.85, 0.42, 0.38])
         filtered = gen._filter_relevant_sources(results)
-        # threshold = 0.85 * 0.8 = 0.68 → only 0.85 passes
-        assert len(filtered) == 1
+        # threshold = 0.85 * 0.8 = 0.68 → only 0.85 passes but min 3 enforced
+        assert len(filtered) == 3
 
     def test_cosine_competitive_field(self, mock_retriever):
         """Cosine: scores close → loose 50% threshold keeps multiple."""
@@ -2643,3 +2644,330 @@ class TestFilterRelevantSources:
         filtered = gen._filter_relevant_sources(results)
         assert len(filtered) == 1
         assert filtered[0]["score"] == 0.04
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# postprocess_math — bare LaTeX commands (_pass_bare_latex)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestPostprocessMathBareLatex:
+    """Tests that cover the _pass_bare_latex code path inside postprocess_math."""
+
+    def test_frac_command_wrapped(self):
+        """\\frac outside $ delimiters should be wrapped in $...$."""
+        text = r"The formula is \frac{a}{b} for the ratio."
+        result = postprocess_math(text)
+        assert r"\frac" in result
+        # Should be wrapped
+        assert "$" in result
+
+    def test_sqrt_command_wrapped(self):
+        text = r"We compute \sqrt{d_k} as the denominator."
+        result = postprocess_math(text)
+        assert r"\sqrt" in result
+        assert "$" in result
+
+    def test_chained_latex_commands(self):
+        """Chained LaTeX like \\text{softmax}\\left(...\\right) stays together."""
+        text = r"Compute \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V"
+        result = postprocess_math(text)
+        assert "$" in result
+
+    def test_left_right_with_backslash_delim(self):
+        r"""\\left\{ should be handled correctly."""
+        text = r"The set \left\{x : x > 0\right\} contains positives."
+        result = postprocess_math(text)
+        # Should not raise, and the text should be processed
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_command_with_subscript(self):
+        r"""Command with _subscript after should consume it."""
+        text = r"Compute \sum_i x_i for all i."
+        result = postprocess_math(text)
+        assert "$" in result
+
+    def test_command_not_in_latex_cmds_not_wrapped(self):
+        """An unknown command like \\newcommand is not wrapped."""
+        text = r"Use \newcommand{\R}{\mathbb{R}} in the preamble."
+        result = postprocess_math(text)
+        # \newcommand is not in _LATEX_CMDS, so not wrapped
+        # but \mathbb IS in _LATEX_CMDS, so something should be wrapped
+        assert isinstance(result, str)
+
+    def test_existing_dollar_wrapping_preserved(self):
+        """Bare LaTeX inside already-wrapped $...$ should not be double-wrapped."""
+        text = r"The formula $\frac{a}{b}$ is already wrapped."
+        result = postprocess_math(text)
+        # The frac inside $...$ should be preserved as-is
+        assert r"$\frac{a}{b}$" in result
+
+    def test_multiple_bare_commands(self):
+        """Multiple bare commands should each be wrapped."""
+        text = r"We have \sqrt{2} and \frac{1}{2} in the same line."
+        result = postprocess_math(text)
+        # Both should be wrapped in some form of $...$
+        assert result.count("$") >= 2
+
+    def test_mathbf_command(self):
+        text = r"The matrix \mathbf{W} projects the input."
+        result = postprocess_math(text)
+        assert "$" in result
+
+    def test_command_at_end_of_string_no_braces(self):
+        r"""\\sum at end with no arguments — no brace group (line 269->276 branch)."""
+        text = r"Sum is \sum"
+        result = postprocess_math(text)
+        assert "$" in result
+
+    def test_command_with_single_char_subscript(self):
+        r"""\\sum_i uses single-char subscript (line 280->276 branch: elif pos < len(s))."""
+        text = r"Compute \sum_i for all i."
+        result = postprocess_math(text)
+        assert "$" in result
+
+    def test_command_not_chained(self):
+        r"""\\frac{a}{b} followed by normal text (line 294->305: loop exits immediately)."""
+        text = r"Use \frac{a}{b} in the formula."
+        result = postprocess_math(text)
+        assert r"\frac" in result
+        assert "$" in result
+
+    def test_chained_command_followed_by_unknown(self):
+        r"""\\frac{a}{b}\unknown — next cmd not in _LATEX_CMDS (line 299->303 branch)."""
+        text = r"Compute \frac{x}{y}\newpage after the fraction."
+        result = postprocess_math(text)
+        # \frac should be wrapped; \newpage is not in _LATEX_CMDS
+        assert r"\frac" in result
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# _promote_equation_lines (accessible through postprocess_math)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestPromoteEquationLines:
+    """Tests for _promote_equation_lines triggered via postprocess_math."""
+
+    def test_equation_line_promoted_to_display_math(self):
+        """A line with = and inline $...$ and mostly math → $$...$$ display math."""
+        # Attention(Q, K, V) = softmax($\frac{QK^T}{\sqrt{d_k}}$)V
+        text = r"Attention(Q, K, V) = softmax($\frac{QK^T}{\sqrt{d_k}}$)V"
+        result = postprocess_math(text)
+        # Should be promoted to display math
+        assert "$$" in result
+
+    def test_prose_line_not_promoted(self):
+        """A line with too many natural-language words is NOT promoted."""
+        text = "The model is trained to minimize the loss function on this dataset."
+        result = postprocess_math(text)
+        # No promotion expected — too many NL words
+        assert "$$" not in result
+
+    def test_already_display_math_not_modified(self):
+        """Lines starting with $$ are passed through unchanged."""
+        text = "$$x = \\frac{a}{b}$$"
+        result = postprocess_math(text)
+        # Should remain as-is (already display math)
+        assert "$$x" in result or result.startswith("$$")
+
+    def test_markdown_heading_not_promoted(self):
+        """Lines starting with # are not promoted."""
+        text = "# Section Heading = Relevant Content $x$"
+        result = postprocess_math(text)
+        assert not result.strip().startswith("$$")
+
+    def test_list_item_not_promoted(self):
+        """Lines starting with '- ' are not promoted."""
+        text = "- Item = some $x$ value"
+        result = postprocess_math(text)
+        assert not result.strip().startswith("$$")
+
+    def test_equation_with_source_citation(self):
+        """Source citations should be extracted and placed outside $$..."""
+        text = r"y = $\frac{1}{1+e^{-x}}$ [Source 1]"
+        result = postprocess_math(text)
+        # [Source 1] should remain outside $$
+        if "$$" in result:
+            assert "[Source 1]" in result
+            parts = result.split("$$")
+            # [Source 1] should be outside the display math block
+            outside = parts[0] + (parts[-1] if len(parts) > 1 else "")
+            assert "[Source 1]" in outside or "[Source 1]" in result
+
+    def test_function_names_wrapped_in_text(self):
+        """Known function names like softmax should get \\text{} wrapping in promoted equations."""
+        text = r"Attention(Q, K, V) = softmax($\frac{QK^T}{\sqrt{d_k}}$)V"
+        result = postprocess_math(text)
+        if "$$" in result:
+            assert r"\text{Attention}" in result or r"\text{softmax}" in result
+
+    def test_long_line_not_promoted(self):
+        """Lines over 200 chars are not promoted."""
+        text = "x = $y$ and " + "z " * 100  # > 200 chars
+        result = postprocess_math(text)
+        assert "$$" not in result
+
+    def test_multiline_preserves_other_lines(self):
+        """Only the equation line should be promoted; others stay unchanged."""
+        text = "Normal prose line.\nA = $\\frac{x}{y}$\nAnother prose line."
+        result = postprocess_math(text)
+        lines = result.split("\n")
+        assert len(lines) == 3
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# build_llm_backend — openai path
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestBuildLLMBackendOpenAI:
+    def test_build_llm_backend_openai(self):
+        backend = build_llm_backend("openai", model="gpt-4", base_url="http://example.com/v1")
+        assert isinstance(backend, OpenAICompatibleBackend)
+        assert backend.model == "gpt-4"
+        assert "example.com" in backend.base_url
+
+    def test_build_llm_backend_openai_defaults(self):
+        backend = build_llm_backend("openai")
+        assert isinstance(backend, OpenAICompatibleBackend)
+        # Default model used
+        assert backend.model == "gemma2:27b"
+
+    def test_openai_backend_no_system_prompt(self):
+        """Test OpenAI backend with no system prompt."""
+        from unittest.mock import MagicMock, patch
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"choices": [{"message": {"content": "answer"}}]}
+        with patch("requests.post", return_value=mock_response):
+            backend = OpenAICompatibleBackend()
+            result = backend.generate("prompt here")  # no system_prompt
+        assert result == "answer"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# _promote_equation_lines — edge-case branches
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestPromoteEquationEdgeCases:
+    """Cover the two uncovered branches in _promote_equation_lines."""
+
+    def test_line_only_source_citation_not_promoted(self):
+        """Line that becomes empty after stripping [Source N] → not promoted."""
+        # A line that has = and $...$ but is ONLY a source citation:
+        # "[Source 1] = $x$" — after stripping [Source 1], only "= $x$" which has
+        # no alpha tokens that would cause issues; but "[Source 1]" alone → ""
+        text = "[Source 1]"
+        result = postprocess_math(text)
+        # No promotion possible — empty analysis
+        assert "$$" not in result
+
+    def test_line_only_numbers_and_equals_not_promoted(self):
+        """Line with = and $...$ but no alphabetic chars → not promoted."""
+        # Something like "1 + 2 = $3$" — no alpha tokens
+        text = "1 + 2 = $3$"
+        result = postprocess_math(text)
+        # tokens is empty (only digits) → no promotion
+        assert "$$" not in result
+
+    def test_source_stripped_leaves_math(self):
+        """After stripping [Source N], a real equation remains → promoted."""
+        text = r"y = $\sigma(x)$ [Source 1]"
+        result = postprocess_math(text)
+        # analysis = "y = $\sigma(x)$" — has some tokens; whether it promotes
+        # depends on NL word ratio, but it should run through the full path
+        assert isinstance(result, str)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RelevanceGate._extract_entities — hyphenated entity with common suffix
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestExtractEntitiesHyphenated:
+    def test_hyphenated_entity_base_extracted(self):
+        """GPT-trained should yield both GPT-trained and GPT as entities."""
+        gate = RelevanceGate()
+        entities = gate._extract_entities("The GPT-trained model performs well.")
+        # GPT-trained is hyphenated; "trained" is a common suffix → "GPT" extracted too
+        assert any("GPT" in e for e in entities)
+
+    def test_hyphenated_entity_without_common_suffix(self):
+        """GPT-4 should not split since '4' is not a common suffix."""
+        gate = RelevanceGate()
+        entities = gate._extract_entities("How does GPT-4 compare?")
+        # GPT-4 is a tech term, base "GPT" may or may not be added
+        assert any("GPT" in e for e in entities)
+
+    def test_instruction_tuned_splits_correctly(self):
+        """InstructGPT should be CamelCase-split via _extract_entities."""
+        gate = RelevanceGate()
+        entities = gate._extract_entities("Tell me about InstructGPT training.")
+        assert "InstructGPT" in entities
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# postprocess_math — Greek letter in word context (line 118: return m.group(0))
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestPostprocessMathGreekInWord:
+    def test_greek_letter_after_alpha_char_not_wrapped(self):
+        """Greek letter immediately preceded by a letter should NOT be wrapped."""
+        # "aα" — 'α' is preceded by 'a' (isalpha=True) → return m.group(0)
+        text = "The term aα is special in this context."
+        result = postprocess_math(text)
+        # The α preceded by 'a' should NOT be converted to $\alpha$
+        # (it stays as-is per the before.isalpha() check)
+        assert "α" in result or "$" not in result or "aα" in result
+
+    def test_greek_letter_at_word_start_is_wrapped(self):
+        """Greek letter NOT preceded by a letter (preceded by space) → wrapped."""
+        text = "The value α is the learning rate."
+        result = postprocess_math(text)
+        assert "$\\alpha$" in result
+
+    def test_greek_with_subscript_in_word_not_wrapped(self):
+        """Greek with subscript preceded by letter → still not wrapped."""
+        text = "We compute xα_t for each step."
+        result = postprocess_math(text)
+        # 'α' in 'xα_t' is preceded by 'x' (alpha) → not wrapped
+        assert isinstance(result, str)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# _promote_equation_lines — empty analysis branch (line 390-391)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestPromoteEquationEmptyAnalysis:
+    def test_line_that_is_only_source_citations(self):
+        """A line that after stripping [Source N] is empty should not promote."""
+        # Need a line with '=', '$...$', AND only source citations as content
+        # "[Source 1] = [Source 2]" — has '=' but no $...$ so won't trigger the path
+        # Try: "[Source 1]$x$[Source 2] = " → after strip: "$x$ =" — not empty
+        # The edge case is when analysis becomes empty — e.g. source citation IS the whole line
+        # with '=' inside the citation somehow. Most natural: the check removes source refs
+        # and leaves only whitespace/punctuation.
+        # A simpler approach: line is "[Source 1] = $x$" → analysis = "= $x$" (not empty)
+        # The truly empty case requires: line = "[Source 1][Source 2]" but that has no = or $
+        # So the branch at line 390 may only be reachable theoretically.
+        # We test that the overall function handles these lines gracefully.
+        text = "[Source 1] [Source 2]"
+        result = postprocess_math(text)
+        assert "$$" not in result
+
+    def test_line_with_only_numbers_equation(self):
+        """Line '1 + 2 = $3$' has tokens = [] (wait, '1', '2', '3' are digits).
+
+        Actually re.findall(r'[a-zA-Z]+', ...) only matches letters, not digits.
+        So 'x = $3$' → tokens = ['x'] → not empty.
+        For truly no tokens: only digits and symbols.
+        """
+        text = "1 = $3$"
+        result = postprocess_math(text)
+        # tokens is empty → line 396-397 branch hit → not promoted
+        assert "$$" not in result

@@ -64,6 +64,31 @@ services:
       retries: 3
       start_period: 10s
 
+  # Neo4j Graph Database (for GraphRAG knowledge graph)
+  neo4j:
+    image: neo4j:5-community
+    container_name: ragbench-neo4j
+    ports:
+      - "7474:7474"   # HTTP browser
+      - "7687:7687"   # Bolt protocol
+    environment:
+      - NEO4J_AUTH=neo4j/ragbench2024
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_server_memory_heap_initial__size=512m
+      - NEO4J_server_memory_heap_max__size=1g
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    networks:
+      - ragbench
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "ragbench2024", "RETURN 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
   # Ollama LLM service (optional - comment out if using external LLM)
   ollama:
     image: ollama/ollama:latest
@@ -92,3 +117,5 @@ networks:
 
 volumes:
   ollama-models:
+  neo4j-data:
+  neo4j-logs:
