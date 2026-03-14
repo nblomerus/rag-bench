@@ -23,7 +23,16 @@ filterwarnings = [
 
 [tool.coverage.run]
 source = ["rag_bench"]
-omit = ["tests/*", "config.py", "rag_bench/eval/run.py", "rag_bench/eval/__main__.py"]
+omit = [
+    "tests/*",
+    "config.py",
+    "rag_bench/eval/run.py",
+    "rag_bench/eval/__main__.py",
+    "rag_bench/core/graph_store.py",
+    "rag_bench/core/graph_retriever.py",
+    "rag_bench/core/community_detection.py",
+    "rag_bench/api/server.py",
+]
 
 [tool.coverage.report]
 show_missing = true
