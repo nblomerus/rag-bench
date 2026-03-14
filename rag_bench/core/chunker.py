@@ -7,15 +7,18 @@ Handles AI/ML-specific challenges:
 - Expands acronyms on first occurrence per chunk
 - Attaches rich metadata for citation formatting
 - Filters noisy sections (references, acknowledgments) that degrade retrieval
+
+The actual text-splitting logic is delegated to a ChunkingStrategy
+(see rag_bench.core.strategies), making the splitting algorithm
+swappable while all pre/post-processing stays here.
 """
 
 import logging
 import re
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
 from rag_bench.config import MIN_CHUNK_LENGTH, SECTION_BLOCKLIST
 from rag_bench.core.configs import ChunkerConfig
+from rag_bench.core.strategies import get_strategy
 from rag_bench.core.types import ChunkData
 from rag_bench.utils.text import format_authors
 
@@ -56,6 +59,7 @@ class PaperChunker:
         min_section_length: int = 50,
         *,
         config: ChunkerConfig | None = None,
+        strategy=None,
     ):
         if config is not None:
             chunk_size = config.chunk_size
@@ -66,21 +70,19 @@ class PaperChunker:
         self.chunk_overlap = chunk_overlap
         self.min_section_length = min_section_length
 
-        # Separators prioritize keeping equations and paragraphs intact
-        self.splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            separators=[
-                "\n\n",  # paragraph break (highest priority)
-                "\n",  # line break
-                ". ",  # sentence break
-                "; ",  # clause break
-                ", ",  # phrase break
-                " ",  # word break
-                "",  # character break (last resort)
-            ],
-            length_function=len,
-        )
+        # Build or accept a splitting strategy
+        if strategy is not None:
+            self.strategy = strategy
+        elif config is not None:
+            self.strategy = get_strategy(config.strategy, config.strategy_config)
+        else:
+            self.strategy = get_strategy(
+                "recursive",
+                {"chunk_size": chunk_size, "chunk_overlap": chunk_overlap},
+            )
+
+        # Keep .splitter as an alias for backward compatibility in tests
+        self.splitter = self.strategy
 
     def chunk_paper(self, doc: dict) -> list[ChunkData]:
         """
@@ -118,8 +120,8 @@ class PaperChunker:
             # Pre-process: handle tables
             protected_text = self._protect_tables(protected_text)
 
-            # Split into chunks
-            text_chunks = self.splitter.split_text(protected_text)
+            # Split into chunks (delegated to the strategy)
+            text_chunks = self.strategy.split_text(protected_text)
 
             for i, chunk_text in enumerate(text_chunks):
                 # Restore any equation placeholders

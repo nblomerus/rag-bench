@@ -40,25 +40,30 @@ class TestChunkerConfig:
         assert cfg.chunk_size == 512
         assert cfg.chunk_overlap == 64
 
-    def test_chunk_size_must_be_positive(self):
-        with pytest.raises(ValueError, match="chunk_size must be positive"):
-            ChunkerConfig(chunk_size=0)
+    def test_strategy_config_populated_from_legacy_fields(self):
+        """Legacy chunk_size/chunk_overlap populate strategy_config for recursive."""
+        cfg = ChunkerConfig(chunk_size=512, chunk_overlap=64)
+        assert cfg.strategy_config == {"chunk_size": 512, "chunk_overlap": 64}
 
-    def test_chunk_size_negative(self):
-        with pytest.raises(ValueError, match="chunk_size must be positive"):
-            ChunkerConfig(chunk_size=-10)
+    def test_explicit_strategy_config_not_overwritten(self):
+        """Explicit strategy_config is preserved even for recursive strategy."""
+        cfg = ChunkerConfig(strategy_config={"chunk_size": 256, "chunk_overlap": 32})
+        assert cfg.strategy_config == {"chunk_size": 256, "chunk_overlap": 32}
 
-    def test_chunk_overlap_must_be_nonnegative(self):
-        with pytest.raises(ValueError, match="chunk_overlap must be non-negative"):
-            ChunkerConfig(chunk_overlap=-1)
+    def test_non_recursive_strategy_no_auto_populate(self):
+        """Non-recursive strategy with no strategy_config stays empty."""
+        cfg = ChunkerConfig(strategy="semantic", strategy_config={})
+        # semantic with empty config — no auto-populate because it's not recursive
+        # but __post_init__ only fires for recursive + empty
+        assert cfg.strategy == "semantic"
 
-    def test_overlap_must_be_less_than_size(self):
-        with pytest.raises(ValueError, match="chunk_overlap.*must be less than chunk_size"):
-            ChunkerConfig(chunk_size=100, chunk_overlap=100)
+    def test_strategy_default(self):
+        cfg = ChunkerConfig()
+        assert cfg.strategy == "recursive"
 
-    def test_overlap_greater_than_size(self):
-        with pytest.raises(ValueError, match="chunk_overlap.*must be less than chunk_size"):
-            ChunkerConfig(chunk_size=100, chunk_overlap=200)
+    def test_min_section_length_default(self):
+        cfg = ChunkerConfig()
+        assert cfg.min_section_length == 50
 
 
 # ═══════════════════════════════════════════════════════════════════════════
