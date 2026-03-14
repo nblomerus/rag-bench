@@ -121,6 +121,21 @@ class TestJudgeLLMScoring:
         result = judge._faithfulness_heuristic("some answer", [])
         assert result["score"] == 1.0
 
+    def test_faithfulness_heuristic_empty_answer(self):
+        """Empty answer → line 172: 'Empty answer' branch."""
+        judge = JudgeLLM.__new__(JudgeLLM)
+        result = judge._faithfulness_heuristic("", ["Some source passage."])
+        assert result["score"] == 1.0
+        assert result["reasoning"] == "Empty answer"
+
+    def test_faithfulness_heuristic_sentence_with_no_words(self):
+        """Sentence that has no words after split → line 178: 'if not words: continue'."""
+        judge = JudgeLLM.__new__(JudgeLLM)
+        # Answer with punctuation-only "sentence" and a real sentence
+        result = judge._faithfulness_heuristic("Good answer. !!!", ["Good answer content."])
+        assert "score" in result
+        assert 1.0 <= result["score"] <= 5.0
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # EvalRunner Tests
