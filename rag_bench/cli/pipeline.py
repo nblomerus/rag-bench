@@ -20,6 +20,7 @@ Usage:
 """
 
 import argparse
+import collections
 import json
 import logging
 import sys
@@ -188,9 +189,7 @@ def step_enrich(chunks: list[dict], docs: list[dict], enricher_config: EnricherC
         docs_by_id[doc["doc_id"]] = doc
 
     # Group chunks by doc_id so we can enrich per-paper
-    from collections import defaultdict
-
-    chunks_by_doc: dict[str, list[dict]] = defaultdict(list)
+    chunks_by_doc: dict[str, list[dict]] = collections.defaultdict(list)
     for chunk in chunks:
         chunks_by_doc[chunk["doc_id"]].append(chunk)
 

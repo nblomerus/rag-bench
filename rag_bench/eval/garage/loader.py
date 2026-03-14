@@ -13,6 +13,13 @@ import random
 from dataclasses import dataclass, field
 from pathlib import Path
 
+try:
+    from datasets import load_dataset
+
+    _HAS_DATASETS = True
+except ImportError:
+    _HAS_DATASETS = False
+
 logger = logging.getLogger(__name__)
 
 GARAGE_CACHE_DIR = Path(__file__).parent / "cache"
@@ -47,9 +54,10 @@ class GaRAGeEntry:
 
 def _try_load_from_huggingface() -> list[dict]:
     """Attempt to load GaRAGe from HuggingFace datasets library."""
+    if not _HAS_DATASETS:
+        logger.warning("datasets library not installed. Install with: pip install datasets")
+        raise ImportError("datasets library not installed. Install with: pip install datasets")
     try:
-        from datasets import load_dataset
-
         logger.info("Loading GaRAGe from HuggingFace: %s", HF_DATASET_NAME)
         ds = load_dataset(HF_DATASET_NAME)
 
@@ -62,9 +70,6 @@ def _try_load_from_huggingface() -> list[dict]:
 
         logger.info("Loaded %d entries from HuggingFace (%s)", len(entries), ", ".join(ds.keys()))
         return entries
-    except ImportError:
-        logger.warning("datasets library not installed. Install with: pip install datasets")
-        raise
     except Exception as e:
         logger.error("Failed to load from HuggingFace: %s", e)
         raise

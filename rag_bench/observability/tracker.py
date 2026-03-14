@@ -6,12 +6,31 @@ tracks unique users by IP, and reads live hardware stats via psutil/pynvml.
 
 from __future__ import annotations
 
+import os
 import time
 from collections import deque
 from datetime import datetime, timezone
 from typing import Any
 
 import psutil
+
+try:
+    from pynvml import (
+        NVML_TEMPERATURE_GPU,
+        NVMLError,
+        nvmlDeviceGetCount,
+        nvmlDeviceGetHandleByIndex,
+        nvmlDeviceGetMemoryInfo,
+        nvmlDeviceGetName,
+        nvmlDeviceGetTemperature,
+        nvmlDeviceGetUtilizationRates,
+        nvmlInit,
+        nvmlShutdown,
+    )
+
+    _HAS_PYNVML = True
+except ImportError:
+    _HAS_PYNVML = False
 
 
 def _percentile(sorted_data: list[float], p: float) -> float:
@@ -30,22 +49,9 @@ def _get_gpu_stats() -> list[dict[str, Any]]:
 
     Returns an empty list if no NVIDIA GPU or pynvml is unavailable.
     """
+    if not _HAS_PYNVML:
+        return []
     try:
-        import os
-
-        from pynvml import (
-            NVML_TEMPERATURE_GPU,
-            NVMLError,
-            nvmlDeviceGetCount,
-            nvmlDeviceGetHandleByIndex,
-            nvmlDeviceGetMemoryInfo,
-            nvmlDeviceGetName,
-            nvmlDeviceGetTemperature,
-            nvmlDeviceGetUtilizationRates,
-            nvmlInit,
-            nvmlShutdown,
-        )
-
         # NVML respects CUDA_VISIBLE_DEVICES — temporarily unset it so we
         # see every physical GPU for monitoring purposes.
         cuda_env = os.environ.pop("CUDA_VISIBLE_DEVICES", None)

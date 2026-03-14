@@ -1,6 +1,5 @@
 """Tests for RAGTruth dataset loader."""
 
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -383,8 +382,7 @@ class TestDownloadJsonl:
         """_try_load_from_huggingface raises when datasets not installed."""
         from rag_bench.eval.ragtruth.loader import _try_load_from_huggingface
 
-        # Temporarily remove datasets if it exists
-        with patch.dict(sys.modules, {"datasets": None}), pytest.raises(ImportError):
+        with patch("rag_bench.eval.ragtruth.loader._HAS_DATASETS", False), pytest.raises(ImportError):
             _try_load_from_huggingface()
 
 

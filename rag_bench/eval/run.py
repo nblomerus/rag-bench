@@ -15,6 +15,20 @@ import logging
 import os
 import time
 
+from rag_bench.config import (
+    CHROMA_DIR,
+    COLLECTION_NAME,
+    DEFAULT_TOP_K,
+    EMBEDDING_MODEL,
+    RERANKER_MODEL,
+)
+from rag_bench.core.citation_boost import CitationBooster
+from rag_bench.core.generator import RAGGenerator, RelevanceGate, build_llm_backend
+from rag_bench.core.retriever import HybridRetriever
+from rag_bench.eval.judge import JudgeLLM
+from rag_bench.eval.report import generate_terminal_summary, save_report
+from rag_bench.eval.runner import EvalRunner
+
 logger = logging.getLogger(__name__)
 
 
@@ -55,21 +69,6 @@ def main():
 
     logger.info("Initializing RAG pipeline for evaluation...")
     start_init = time.time()
-
-    # Import heavy modules after arg parsing for faster --help
-    from rag_bench.config import (
-        CHROMA_DIR,
-        COLLECTION_NAME,
-        DEFAULT_TOP_K,
-        EMBEDDING_MODEL,
-        RERANKER_MODEL,
-    )
-    from rag_bench.core.citation_boost import CitationBooster
-    from rag_bench.core.generator import RAGGenerator, RelevanceGate, build_llm_backend
-    from rag_bench.core.retriever import HybridRetriever
-    from rag_bench.eval.judge import JudgeLLM
-    from rag_bench.eval.report import generate_terminal_summary, save_report
-    from rag_bench.eval.runner import EvalRunner
 
     # Initialize retriever
     reranker_model = os.environ.get("RAG_RERANKER_MODEL", RERANKER_MODEL)

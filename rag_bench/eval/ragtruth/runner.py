@@ -8,6 +8,7 @@ Orchestrates running the RAGTruth evaluation:
 """
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -159,8 +160,6 @@ class RAGTruthRunner:
         Sentences in the answer that have very low overlap with the context
         are flagged as potential hallucinations.
         """
-        import re
-
         if not answer or not context:
             return {"has_hallucination": False, "spans": [], "span_types": []}
 
@@ -273,8 +272,6 @@ class RAGTruthRunner:
     @staticmethod
     def _extract_spans_from_reasoning(reasoning: str, answer: str) -> list[str]:
         """Try to extract specific hallucinated text from judge reasoning."""
-        import re
-
         spans = []
 
         # Look for quoted text in reasoning that appears in the answer

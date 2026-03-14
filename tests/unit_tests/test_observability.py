@@ -295,10 +295,9 @@ class TestGetGpuStats:
         """Cover lines 81-82: returns [] when pynvml is not available."""
         import unittest.mock as mock
 
-        with mock.patch.dict("sys.modules", {"pynvml": None}):
-            # Force reimport to trigger ImportError
-            from rag_bench.observability import tracker
+        from rag_bench.observability import tracker
 
+        with mock.patch.object(tracker, "_HAS_PYNVML", False):
             result = tracker._get_gpu_stats()
             assert result == []
 
@@ -306,11 +305,9 @@ class TestGetGpuStats:
         """Cover lines 81-82: returns [] on any exception."""
         import unittest.mock as mock
 
-        mock_pynvml = mock.MagicMock()
-        mock_pynvml.nvmlInit.side_effect = RuntimeError("NVML not found")
-        with mock.patch.dict("sys.modules", {"pynvml": mock_pynvml}):
-            from rag_bench.observability import tracker
+        from rag_bench.observability import tracker
 
+        with mock.patch.object(tracker, "nvmlInit", side_effect=RuntimeError("NVML not found")):
             result = tracker._get_gpu_stats()
             assert result == []
 
@@ -318,20 +315,25 @@ class TestGetGpuStats:
         """Cover line 60: GPU name returned as bytes is decoded to str."""
         import unittest.mock as mock
 
-        mock_pynvml = mock.MagicMock()
-        mock_pynvml.nvmlDeviceGetCount.return_value = 1
-        mock_pynvml.nvmlDeviceGetName.return_value = b"NVIDIA RTX 3090"
-        mock_util = mock.MagicMock()
-        mock_util.gpu = 50
-        mock_pynvml.nvmlDeviceGetUtilizationRates.return_value = mock_util
-        mock_mem = mock.MagicMock()
-        mock_mem.used = 4 * (1024**3)
-        mock_mem.total = 24 * (1024**3)
-        mock_pynvml.nvmlDeviceGetMemoryInfo.return_value = mock_mem
-        mock_pynvml.nvmlDeviceGetTemperature.return_value = 65
+        from rag_bench.observability import tracker
 
-        with mock.patch.dict("sys.modules", {"pynvml": mock_pynvml}):
-            from rag_bench.observability import tracker
+        with (
+            mock.patch.object(tracker, "nvmlInit"),
+            mock.patch.object(tracker, "nvmlShutdown"),
+            mock.patch.object(tracker, "nvmlDeviceGetCount", return_value=1),
+            mock.patch.object(tracker, "nvmlDeviceGetHandleByIndex", return_value=mock.MagicMock()),
+            mock.patch.object(tracker, "nvmlDeviceGetName", return_value=b"NVIDIA RTX 3090"),
+            mock.patch.object(tracker, "nvmlDeviceGetUtilizationRates") as mock_util_fn,
+            mock.patch.object(tracker, "nvmlDeviceGetMemoryInfo") as mock_mem_fn,
+            mock.patch.object(tracker, "nvmlDeviceGetTemperature", return_value=65),
+        ):
+            mock_util = mock.MagicMock()
+            mock_util.gpu = 50
+            mock_util_fn.return_value = mock_util
+            mock_mem = mock.MagicMock()
+            mock_mem.used = 4 * (1024**3)
+            mock_mem.total = 24 * (1024**3)
+            mock_mem_fn.return_value = mock_mem
 
             result = tracker._get_gpu_stats()
             assert len(result) == 1
@@ -342,25 +344,27 @@ class TestGetGpuStats:
         """Cover lines 65-66: temperature read failure returns None temp."""
         import unittest.mock as mock
 
-        # NVMLError must be a real exception class for except clause to work
-        class FakeNVMLError(Exception):
-            pass
+        from pynvml import NVMLError
 
-        mock_pynvml = mock.MagicMock()
-        mock_pynvml.NVMLError = FakeNVMLError
-        mock_pynvml.nvmlDeviceGetCount.return_value = 1
-        mock_pynvml.nvmlDeviceGetName.return_value = "Test GPU"
-        mock_util = mock.MagicMock()
-        mock_util.gpu = 30
-        mock_pynvml.nvmlDeviceGetUtilizationRates.return_value = mock_util
-        mock_mem = mock.MagicMock()
-        mock_mem.used = 2 * (1024**3)
-        mock_mem.total = 8 * (1024**3)
-        mock_pynvml.nvmlDeviceGetMemoryInfo.return_value = mock_mem
-        mock_pynvml.nvmlDeviceGetTemperature.side_effect = FakeNVMLError("no temp")
+        from rag_bench.observability import tracker
 
-        with mock.patch.dict("sys.modules", {"pynvml": mock_pynvml}):
-            from rag_bench.observability import tracker
+        with (
+            mock.patch.object(tracker, "nvmlInit"),
+            mock.patch.object(tracker, "nvmlShutdown"),
+            mock.patch.object(tracker, "nvmlDeviceGetCount", return_value=1),
+            mock.patch.object(tracker, "nvmlDeviceGetHandleByIndex", return_value=mock.MagicMock()),
+            mock.patch.object(tracker, "nvmlDeviceGetName", return_value="Test GPU"),
+            mock.patch.object(tracker, "nvmlDeviceGetUtilizationRates") as mock_util_fn,
+            mock.patch.object(tracker, "nvmlDeviceGetMemoryInfo") as mock_mem_fn,
+            mock.patch.object(tracker, "nvmlDeviceGetTemperature", side_effect=NVMLError("no temp")),
+        ):
+            mock_util = mock.MagicMock()
+            mock_util.gpu = 30
+            mock_util_fn.return_value = mock_util
+            mock_mem = mock.MagicMock()
+            mock_mem.used = 2 * (1024**3)
+            mock_mem.total = 8 * (1024**3)
+            mock_mem_fn.return_value = mock_mem
 
             result = tracker._get_gpu_stats()
             assert len(result) == 1

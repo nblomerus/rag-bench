@@ -1,6 +1,6 @@
 """Tests for GaRAGe dataset loader."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -185,8 +185,6 @@ class TestTryLoadFromHuggingFace:
 
     def test_success(self):
         """Successfully loads data from HuggingFace."""
-        import sys
-
         from rag_bench.eval.garage.loader import _try_load_from_huggingface
 
         mock_split = [
@@ -194,29 +192,24 @@ class TestTryLoadFromHuggingFace:
             {"id": "2", "question": "Q2", "answer": "A2"},
         ]
         mock_ds = {"test": mock_split}
-        mock_datasets = MagicMock()
-        mock_datasets.load_dataset.return_value = mock_ds
-        with patch.dict(sys.modules, {"datasets": mock_datasets}):
+        with patch("rag_bench.eval.garage.loader.load_dataset", return_value=mock_ds):
             _try_load_from_huggingface()
 
     def test_import_error(self):
         """Raises when datasets library not installed."""
-        import sys
-
         from rag_bench.eval.garage.loader import _try_load_from_huggingface
 
-        with patch.dict(sys.modules, {"datasets": None}), pytest.raises(ImportError):
+        with patch("rag_bench.eval.garage.loader._HAS_DATASETS", False), pytest.raises(ImportError):
             _try_load_from_huggingface()
 
     def test_download_error(self):
         """Raises when HuggingFace download fails."""
-        import sys
-
         from rag_bench.eval.garage.loader import _try_load_from_huggingface
 
-        mock_datasets = MagicMock()
-        mock_datasets.load_dataset.side_effect = RuntimeError("Download failed")
-        with patch.dict(sys.modules, {"datasets": mock_datasets}), pytest.raises(RuntimeError):
+        with (
+            patch("rag_bench.eval.garage.loader.load_dataset", side_effect=RuntimeError("Download failed")),
+            pytest.raises(RuntimeError),
+        ):
             _try_load_from_huggingface()
 
 
