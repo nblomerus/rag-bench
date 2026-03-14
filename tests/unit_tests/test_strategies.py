@@ -267,7 +267,7 @@ class TestEmbed:
         s = SemanticStrategy(embedding_model="mock-model")
         assert s._model is None
 
-        with patch("sentence_transformers.SentenceTransformer", return_value=mock_model) as mock_cls:
+        with patch("rag_bench.core.strategies.semantic.SentenceTransformer", return_value=mock_model) as mock_cls:
             result = s._embed(["sentence one", "sentence two", "sentence three", "sentence four"])
 
         mock_cls.assert_called_once_with("mock-model")
@@ -282,7 +282,7 @@ class TestEmbed:
         mock_model.encode.return_value = np.array([[1.0, 0.0]], dtype=np.float32)
 
         s = SemanticStrategy(embedding_model="mock-model")
-        with patch("sentence_transformers.SentenceTransformer", return_value=mock_model) as mock_cls:
+        with patch("rag_bench.core.strategies.semantic.SentenceTransformer", return_value=mock_model) as mock_cls:
             s._embed(["first call"])
             s._embed(["second call"])
 

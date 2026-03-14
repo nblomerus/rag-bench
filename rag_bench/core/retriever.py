@@ -37,6 +37,13 @@ from rag_bench.core.configs import RetrieverConfig
 from rag_bench.core.embedder import _load_embedding_model
 from rag_bench.core.types import ChunkData, RetrievalResult
 
+try:
+    from rag_bench.observability.metrics import RERANKING_DURATION, RETRIEVAL_DURATION
+
+    _HAS_METRICS = True
+except Exception:
+    _HAS_METRICS = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -812,13 +819,9 @@ class HybridRetriever:
 
         # Record timing metrics for observability
         _retrieval_elapsed = time.time() - _retrieval_start
-        try:
-            from rag_bench.observability.metrics import RERANKING_DURATION, RETRIEVAL_DURATION
-
+        if _HAS_METRICS:
             RETRIEVAL_DURATION.observe(_retrieval_elapsed)
             RERANKING_DURATION.observe(_rerank_elapsed)
-        except Exception:
-            pass
 
         # Attach timing so callers (e.g. generator) can report per-stage breakdown
         self._last_retrieval_ms = _retrieval_elapsed * 1000

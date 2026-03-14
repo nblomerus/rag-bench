@@ -21,6 +21,13 @@ from dataclasses import dataclass
 
 import numpy as np
 
+try:
+    from sentence_transformers import SentenceTransformer
+
+    _HAS_SENTENCE_TRANSFORMERS = True
+except ImportError:
+    _HAS_SENTENCE_TRANSFORMERS = False
+
 logger = logging.getLogger(__name__)
 
 # Common abbreviations that shouldn't trigger a sentence split
@@ -175,8 +182,6 @@ class SemanticStrategy:
             return self._embed_fn(sentences)
 
         if self._model is None:
-            from sentence_transformers import SentenceTransformer
-
             logger.info(f"Loading embedding model: {self.embedding_model}")
             self._model = SentenceTransformer(self.embedding_model)
 

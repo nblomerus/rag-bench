@@ -10,8 +10,16 @@ Source: ParticleMedia/RAGTruth (ACL 2024)
 import json
 import logging
 import random
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
+
+try:
+    from datasets import load_dataset
+
+    _HAS_DATASETS = True
+except ImportError:
+    _HAS_DATASETS = False
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +59,6 @@ class RAGTruthEntry:
 
 def _download_jsonl(url: str) -> list[dict]:
     """Download and parse a JSONL file from a URL."""
-    import urllib.request
-
     logger.info("Downloading: %s", url)
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "RAG-Bench/1.0"})
@@ -78,9 +84,9 @@ def _try_load_from_github() -> tuple[list[dict], list[dict]]:
 
 def _try_load_from_huggingface() -> tuple[list[dict], list[dict]]:
     """Fallback: try loading from HuggingFace datasets."""
+    if not _HAS_DATASETS:
+        raise ImportError("The 'datasets' package is not installed; cannot load from HuggingFace")
     try:
-        from datasets import load_dataset
-
         ds = load_dataset("ParticleMedia/RAGTruth")
         source_info = []
         responses = []

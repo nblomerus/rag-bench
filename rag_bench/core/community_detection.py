@@ -26,10 +26,12 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import networkx as nx
+import requests
 from networkx.algorithms.community import louvain_communities
 
 from rag_bench.core.graph_store import GraphStore
@@ -156,8 +158,6 @@ class CommunityDetector:
         Calls Ollama to produce a 1-2 sentence description of what
         each community represents.  Results are cached on disk.
         """
-        import requests
-
         cache = self._load_summary_cache()
         generated = 0
         t0 = time.time()
@@ -269,8 +269,6 @@ class CommunityDetector:
     @staticmethod
     def _get_community_predicates(G: nx.Graph, members: set) -> list[str]:
         """Find the most common predicates within a community."""
-        from collections import Counter
-
         pred_counts: Counter = Counter()
 
         for u, v, data in G.edges(members, data=True):

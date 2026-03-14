@@ -1333,7 +1333,7 @@ class TestFullEvalEndpoint:
             patch("rag_bench.api.server._pipeline", MagicMock()),
             patch("rag_bench.api.server._generator", mock_generator),
             patch("rag_bench.api.server._retriever", MagicMock()),
-            patch("rag_bench.eval.runner.EvalRunner") as mock_runner_class,
+            patch("rag_bench.api.server.EvalRunner") as mock_runner_class,
         ):
             mock_runner_class.return_value = mock_runner
             response = client.post(

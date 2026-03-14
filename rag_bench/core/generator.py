@@ -21,6 +21,13 @@ import requests
 from rag_bench.core.types import GenerationResult, RetrievalResult
 from rag_bench.utils.text import clean_latex_artifacts, fix_encoding
 
+try:
+    from rag_bench.observability.metrics import GENERATION_DURATION
+
+    _HAS_METRICS = True
+except Exception:
+    _HAS_METRICS = False
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_OLLAMA_MODEL = "gemma2:27b"
@@ -2656,12 +2663,8 @@ class RAGGenerator:
             fallback = TemplateFallbackBackend()
             answer_text = fallback.generate(prompt=prompt)
         _generation_ms = (time.time() - _gen_start) * 1000
-        try:
-            from rag_bench.observability.metrics import GENERATION_DURATION
-
+        if _HAS_METRICS:
             GENERATION_DURATION.observe(_generation_ms / 1000)
-        except Exception:
-            pass
 
         # Step 5.5: Post-process math formatting
         answer_text = postprocess_math(answer_text)

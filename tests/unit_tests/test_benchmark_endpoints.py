@@ -253,7 +253,7 @@ class TestRagtruthExamples:
             for i in range(30)
         ]
 
-        with patch("rag_bench.eval.ragtruth.loader.load_ragtruth", return_value=mock_entries):
+        with patch("rag_bench.api.server.load_ragtruth", return_value=mock_entries):
             resp = client.get("/api/eval/ragtruth/examples?sample=10")
 
         assert resp.status_code == 200
@@ -265,7 +265,7 @@ class TestRagtruthExamples:
 
     def test_examples_loader_failure(self, client):
         """500 when RAGTruth dataset fails to load."""
-        with patch("rag_bench.eval.ragtruth.loader.load_ragtruth", side_effect=RuntimeError("No cache")):
+        with patch("rag_bench.api.server.load_ragtruth", side_effect=RuntimeError("No cache")):
             resp = client.get("/api/eval/ragtruth/examples")
         assert resp.status_code == 500
 

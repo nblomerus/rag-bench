@@ -10,6 +10,13 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+try:
+    import torch
+
+    _HAS_TORCH = True
+except ImportError:
+    _HAS_TORCH = False
+
 from rag_bench.config import DEFAULT_TOP_K
 from rag_bench.core.types import RetrievalResult
 from rag_bench.eval.benchmark import BenchmarkEntry, get_benchmark
@@ -40,13 +47,8 @@ def _retrieval_results_to_dicts(results: list[RetrievalResult]) -> list[dict]:
 
 def _clear_cuda_cache() -> None:
     """Free fragmented CUDA memory if torch is available."""
-    try:
-        import torch
-
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-    except ImportError:
-        pass
+    if _HAS_TORCH and torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 @dataclass

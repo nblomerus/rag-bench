@@ -498,7 +498,7 @@ class TestBenchmarkRun:
         with (
             patch("rag_bench.api.server._benchmark_running", False),
             patch("rag_bench.eval.runner.EvalRunner.run_all", return_value=mock_report),
-            patch("rag_bench.eval.report.save_report"),
+            patch("rag_bench.api.server.save_report"),
             patch("rag_bench.api.server._save_benchmark_history"),
         ):
             resp = client.post(
