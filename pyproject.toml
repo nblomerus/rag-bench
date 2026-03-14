@@ -28,10 +28,6 @@ omit = [
     "config.py",
     "rag_bench/eval/run.py",
     "rag_bench/eval/__main__.py",
-    "rag_bench/core/graph_store.py",
-    "rag_bench/core/graph_retriever.py",
-    "rag_bench/core/community_detection.py",
-    "rag_bench/api/server.py",
 ]
 
 [tool.coverage.report]
