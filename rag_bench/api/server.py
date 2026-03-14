@@ -17,9 +17,12 @@ Usage:
 import asyncio
 import json
 import os
+import random
+import re
 import time
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 
 import httpx
 import structlog
@@ -72,15 +75,29 @@ from rag_bench.config import (
     VERSION,
 )
 from rag_bench.core.citation_boost import CitationBooster
-from rag_bench.core.configs import PipelineConfig
+from rag_bench.core.configs import GraphStoreConfig, PipelineConfig
 from rag_bench.core.generator import (
     DEFLECTION_PHRASES,
     RAGGenerator,
     RelevanceGate,
     build_llm_backend,
 )
+from rag_bench.core.graph_retriever import GraphRetriever
+from rag_bench.core.graph_store import GraphStore
 from rag_bench.core.pipeline import RAGPipeline, build_pipeline
 from rag_bench.core.retriever import HybridRetriever
+from rag_bench.eval.benchmark import get_benchmark
+from rag_bench.eval.judge import JudgeLLM
+from rag_bench.eval.metrics import (
+    citation_density,
+    count_unsupported_claims,
+    extract_cited_source_numbers,
+    source_coverage,
+)
+from rag_bench.eval.ragtruth.loader import load_ragtruth
+from rag_bench.eval.ragtruth.runner import RAGTruthRunner
+from rag_bench.eval.report import save_report
+from rag_bench.eval.runner import EvalRunner
 from rag_bench.observability import (
     ACTIVE_REQUESTS,
     BUILD_INFO,
@@ -430,7 +447,6 @@ _STOP_WORDS = frozenset(
 
 def _content_words(text: str) -> set[str]:
     """Extract meaningful content words (3+ chars, not stop words)."""
-    import re
 
     tokens = re.findall(r"[a-zA-Z]\w{2,}", text.lower())
     return {t for t in tokens if t not in _STOP_WORDS}
@@ -444,8 +460,6 @@ def _compute_faithfulness_heuristic(answer: str, source_passages: list[str]) -> 
     Only considers sentences with at least 4 content words to avoid noise from
     one-word headers or transition phrases.
     """
-    import re
-
     if not source_passages:
         return 1.0
 
@@ -473,13 +487,6 @@ def _compute_faithfulness_heuristic(answer: str, source_passages: list[str]) -> 
 
 def _compute_quality_metrics(answer: str, all_results: list[dict], filtered_results: list[dict]) -> QualityMetrics:
     """Compute inline quality metrics for a single query response."""
-    from rag_bench.eval.metrics import (
-        citation_density,
-        count_unsupported_claims,
-        extract_cited_source_numbers,
-        source_coverage,
-    )
-
     sources_for_metrics = filtered_results if filtered_results else all_results[:5]
     num_provided = len(sources_for_metrics)
     cited = extract_cited_source_numbers(answer)
@@ -577,8 +584,6 @@ def _compute_per_source_cited(answer: str, results: list[dict]) -> list[dict]:
       - [N] bare number inline in body
       - Footer-only: source listed in the trailing sources block (counted as cited once)
     """
-    import re
-
     parts = re.split(r"\n\s*(?:\[Source[^\]]*\]:|Sources?:)", answer, maxsplit=1)
     body = parts[0]
     footer = parts[1] if len(parts) > 1 else ""
@@ -630,8 +635,6 @@ def _compute_pipeline_insight(
     Shows what the CRAG and agent subsystems decided (or would decide)
     for this query, based on rerank scores and query patterns.
     """
-    import re
-
     scores = [r.get("score", 0.0) for r in all_results] if all_results else []
     top_score = scores[0] if scores else 0.0
 
@@ -1298,9 +1301,6 @@ async def run_full_evaluation(request: FullEvalRequest):
     if not _pipeline:
         raise HTTPException(status_code=503, detail="Pipeline still loading")
 
-    from rag_bench.eval.judge import JudgeLLM
-    from rag_bench.eval.runner import EvalRunner
-
     # Create judge from existing LLM backend (skip if retrieval_only)
     judge = None
     if not request.retrieval_only:
@@ -1648,15 +1648,7 @@ async def run_benchmark_evaluation(request: BenchmarkEvalRequest):
 
     _benchmark_running = True
     try:
-        from datetime import datetime
-
         if request.benchmark == "ragbench":
-            import random
-
-            from rag_bench.eval.benchmark import get_benchmark
-            from rag_bench.eval.judge import JudgeLLM
-            from rag_bench.eval.runner import EvalRunner
-
             benchmark_entries = get_benchmark()
             if request.sample_size > 0 and request.sample_size < len(benchmark_entries):
                 rng = random.Random(42)
@@ -1695,8 +1687,6 @@ async def run_benchmark_evaluation(request: BenchmarkEvalRequest):
             accuracy = report.summary.get("retrieval_ndcg_at_5", None)
 
         else:  # ragtruth
-            from rag_bench.eval.ragtruth.runner import RAGTruthRunner
-
             runner = RAGTruthRunner(generator=_generator)
             report = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: runner.run(sample_size=request.sample_size)
@@ -1745,9 +1735,7 @@ async def run_benchmark_evaluation(request: BenchmarkEvalRequest):
 
         # Save ragbench evals to disk
         if request.benchmark == "ragbench":
-            from rag_bench.eval.report import save_report as _save_report
-
-            _save_report(report, str(PROJECT_ROOT / "eval_results"), run_type=request.run_type)
+            save_report(report, str(PROJECT_ROOT / "eval_results"), run_type=request.run_type)  # type: ignore[arg-type]
 
         return BenchmarkEvalResponse(
             benchmark=request.benchmark,
@@ -1850,8 +1838,6 @@ async def benchmark_latest(benchmark: str):
 @app.get("/api/eval/benchmark/examples")
 async def benchmark_examples():
     """Return benchmark test examples that users can try individually."""
-    from rag_bench.eval.benchmark import get_benchmark
-
     entries = get_benchmark()
     examples = []
     for e in entries:
@@ -1876,10 +1862,6 @@ async def ragtruth_examples(sample: int = 20, seed: int = 42):
 
     Returns a mix of hallucinated and clean entries from the cached dataset.
     """
-    import random as _rnd
-
-    from rag_bench.eval.ragtruth.loader import load_ragtruth
-
     try:
         entries = load_ragtruth(sample_size=0, task_type="QA", seed=seed)
     except Exception as e:
@@ -1896,7 +1878,7 @@ async def ragtruth_examples(sample: int = 20, seed: int = 42):
             clean.append(e)
 
     # Sample a balanced set
-    rng = _rnd.Random(seed)
+    rng = random.Random(seed)
     half = sample // 2
     sampled_hallu = rng.sample(with_hallu, min(half, len(with_hallu)))
     sampled_clean = rng.sample(clean, min(sample - len(sampled_hallu), len(clean)))
@@ -1932,10 +1914,6 @@ async def ragtruth_detect(body: dict):
     response = body.get("response", "")
     if not context or not response:
         raise HTTPException(status_code=400, detail="Both 'context' and 'response' are required")
-
-    import time
-
-    from rag_bench.eval.ragtruth.runner import RAGTruthRunner
 
     runner = RAGTruthRunner(generator=None)
     start = time.time()
@@ -2030,14 +2008,6 @@ async def _scheduled_eval_loop():
 
         logger.info("Starting scheduled auto-eval")
         try:
-            import random
-            from datetime import datetime
-
-            from rag_bench.eval.benchmark import get_benchmark
-            from rag_bench.eval.judge import JudgeLLM
-            from rag_bench.eval.report import save_report
-            from rag_bench.eval.runner import EvalRunner
-
             benchmark_entries = get_benchmark()
             rng = random.Random(42)
             sample = rng.sample(benchmark_entries, min(20, len(benchmark_entries)))
@@ -2073,8 +2043,6 @@ def _start_eval_schedule():
 @app.get("/api/eval/schedule", response_model=EvalScheduleStatus)
 async def eval_schedule_status():
     """Return the current auto-eval schedule configuration."""
-    from datetime import datetime, timedelta
-
     next_run = None
     if _eval_schedule_enabled and _eval_schedule_last_run:
         try:
@@ -2123,12 +2091,11 @@ def _get_graph_retriever():
     if _graph_retriever is not None:
         return _graph_retriever
     try:
-        from rag_bench.core.graph_retriever import GraphRetriever
-        from rag_bench.core.graph_store import GraphStore
-
-        _graph_store = GraphStore()
+        neo4j_uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+        config = GraphStoreConfig(uri=neo4j_uri)
+        _graph_store = GraphStore(config=config)
         _graph_retriever = GraphRetriever(store=_graph_store)
-        logger.info("Graph retriever initialized for visualization")
+        logger.info(f"Graph retriever initialized ({neo4j_uri})")
         return _graph_retriever
     except Exception as e:
         logger.debug(f"Graph retriever unavailable: {e}")

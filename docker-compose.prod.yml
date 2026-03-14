@@ -15,6 +15,7 @@ services:
       - RAG_API_PORT=${RAG_API_PORT:-8000}
       - RAG_ENV=production
       - RAG_EVAL_SCHEDULE_HOURS=${RAG_EVAL_SCHEDULE_HOURS:-24}
+      - NEO4J_URI=bolt://neo4j:7687
       - PYTHONUNBUFFERED=1
       - CUDA_VISIBLE_DEVICES=1
     deploy:
@@ -126,6 +127,27 @@ services:
     expose:
       - "11434"
 
+  # Neo4j Knowledge Graph
+  neo4j:
+    image: neo4j:5-community
+    container_name: ragbench-neo4j
+    environment:
+      - NEO4J_AUTH=neo4j/ragbench2024
+      - NEO4J_PLUGINS=["apoc"]
+    volumes:
+      - neo4j-data:/data
+    networks:
+      - ragbench
+    restart: always
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    healthcheck:
+      test: ["CMD", "neo4j", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
 networks:
   ragbench:
     driver: bridge
@@ -133,3 +155,4 @@ networks:
 volumes:
   ollama-models:
   nginx-cache:
+  neo4j-data:
