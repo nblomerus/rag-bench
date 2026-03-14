@@ -13,6 +13,8 @@ Tests cover:
 import pytest
 
 from rag_bench.core.chunker import PaperChunker, chunk_all_papers
+from rag_bench.core.configs import ChunkerConfig
+from rag_bench.core.strategies.recursive import RecursiveStrategy
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Fixtures
@@ -804,8 +806,6 @@ class TestChunkerConfigPath:
 
     def test_chunker_with_config_uses_config_values(self):
         """When config= is passed, chunk_size etc. come from config."""
-        from rag_bench.core.configs import ChunkerConfig
-
         config = ChunkerConfig(chunk_size=512, chunk_overlap=64)
         chunker = PaperChunker(config=config)
         assert chunker.chunk_size == 512
@@ -813,17 +813,12 @@ class TestChunkerConfigPath:
 
     def test_chunker_with_config_and_strategy(self):
         """When config= is passed, strategy comes from config.strategy."""
-        from rag_bench.core.configs import ChunkerConfig
-        from rag_bench.core.strategies.recursive import RecursiveStrategy
-
         config = ChunkerConfig(strategy="recursive")
         chunker = PaperChunker(config=config)
         assert isinstance(chunker.strategy, RecursiveStrategy)
 
     def test_chunker_with_explicit_strategy_overrides(self):
         """When strategy= is passed explicitly (line 75), it overrides config."""
-        from rag_bench.core.strategies.recursive import RecursiveStrategy
-
         explicit_strategy = RecursiveStrategy(chunk_size=256)
         chunker = PaperChunker(strategy=explicit_strategy)
         assert chunker.strategy is explicit_strategy

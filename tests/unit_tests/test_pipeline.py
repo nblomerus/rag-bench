@@ -17,6 +17,9 @@ from rag_bench.core.configs import (
     GeneratorConfig,
     PipelineConfig,
 )
+from rag_bench.core.generator import RAGGenerator, RelevanceGate, TemplateFallbackBackend
+from rag_bench.core.pipeline import RAGPipeline, build_pipeline
+from rag_bench.core.retriever import HybridRetriever
 from rag_bench.core.types import ChunkData, GenerationResult, RetrievalResult
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -66,8 +69,6 @@ class TestBuildPipeline:
     @patch("rag_bench.core.pipeline.PaperChunker")
     @patch("rag_bench.core.pipeline.build_llm_backend")
     def test_build_with_defaults(self, mock_build_llm, mock_chunker, mock_embedder, mock_retriever):
-        from rag_bench.core.pipeline import RAGPipeline, build_pipeline
-
         mock_build_llm.return_value = MagicMock()
         pipeline = build_pipeline()
 
@@ -83,8 +84,6 @@ class TestBuildPipeline:
     @patch("rag_bench.core.pipeline.PaperChunker")
     @patch("rag_bench.core.pipeline.build_llm_backend")
     def test_build_with_custom_config(self, mock_build_llm, mock_chunker, mock_embedder, mock_retriever):
-        from rag_bench.core.pipeline import build_pipeline
-
         mock_build_llm.return_value = MagicMock()
         cfg = PipelineConfig(
             name="test_run",
@@ -100,8 +99,6 @@ class TestBuildPipeline:
     @patch("rag_bench.core.pipeline.PaperChunker")
     @patch("rag_bench.core.pipeline.build_llm_backend")
     def test_citation_boost_disabled(self, mock_build_llm, mock_chunker, mock_embedder, mock_retriever):
-        from rag_bench.core.pipeline import build_pipeline
-
         mock_build_llm.return_value = MagicMock()
         cfg = PipelineConfig(
             generator=GeneratorConfig(enable_citation_boost=False),
@@ -130,8 +127,6 @@ class TestRAGPipelineQuery:
         mock_retriever,
         sample_retrieval_results,
     ):
-        from rag_bench.core.pipeline import build_pipeline
-
         mock_build_llm.return_value = MagicMock()
         pipeline = build_pipeline()
 
@@ -166,8 +161,6 @@ class TestRAGPipelineQuery:
         mock_embedder,
         mock_retriever,
     ):
-        from rag_bench.core.pipeline import build_pipeline
-
         mock_build_llm.return_value = MagicMock()
         pipeline = build_pipeline()
 
@@ -192,8 +185,6 @@ class TestRetrieverAdapter:
     """Test the retrieve() method that wraps query() with typed results."""
 
     def test_retrieve_converts_dicts_to_retrieval_results(self):
-        from rag_bench.core.retriever import HybridRetriever
-
         # Create a partially-mocked retriever (bypass __init__)
         retriever = HybridRetriever.__new__(HybridRetriever)
         retriever.query = MagicMock(
@@ -238,8 +229,6 @@ class TestRetrieverAdapter:
         assert r1.rerank_score is None
 
     def test_retrieve_handles_empty_results(self):
-        from rag_bench.core.retriever import HybridRetriever
-
         retriever = HybridRetriever.__new__(HybridRetriever)
         retriever.query = MagicMock(return_value=[])
 
@@ -247,8 +236,6 @@ class TestRetrieverAdapter:
         assert results == []
 
     def test_retrieve_handles_missing_metadata(self):
-        from rag_bench.core.retriever import HybridRetriever
-
         retriever = HybridRetriever.__new__(HybridRetriever)
         retriever.query = MagicMock(
             return_value=[
@@ -276,8 +263,6 @@ class TestRetrieverAdapter:
 
 class TestRetrievalResultsToDicts:
     def test_conversion(self, sample_retrieval_results):
-        from rag_bench.core.generator import RAGGenerator
-
         dicts = RAGGenerator._retrieval_results_to_dicts(sample_retrieval_results)
 
         assert len(dicts) == 2
@@ -288,8 +273,6 @@ class TestRetrievalResultsToDicts:
         assert isinstance(dicts[0]["metadata"], dict)
 
     def test_empty_input(self):
-        from rag_bench.core.generator import RAGGenerator
-
         assert RAGGenerator._retrieval_results_to_dicts([]) == []
 
 
@@ -303,8 +286,6 @@ class TestGeneratorAdapter:
 
     def _make_generator(self):
         """Create a RAGGenerator with mocked dependencies."""
-        from rag_bench.core.generator import RAGGenerator, RelevanceGate, TemplateFallbackBackend
-
         mock_retriever = MagicMock()
         llm = TemplateFallbackBackend()
         gate = RelevanceGate(min_top_score=0.3)

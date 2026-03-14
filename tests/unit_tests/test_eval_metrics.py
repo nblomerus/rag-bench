@@ -9,6 +9,7 @@ from rag_bench.eval.citation_quality_queries import (
     get_queries_by_type,
 )
 from rag_bench.eval.metrics import (
+    _source_number_to_paper_id,
     citation_density,
     citation_precision,
     citation_recall,
@@ -593,7 +594,5 @@ class TestMetricsEdgeCases:
 
     def test_source_number_to_paper_id_non_dict_metadata(self):
         """Cover branch 198→200: metadata is a string, not dict."""
-        from rag_bench.eval.metrics import _source_number_to_paper_id
-
         result = _source_number_to_paper_id(1, [{"metadata": "not a dict"}])
         assert result == ""

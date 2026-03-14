@@ -4,9 +4,16 @@ Tests GraphStore, GraphRetriever, and CommunityDetector with mocked
 Neo4j driver so they run on CI without a real database.
 """
 
+import json
 from unittest.mock import MagicMock, Mock, patch
 
+import networkx as nx
+import requests
+
+from rag_bench.core.community_detection import Community, CommunityDetector, CommunityDetectorConfig
 from rag_bench.core.configs import GraphStoreConfig
+from rag_bench.core.graph_retriever import GraphRetriever, GraphRetrieverConfig
+from rag_bench.core.graph_store import GraphStore
 from rag_bench.core.graph_types import Entity, Triple
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -50,8 +57,6 @@ class TestGraphStoreWithMockedNeo4j:
         driver, session = _mock_neo4j_driver()
         mock_gdb.driver.return_value = driver
 
-        from rag_bench.core.graph_store import GraphStore
-
         GraphStore(config=GraphStoreConfig())
         # Should have called session.run for index creation
         assert session.run.call_count >= 2
@@ -63,8 +68,6 @@ class TestGraphStoreWithMockedNeo4j:
         """store_triples should batch writes."""
         driver, session = _mock_neo4j_driver()
         mock_gdb.driver.return_value = driver
-
-        from rag_bench.core.graph_store import GraphStore
 
         store = GraphStore(config=GraphStoreConfig(batch_size=2))
         triples = [_make_triple("A", "MODEL", "USES", "B", "METHOD", f"c{i}", f"d{i}") for i in range(5)]
@@ -81,8 +84,6 @@ class TestGraphStoreWithMockedNeo4j:
         driver, session = _mock_neo4j_driver()
         mock_gdb.driver.return_value = driver
 
-        from rag_bench.core.graph_store import GraphStore
-
         store = GraphStore()
         assert store.store_triples([]) == 0
 
@@ -95,8 +96,6 @@ class TestGraphStoreWithMockedNeo4j:
         mock_record = {"name": "BERT", "entity_type": "MODEL"}
         session.run.return_value.single.return_value = mock_record
 
-        from rag_bench.core.graph_store import GraphStore
-
         store = GraphStore()
         result = store.get_entity("bert")
         assert result == {"name": "BERT", "entity_type": "MODEL"}
@@ -108,8 +107,6 @@ class TestGraphStoreWithMockedNeo4j:
         mock_gdb.driver.return_value = driver
 
         session.run.return_value.single.return_value = None
-
-        from rag_bench.core.graph_store import GraphStore
 
         store = GraphStore()
         result = store.get_entity("nonexistent")
@@ -128,8 +125,6 @@ class TestGraphStoreWithMockedNeo4j:
         # Make records dict-able
         session.run.return_value = mock_records
 
-        from rag_bench.core.graph_store import GraphStore
-
         store = GraphStore()
         neighbors = store.get_neighbors("BERT", max_hops=1, limit=10)
         assert len(neighbors) == 1
@@ -142,8 +137,6 @@ class TestGraphStoreWithMockedNeo4j:
         mock_gdb.driver.return_value = driver
 
         session.run.return_value = []
-
-        from rag_bench.core.graph_store import GraphStore
 
         store = GraphStore()
         store.get_neighbors("BERT", max_hops=3, limit=10)
@@ -169,8 +162,6 @@ class TestGraphStoreWithMockedNeo4j:
             },
         ]
         session.run.return_value = mock_records
-
-        from rag_bench.core.graph_store import GraphStore
 
         store = GraphStore()
         triples = store.get_entity_triples("BERT", limit=10)
@@ -200,8 +191,6 @@ class TestGraphStoreWithMockedNeo4j:
             pred_result,
         ]
 
-        from rag_bench.core.graph_store import GraphStore
-
         store = GraphStore()
         stats = store.get_stats()
         assert stats["node_count"] == 100
@@ -215,8 +204,6 @@ class TestGraphStoreWithMockedNeo4j:
         driver, session = _mock_neo4j_driver()
         mock_gdb.driver.return_value = driver
 
-        from rag_bench.core.graph_store import GraphStore
-
         store = GraphStore()
         store.clear()
         calls = [str(c) for c in session.run.call_args_list]
@@ -227,8 +214,6 @@ class TestGraphStoreWithMockedNeo4j:
         """GraphStore supports context manager protocol."""
         driver, session = _mock_neo4j_driver()
         mock_gdb.driver.return_value = driver
-
-        from rag_bench.core.graph_store import GraphStore
 
         with GraphStore() as store:
             assert store is not None
@@ -245,8 +230,6 @@ class TestGraphStoreWithMockedNeo4j:
             {"name": "GPT", "entity_type": "MODEL"},
         ]
 
-        from rag_bench.core.graph_store import GraphStore
-
         store = GraphStore()
         path = store.find_path("BERT", "GPT")
         assert path is not None
@@ -259,8 +242,6 @@ class TestGraphStoreWithMockedNeo4j:
         mock_gdb.driver.return_value = driver
 
         session.run.return_value = []
-
-        from rag_bench.core.graph_store import GraphStore
 
         store = GraphStore()
         path = store.find_path("BERT", "Unrelated")
@@ -292,8 +273,6 @@ class TestGraphRetrieverWithMockedStore:
             ]
 
         with patch("rag_bench.core.graph_retriever.GraphStore"):
-            from rag_bench.core.graph_retriever import GraphRetriever, GraphRetrieverConfig
-
             retriever = GraphRetriever(
                 store=mock_store,
                 config=GraphRetrieverConfig(min_entity_length=3),
@@ -381,8 +360,6 @@ class TestGraphRetrieverWithMockedStore:
         assert result == "Tell me about BERT"
 
     def test_format_graph_chunk_basic(self):
-        from rag_bench.core.graph_retriever import GraphRetriever
-
         facts = ["BERT (MODEL) uses MLM (METHOD)", "BERT (MODEL) extends Transformer (MODEL)"]
         entities = [{"name": "BERT", "entity_type": "MODEL"}]
         text = GraphRetriever._format_graph_chunk(facts, entities)
@@ -390,8 +367,6 @@ class TestGraphRetrieverWithMockedStore:
         assert "uses MLM" in text
 
     def test_format_graph_chunk_with_community(self):
-        from rag_bench.core.graph_retriever import GraphRetriever
-
         facts = ["BERT (MODEL) uses MLM (METHOD)"]
         entities = [{"name": "BERT", "entity_type": "MODEL"}]
         summaries = ["This cluster represents language model pretraining methods."]
@@ -400,8 +375,6 @@ class TestGraphRetrieverWithMockedStore:
         assert "pretraining" in text
 
     def test_format_graph_chunk_deduplicates(self):
-        from rag_bench.core.graph_retriever import GraphRetriever
-
         facts = ["BERT uses MLM", "BERT uses MLM"]  # duplicate
         entities = [{"name": "BERT", "entity_type": "MODEL"}]
         text = GraphRetriever._format_graph_chunk(facts, entities)
@@ -411,8 +384,6 @@ class TestGraphRetrieverWithMockedStore:
         """When store is created internally, close() closes it."""
         mock_store = MagicMock()
         with patch("rag_bench.core.graph_retriever.GraphStore"):
-            from rag_bench.core.graph_retriever import GraphRetriever
-
             retriever = GraphRetriever(store=mock_store)
             retriever._owns_store = True
             retriever.close()
@@ -422,8 +393,6 @@ class TestGraphRetrieverWithMockedStore:
         """When store is passed in, close() does NOT close it."""
         mock_store = MagicMock()
         with patch("rag_bench.core.graph_retriever.GraphStore"):
-            from rag_bench.core.graph_retriever import GraphRetriever
-
             retriever = GraphRetriever(store=mock_store)
             retriever._owns_store = False
             retriever.close()
@@ -431,11 +400,8 @@ class TestGraphRetrieverWithMockedStore:
 
     def test_context_manager(self):
         mock_store = MagicMock()
-        with patch("rag_bench.core.graph_retriever.GraphStore"):
-            from rag_bench.core.graph_retriever import GraphRetriever
-
-            with GraphRetriever(store=mock_store) as retriever:
-                assert retriever is not None
+        with patch("rag_bench.core.graph_retriever.GraphStore"), GraphRetriever(store=mock_store) as retriever:
+            assert retriever is not None
 
     def test_fetch_entity_context_filters_by_weight(self):
         entities = [{"name": "BERT", "entity_type": "MODEL"}]
@@ -480,11 +446,6 @@ class TestCommunityDetectorWithMockedStore:
         mock_session.__exit__ = Mock(return_value=False)
         mock_store._session.return_value = mock_session
 
-        from rag_bench.core.community_detection import (
-            CommunityDetector,
-            CommunityDetectorConfig,
-        )
-
         config = CommunityDetectorConfig(
             min_community_size=2,
             cache_path=str(tmp_path / "cache.json") if tmp_path else "/tmp/test_cache.json",
@@ -493,8 +454,6 @@ class TestCommunityDetectorWithMockedStore:
 
     def test_detect_small_graph_returns_empty(self, tmp_path):
         """Graph with fewer nodes than min_community_size returns empty."""
-        import networkx as nx
-
         detector, store, session = self._make_detector(tmp_path)
 
         G = nx.Graph()
@@ -506,8 +465,6 @@ class TestCommunityDetectorWithMockedStore:
 
     def test_detect_finds_communities(self, tmp_path):
         """Detection on a graph with clear clusters finds communities."""
-        import networkx as nx
-
         detector, store, session = self._make_detector(tmp_path)
 
         G = nx.Graph()
@@ -538,8 +495,6 @@ class TestCommunityDetectorWithMockedStore:
 
     def test_community_has_predicates(self, tmp_path):
         """Communities should have top_predicates populated."""
-        import networkx as nx
-
         detector, store, session = self._make_detector(tmp_path)
 
         G = nx.Graph()
@@ -560,10 +515,6 @@ class TestCommunityDetectorWithMockedStore:
 
     def test_generate_summaries_with_cache(self, tmp_path):
         """Cached summaries are reused without LLM call."""
-        import json
-
-        from rag_bench.core.community_detection import Community
-
         detector, store, session = self._make_detector(tmp_path)
 
         # Pre-populate cache
@@ -581,8 +532,6 @@ class TestCommunityDetectorWithMockedStore:
 
     def test_generate_summaries_calls_ollama(self, tmp_path):
         """Uncached communities trigger Ollama call."""
-        from rag_bench.core.community_detection import Community
-
         detector, store, session = self._make_detector(tmp_path)
 
         communities = [
@@ -602,10 +551,6 @@ class TestCommunityDetectorWithMockedStore:
 
     def test_generate_summaries_handles_failure(self, tmp_path):
         """LLM failure leaves summary empty."""
-        import requests
-
-        from rag_bench.core.community_detection import Community
-
         detector, store, session = self._make_detector(tmp_path)
 
         communities = [
@@ -621,10 +566,6 @@ class TestCommunityDetectorWithMockedStore:
 
     def test_get_community_predicates(self, tmp_path):
         """_get_community_predicates returns most common predicates."""
-        import networkx as nx
-
-        from rag_bench.core.community_detection import CommunityDetector
-
         G = nx.Graph()
         G.add_node("a")
         G.add_node("b")
@@ -646,11 +587,6 @@ class TestCommunityDetectorWithMockedStore:
 
     def test_load_missing_cache(self, tmp_path):
         """Loading nonexistent cache returns empty dict."""
-        from rag_bench.core.community_detection import (
-            CommunityDetector,
-            CommunityDetectorConfig,
-        )
-
         mock_store = MagicMock()
         config = CommunityDetectorConfig(
             cache_path=str(tmp_path / "nonexistent" / "cache.json"),

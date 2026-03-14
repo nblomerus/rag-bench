@@ -2,7 +2,11 @@
 
 import os
 import time
+import unittest.mock as mock
 
+import pytest
+
+from rag_bench.observability import tracker
 from rag_bench.observability.logging import get_logger, setup_logging
 from rag_bench.observability.metrics import (
     ACTIVE_REQUESTS,
@@ -19,7 +23,10 @@ from rag_bench.observability.metrics import (
     RETRIEVAL_TOP_SCORE,
     UNIQUE_USERS,
 )
-from rag_bench.observability.tracker import RequestTracker, _get_gpu_stats, _percentile
+from rag_bench.observability.tracker import _HAS_PYNVML, RequestTracker, _get_gpu_stats, _percentile
+
+if _HAS_PYNVML:
+    from pynvml import NVMLError
 
 # ── Logging ──
 
@@ -293,30 +300,20 @@ class TestGetGpuStats:
 
     def test_returns_empty_on_import_error(self):
         """Cover lines 81-82: returns [] when pynvml is not available."""
-        import unittest.mock as mock
-
-        from rag_bench.observability import tracker
-
         with mock.patch.object(tracker, "_HAS_PYNVML", False):
             result = tracker._get_gpu_stats()
             assert result == []
 
+    @pytest.mark.skipif(not _HAS_PYNVML, reason="pynvml not installed")
     def test_returns_empty_on_exception(self):
         """Cover lines 81-82: returns [] on any exception."""
-        import unittest.mock as mock
-
-        from rag_bench.observability import tracker
-
         with mock.patch.object(tracker, "nvmlInit", side_effect=RuntimeError("NVML not found")):
             result = tracker._get_gpu_stats()
             assert result == []
 
+    @pytest.mark.skipif(not _HAS_PYNVML, reason="pynvml not installed")
     def test_bytes_name_decoded(self):
         """Cover line 60: GPU name returned as bytes is decoded to str."""
-        import unittest.mock as mock
-
-        from rag_bench.observability import tracker
-
         with (
             mock.patch.object(tracker, "nvmlInit"),
             mock.patch.object(tracker, "nvmlShutdown"),
@@ -340,14 +337,9 @@ class TestGetGpuStats:
             assert result[0]["name"] == "NVIDIA RTX 3090"
             assert result[0]["gpu_util_percent"] == 50
 
+    @pytest.mark.skipif(not _HAS_PYNVML, reason="pynvml not installed")
     def test_temp_error_returns_none(self):
         """Cover lines 65-66: temperature read failure returns None temp."""
-        import unittest.mock as mock
-
-        from pynvml import NVMLError
-
-        from rag_bench.observability import tracker
-
         with (
             mock.patch.object(tracker, "nvmlInit"),
             mock.patch.object(tracker, "nvmlShutdown"),

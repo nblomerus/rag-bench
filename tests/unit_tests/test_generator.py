@@ -2837,8 +2837,6 @@ class TestBuildLLMBackendOpenAI:
 
     def test_openai_backend_no_system_prompt(self):
         """Test OpenAI backend with no system prompt."""
-        from unittest.mock import MagicMock, patch
-
         mock_response = MagicMock()
         mock_response.json.return_value = {"choices": [{"message": {"content": "answer"}}]}
         with patch("requests.post", return_value=mock_response):

@@ -21,6 +21,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import networkx as nx
+import requests as req_lib
 
 from rag_bench.core.community_detection import (
     Community,
@@ -376,8 +377,6 @@ class TestGenerateSummariesMocked:
 
     def test_request_exception_handled(self):
         """Network error should not raise — community summary stays empty."""
-        import requests as req_lib
-
         store, _ = _make_mock_store()
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_path = str(Path(tmpdir) / "summaries.json")

@@ -4,14 +4,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import rag_bench.eval.ragtruth.loader as loader_mod
 from rag_bench.eval.ragtruth.loader import (
     HallucinationSpan,
     RAGTruthEntry,
     _cache_entries,
+    _download_jsonl,
     _extract_source_text,
     _load_from_cache,
     _merge_and_parse,
     _parse_hallucination_spans,
+    _try_load_from_github,
+    _try_load_from_huggingface,
     load_ragtruth,
 )
 
@@ -329,8 +333,6 @@ class TestDownloadJsonl:
 
     def test_download_jsonl_success(self):
         """_download_jsonl parses JSONL content."""
-        from rag_bench.eval.ragtruth.loader import _download_jsonl
-
         content = b'{"id": "1", "text": "hello"}\n{"id": "2", "text": "world"}\n'
         mock_resp = MagicMock()
         mock_resp.read.return_value = content
@@ -346,15 +348,11 @@ class TestDownloadJsonl:
 
     def test_download_jsonl_failure(self):
         """_download_jsonl raises on network error."""
-        from rag_bench.eval.ragtruth.loader import _download_jsonl
-
         with patch("urllib.request.urlopen", side_effect=OSError("Connection refused")), pytest.raises(OSError):
             _download_jsonl("https://example.com/data.jsonl")
 
     def test_try_load_from_github(self):
         """_try_load_from_github downloads source_info and response."""
-        from rag_bench.eval.ragtruth.loader import _try_load_from_github
-
         with patch("rag_bench.eval.ragtruth.loader._download_jsonl") as mock_dl:
             mock_dl.side_effect = [
                 [{"source_id": "s1", "source_info": "ctx"}],
@@ -368,8 +366,6 @@ class TestDownloadJsonl:
 
     def test_try_load_from_huggingface_success(self):
         """_try_load_from_huggingface loads from HF datasets."""
-        import rag_bench.eval.ragtruth.loader as loader_mod
-
         with (
             patch.dict("sys.modules", {"datasets": MagicMock()}),
             patch.object(loader_mod, "_try_load_from_huggingface") as mock_fn,
@@ -380,8 +376,6 @@ class TestDownloadJsonl:
 
     def test_try_load_from_huggingface_import_error(self):
         """_try_load_from_huggingface raises when datasets not installed."""
-        from rag_bench.eval.ragtruth.loader import _try_load_from_huggingface
-
         with patch("rag_bench.eval.ragtruth.loader._HAS_DATASETS", False), pytest.raises(ImportError):
             _try_load_from_huggingface()
 
