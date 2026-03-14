@@ -4,6 +4,8 @@ import { SourceCard } from './SourceCard'
 import { QualityBadges } from './metrics/QualityBadges'
 import { QualityPanel } from './metrics/QualityPanel'
 import { Tip } from './metrics/Tip'
+import { PipelineInsight } from './PipelineInsight'
+import { KnowledgeGraph } from './KnowledgeGraph'
 import { AlertIcon, ZapIcon, CpuIcon, SearchIcon, ChevronDown, ChevronUp } from './Icons'
 
 export function Message({ message, onViewSource }) {
@@ -87,6 +89,12 @@ export function Message({ message, onViewSource }) {
                     )}
                 </div>
                 {showQuality && hasQuality && <QualityPanel quality={quality} />}
+                {/* Live pipeline stages during streaming */}
+                {streaming && data?.pipelineStages?.length > 0 && (
+                    <PipelineInsight stages={data.pipelineStages} live={true} />
+                )}
+                {/* Final pipeline summary after streaming */}
+                {!streaming && data?.pipeline && <PipelineInsight pipeline={data.pipeline} />}
                 {data?.sources?.length > 0 && !data.deflected && (
                     <div className="mt-2 space-y-1.5">
                         {data.sources.map((source, idx) => (
@@ -96,6 +104,10 @@ export function Message({ message, onViewSource }) {
                                 onViewInPaper={onViewSource} />
                         ))}
                     </div>
+                )}
+                {/* Knowledge graph explorer — below sources, after streaming */}
+                {!streaming && data?.sources?.length > 0 && !data.deflected && (
+                    <KnowledgeGraph question={data.question || ''} />
                 )}
             </div>
         </div>

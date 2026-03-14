@@ -1,7 +1,7 @@
 export const API_BASE = '/api'
 
 // Stream tokens from SSE endpoint, calling callbacks as events arrive
-export async function queryRAGStream(question, { onSources, onToken, onDone, onError, topK = 5 }) {
+export async function queryRAGStream(question, { onSources, onToken, onDone, onError, onPipeline, topK = 5 }) {
     const res = await fetch(`${API_BASE}/query/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -25,7 +25,8 @@ export async function queryRAGStream(question, { onSources, onToken, onDone, onE
             if (!line.startsWith('data: ')) continue
             try {
                 const evt = JSON.parse(line.slice(6))
-                if (evt.event === 'sources' && onSources) onSources(evt.sources || [])
+                if (evt.event === 'pipeline' && onPipeline) onPipeline(evt)
+                else if (evt.event === 'sources' && onSources) onSources(evt.sources || [])
                 else if (evt.event === 'token' && onToken) onToken(evt.token)
                 else if (evt.event === 'done' && onDone) onDone(evt)
                 else if (evt.event === 'error' && onError) onError(evt.message)
@@ -126,6 +127,12 @@ export async function fetchBenchmarkTrends(runType = 'production') {
 export async function fetchEvalSchedule() {
     const res = await fetch(`${API_BASE}/eval/schedule`)
     if (!res.ok) throw new Error(`Schedule error: ${res.status}`)
+    return res.json()
+}
+
+export async function fetchGraphContext(question) {
+    const res = await fetch(`${API_BASE}/graph/context?question=${encodeURIComponent(question)}`)
+    if (!res.ok) return { nodes: [], edges: [], matched_entities: [] }
     return res.json()
 }
 
