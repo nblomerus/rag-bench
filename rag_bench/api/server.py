@@ -130,6 +130,7 @@ _pipeline: RAGPipeline | None = None
 
 # Limit concurrent queries to avoid CUDA OOM on the embedding/reranker GPU
 _QUERY_CONCURRENCY = 2
+_MAX_QUEUED_QUERIES = 4  # reject with 503 when queue is full to prevent OOM
 _query_semaphore = asyncio.Semaphore(_QUERY_CONCURRENCY)
 _active_queries = 0
 _queued_queries = 0
@@ -836,6 +837,7 @@ async def queue_status():
         "active": _active_queries,
         "queued": _queued_queries,
         "capacity": _QUERY_CONCURRENCY,
+        "max_queued": _MAX_QUEUED_QUERIES,
     }
 
 
@@ -923,6 +925,14 @@ async def query_rag(request: QueryRequest, raw_request: Request):
         )
 
     global _active_queries, _queued_queries
+
+    # Reject early if queue is full to prevent OOM under load
+    if _queued_queries >= _MAX_QUEUED_QUERIES:
+        raise HTTPException(
+            status_code=503,
+            detail="Server is at capacity. Please try again shortly.",
+        )
+
     ACTIVE_REQUESTS.inc()
     _queued_queries += 1
     start = time.time()
@@ -1048,6 +1058,13 @@ async def query_rag_stream(request: QueryRequest, raw_request: Request):
             greeting_stream(),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
+
+    # Reject early if queue is full to prevent OOM under load
+    if _queued_queries >= _MAX_QUEUED_QUERIES:
+        raise HTTPException(
+            status_code=503,
+            detail="Server is at capacity. Please try again shortly.",
         )
 
     client_ip = raw_request.headers.get("x-forwarded-for", raw_request.client.host if raw_request.client else "")
