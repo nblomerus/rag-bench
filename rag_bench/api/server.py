@@ -128,6 +128,13 @@ logger = get_logger(__name__)
 # Global pipeline instance (loaded once at startup via build_pipeline)
 _pipeline: RAGPipeline | None = None
 
+# Limit concurrent queries to avoid CUDA OOM on the embedding/reranker GPU
+_QUERY_CONCURRENCY = 2
+_query_semaphore = asyncio.Semaphore(_QUERY_CONCURRENCY)
+_active_queries = 0
+_queued_queries = 0
+_query_lock = asyncio.Lock()
+
 # Convenience aliases — set during lifespan, used by endpoints
 _retriever: HybridRetriever | None = None
 _generator: RAGGenerator | None = None
@@ -822,6 +829,16 @@ async def health_check():
     }
 
 
+@app.get("/api/queue/status")
+async def queue_status():
+    """Return current query queue state for frontend display."""
+    return {
+        "active": _active_queries,
+        "queued": _queued_queries,
+        "capacity": _QUERY_CONCURRENCY,
+    }
+
+
 @app.get("/api/metrics/summary")
 async def metrics_summary():
     """Return curated metrics summary for the frontend Production tab."""
@@ -905,11 +922,21 @@ async def query_rag(request: QueryRequest, raw_request: Request):
             citation_booster=None,
         )
 
+    global _active_queries, _queued_queries
     ACTIVE_REQUESTS.inc()
+    _queued_queries += 1
     start = time.time()
     try:
-        result = await asyncio.to_thread(generator.answer, request.question, top_k=request.top_k)
+        async with _query_semaphore:
+            _queued_queries -= 1
+            _active_queries += 1
+            try:
+                result = await asyncio.to_thread(generator.answer, request.question, top_k=request.top_k)
+            finally:
+                _active_queries -= 1
     except Exception:
+        if _queued_queries > 0:
+            _queued_queries -= 1
         ACTIVE_REQUESTS.dec()
         QUERIES_TOTAL.labels(status="error").inc()
         raise
@@ -1026,6 +1053,20 @@ async def query_rag_stream(request: QueryRequest, raw_request: Request):
     client_ip = raw_request.headers.get("x-forwarded-for", raw_request.client.host if raw_request.client else "")
 
     async def event_stream():
+        global _active_queries, _queued_queries
+        _queued_queries += 1
+        # Tell the client their queue position before waiting
+        queue_pos = _queued_queries
+        queue_evt = {
+            "event": "queue",
+            "position": queue_pos,
+            "active": _active_queries,
+            "capacity": _QUERY_CONCURRENCY,
+        }
+        yield f"data: {json.dumps(queue_evt)}\n\n"
+        await _query_semaphore.acquire()
+        _queued_queries -= 1
+        _active_queries += 1
         try:
             start = time.time()
 
@@ -1191,6 +1232,9 @@ async def query_rag_stream(request: QueryRequest, raw_request: Request):
             logger.error(f"Stream error: {e}")
             yield f"data: {json.dumps({'event': 'error', 'message': str(e)})}\n\n"
             QUERIES_TOTAL.labels(status="error").inc()
+        finally:
+            _active_queries -= 1
+            _query_semaphore.release()
 
     return StreamingResponse(
         event_stream(),

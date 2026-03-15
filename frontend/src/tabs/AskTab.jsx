@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { queryRAGStream, fetchPaper, API_BASE } from '../utils/api'
+import { queryRAGStream, fetchPaper, fetchQueueStatus, API_BASE } from '../utils/api'
 import { Message } from '../components/Message'
 import { LoadingDots } from '../components/LoadingDots'
 import { PaperViewer } from '../components/PaperViewer'
@@ -18,6 +18,23 @@ export function AskTab({ ready, serverOffline }) {
     const [input, setInput] = useState('')
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState(null)
+    const [queueInfo, setQueueInfo] = useState(null)
+    const [serverLoad, setServerLoad] = useState(null)
+
+    // Poll server queue status every 5s
+    useEffect(() => {
+        if (serverOffline || !ready) return
+        let active = true
+        const poll = async () => {
+            try {
+                const status = await fetchQueueStatus()
+                if (active) setServerLoad(status)
+            } catch { /* ignore */ }
+        }
+        poll()
+        const id = setInterval(poll, 5000)
+        return () => { active = false; clearInterval(id) }
+    }, [serverOffline, ready])
 
     // Paper viewer state
     const [paperViewerData, setPaperViewerData] = useState(null)
@@ -46,7 +63,15 @@ export function AskTab({ ready, serverOffline }) {
 
         try {
             await queryRAGStream(q, {
+                onQueue: (evt) => {
+                    if (evt.position > 0 && evt.active >= evt.capacity) {
+                        setQueueInfo({ position: evt.position, active: evt.active })
+                    } else {
+                        setQueueInfo(null)
+                    }
+                },
                 onPipeline: (stage) => {
+                    setQueueInfo(null)
                     setMessages(prev => {
                         const updated = [...prev]
                         const msg = updated[updated.length - 1]
@@ -128,6 +153,7 @@ export function AskTab({ ready, serverOffline }) {
             })
         } finally {
             setIsLoading(false)
+            setQueueInfo(null)
             inputRef.current?.focus()
         }
     }, [input, isLoading])
@@ -211,7 +237,21 @@ export function AskTab({ ready, serverOffline }) {
                         )}
 
                         {messages.map((msg, i) => <Message key={i} message={msg} onViewSource={handleViewSource} />)}
-                        {isLoading && <LoadingDots />}
+                        {queueInfo && (
+                            <div className="flex flex-col items-center gap-1.5 px-5 py-3.5 rounded-2xl text-xs my-2 mx-auto max-w-md"
+                                style={{ background: 'var(--apple-glass-bg)', border: '1px solid var(--apple-glass-border)' }}>
+                                <div className="flex items-center gap-2" style={{ color: 'var(--apple-text-secondary)' }}>
+                                    <Spinner size={14} />
+                                    <span>
+                                        Waiting in queue &middot; <span style={{ color: 'var(--apple-yellow)', fontWeight: 600 }}>{queueInfo.active} {queueInfo.active === 1 ? 'query' : 'queries'}</span> processing on GPU
+                                    </span>
+                                </div>
+                                <span className="text-[10px]" style={{ color: 'var(--apple-text-tertiary)' }}>
+                                    This server runs on a single GPU — queries are processed one at a time. Your turn is coming up.
+                                </span>
+                            </div>
+                        )}
+                        {isLoading && !queueInfo && <LoadingDots />}
                         <div ref={endRef} />
                     </div>
 
@@ -239,9 +279,24 @@ export function AskTab({ ready, serverOffline }) {
                                 {isLoading ? <Spinner size={18} /> : <SendIcon size={18} />}
                             </button>
                         </div>
-                        <p className="text-[10px] text-center mt-2" style={{ color: 'var(--apple-text-quaternary)' }}>
-                            Answers pulled from papers — always double-check the sources.
-                        </p>
+                        <div className="flex items-center justify-center gap-3 mt-2">
+                            <p className="text-[10px]" style={{ color: 'var(--apple-text-quaternary)' }}>
+                                Answers pulled from papers — always double-check the sources.
+                            </p>
+                            {serverLoad && !serverOffline && (
+                                <div className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--apple-text-quaternary)' }}>
+                                    <span style={{
+                                        display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
+                                        background: serverLoad.active === 0 ? 'var(--apple-green)'
+                                            : serverLoad.active < serverLoad.capacity ? 'var(--apple-yellow)'
+                                            : 'var(--apple-red)',
+                                    }} />
+                                    {serverLoad.active === 0 && serverLoad.queued === 0 && 'GPU idle'}
+                                    {serverLoad.active > 0 && serverLoad.queued === 0 && `${serverLoad.active}/${serverLoad.capacity} GPU slots in use`}
+                                    {serverLoad.queued > 0 && `${serverLoad.active}/${serverLoad.capacity} GPU slots · ${serverLoad.queued} queued`}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </main>
 
