@@ -88,8 +88,8 @@ class BrowseUser(HttpUser):
 class QueryUser(HttpUser):
     """Simulates users asking questions — hits LLM + ChromaDB + reranker.
 
-    Each query takes ~35s. Server allows 2 concurrent + 4 queued, then returns
-    503. Weight=1 means far fewer query users than browse users.
+    Each query takes ~35s. Server allows 1 concurrent + 4 queued, then returns
+    429. Weight=1 means far fewer query users than browse users.
     """
 
     weight = 1
@@ -109,6 +109,6 @@ class QueryUser(HttpUser):
             timeout=120,
             catch_response=True,
         ) as response:
-            if response.status_code == 503:
+            if response.status_code == 429:
                 # Server at capacity — expected under load, not a failure
                 response.success()

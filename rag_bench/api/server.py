@@ -102,11 +102,16 @@ from rag_bench.observability import (
     ACTIVE_REQUESTS,
     BUILD_INFO,
     CITATION_COVERAGE,
+    CONCURRENT_USERS,
     CORPUS_CHUNKS,
     CORPUS_PAPERS,
     PIPELINE_READY,
+    QUERIES_REJECTED,
     QUERIES_TOTAL,
+    QUERY_CAPACITY,
+    QUEUED_QUERIES,
     REQUEST_DURATION,
+    REQUESTS_BY_ENDPOINT,
     RETRIEVAL_TOP_SCORE,
     UNIQUE_USERS,
     RequestTracker,
@@ -240,6 +245,7 @@ async def lifespan(app):
 
     # Set Prometheus gauges
     PIPELINE_READY.set(1)
+    QUERY_CAPACITY.set(_QUERY_CONCURRENCY)
     CORPUS_CHUNKS.set(total_chunks)
     CORPUS_PAPERS.set(_total_papers)
     BUILD_INFO.info(
@@ -295,14 +301,23 @@ async def request_id_middleware(request: Request, call_next):
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(request_id=request_id)
 
+    CONCURRENT_USERS.inc()
     start = time.time()
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    finally:
+        CONCURRENT_USERS.dec()
     duration_ms = (time.time() - start) * 1000
 
     response.headers["X-Request-ID"] = request_id
 
-    # Skip noisy paths
+    # Track endpoint usage (coarse-grained to avoid high cardinality)
     path = request.url.path
+    if path.startswith("/api/"):
+        endpoint = path.split("?")[0]
+        REQUESTS_BY_ENDPOINT.labels(endpoint=endpoint).inc()
+
+    # Skip noisy paths for logging
     if path not in ("/metrics", "/api/health", "/api/metrics/summary"):
         logger.info(
             "request_completed",
@@ -929,6 +944,7 @@ async def query_rag(request: QueryRequest, raw_request: Request):
 
     # Reject early if queue is full to prevent OOM under load
     if _queued_queries >= _MAX_QUEUED_QUERIES:
+        QUERIES_REJECTED.inc()
         raise HTTPException(
             status_code=429,
             detail="Server is at capacity. Please try again shortly.",
@@ -936,11 +952,13 @@ async def query_rag(request: QueryRequest, raw_request: Request):
 
     ACTIVE_REQUESTS.inc()
     _queued_queries += 1
+    QUEUED_QUERIES.set(_queued_queries)
     start = time.time()
     try:
         async with _query_semaphore:
             _queued_queries -= 1
             _active_queries += 1
+            QUEUED_QUERIES.set(_queued_queries)
             try:
                 result = await asyncio.to_thread(generator.answer, request.question, top_k=request.top_k)
             finally:
@@ -948,6 +966,7 @@ async def query_rag(request: QueryRequest, raw_request: Request):
     except Exception:
         if _queued_queries > 0:
             _queued_queries -= 1
+        QUEUED_QUERIES.set(_queued_queries)
         ACTIVE_REQUESTS.dec()
         QUERIES_TOTAL.labels(status="error").inc()
         raise
@@ -1063,6 +1082,7 @@ async def query_rag_stream(request: QueryRequest, raw_request: Request):
 
     # Reject early if queue is full to prevent OOM under load
     if _queued_queries >= _MAX_QUEUED_QUERIES:
+        QUERIES_REJECTED.inc()
         raise HTTPException(
             status_code=429,
             detail="Server is at capacity. Please try again shortly.",
@@ -1073,6 +1093,7 @@ async def query_rag_stream(request: QueryRequest, raw_request: Request):
     async def event_stream():
         global _active_queries, _queued_queries
         _queued_queries += 1
+        QUEUED_QUERIES.set(_queued_queries)
         # Tell the client their queue position before waiting
         queue_pos = _queued_queries
         queue_evt = {
