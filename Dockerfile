@@ -32,6 +32,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     libgl1 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy virtualenv from builder
@@ -50,9 +51,9 @@ COPY rag_bench/ /app/rag_bench/
 RUN mkdir -p /app/logs /app/chroma_db /app/data && \
     chmod -R 755 /app/logs /app/chroma_db /app/data
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=20s --start-period=360s --retries=5 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/api/health', timeout=15)" || exit 1
+# Health check — uses curl instead of Python to avoid forking the 10GB+ process
+HEALTHCHECK --interval=30s --timeout=15s --start-period=360s --retries=5 \
+    CMD curl -sf --max-time 10 http://localhost:8000/api/health || exit 1
 
 # Expose port
 EXPOSE 8000
