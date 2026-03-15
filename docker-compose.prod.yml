@@ -10,7 +10,7 @@ services:
     container_name: ragbench-api-prod
     environment:
       - RAG_LLM_BACKEND=${RAG_LLM_BACKEND:-ollama}
-      - RAG_LLM_MODEL=${RAG_LLM_MODEL:-gemma2:27b}
+      - RAG_LLM_MODEL=${RAG_LLM_MODEL:-qwen2.5:14b}
       - RAG_LLM_BASE_URL=${RAG_LLM_BASE_URL:-http://ollama:11434}
       - RAG_API_PORT=${RAG_API_PORT:-8000}
       - RAG_ENV=production
@@ -135,7 +135,7 @@ services:
       /bin/sh -c "
         ollama serve &
         until ollama list 2>/dev/null; do sleep 1; done &&
-        ollama pull ${RAG_LLM_MODEL:-gemma2:27b} &&
+        ollama pull ${RAG_LLM_MODEL:-qwen2.5:14b} &&
         wait
       "
     expose:

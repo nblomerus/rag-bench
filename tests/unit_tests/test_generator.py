@@ -2833,7 +2833,7 @@ class TestBuildLLMBackendOpenAI:
         backend = build_llm_backend("openai")
         assert isinstance(backend, OpenAICompatibleBackend)
         # Default model used
-        assert backend.model == "gemma2:27b"
+        assert backend.model == "qwen2.5:14b"
 
     def test_openai_backend_no_system_prompt(self):
         """Test OpenAI backend with no system prompt."""
