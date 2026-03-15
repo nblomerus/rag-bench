@@ -7,6 +7,10 @@ export async function queryRAGStream(question, { onSources, onToken, onDone, onE
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question, top_k: topK }),
     })
+    if (res.status === 503) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.detail || 'Server is at capacity. Please try again shortly.')
+    }
     if (!res.ok) throw new Error(`API error: ${res.status}`)
 
     const reader = res.body.getReader()

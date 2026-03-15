@@ -20,14 +20,11 @@ services:
       - CUDA_VISIBLE_DEVICES=1
     deploy:
       resources:
-        limits:
-          memory: 20g
         reservations:
           devices:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    memswap_limit: 28g
     volumes:
       - ./chroma_db:/app/chroma_db
       - ./data:/app/data
@@ -39,9 +36,9 @@ services:
       - ollama
     restart: always
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/health', timeout=15)"]
+      test: ["CMD", "curl", "-sf", "--max-time", "10", "http://localhost:8000/api/health"]
       interval: 30s
-      timeout: 20s
+      timeout: 15s
       retries: 5
       start_period: 360s
     expose:
