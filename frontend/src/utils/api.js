@@ -1,7 +1,7 @@
 export const API_BASE = '/api'
 
 // Stream tokens from SSE endpoint, calling callbacks as events arrive
-export async function queryRAGStream(question, { onSources, onToken, onDone, onError, onPipeline, topK = 5 }) {
+export async function queryRAGStream(question, { onSources, onToken, onDone, onError, onPipeline, onQueue, topK = 5 }) {
     const res = await fetch(`${API_BASE}/query/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -25,7 +25,8 @@ export async function queryRAGStream(question, { onSources, onToken, onDone, onE
             if (!line.startsWith('data: ')) continue
             try {
                 const evt = JSON.parse(line.slice(6))
-                if (evt.event === 'pipeline' && onPipeline) onPipeline(evt)
+                if (evt.event === 'queue' && onQueue) onQueue(evt)
+                else if (evt.event === 'pipeline' && onPipeline) onPipeline(evt)
                 else if (evt.event === 'sources' && onSources) onSources(evt.sources || [])
                 else if (evt.event === 'token' && onToken) onToken(evt.token)
                 else if (evt.event === 'done' && onDone) onDone(evt)
@@ -43,6 +44,12 @@ export async function queryRAG(question, topK = 5) {
         body: JSON.stringify({ question, top_k: topK }),
     })
     if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+}
+
+export async function fetchQueueStatus() {
+    const res = await fetch(`${API_BASE}/queue/status`)
+    if (!res.ok) return { active: 0, queued: 0, capacity: 2 }
     return res.json()
 }
 
