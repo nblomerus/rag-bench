@@ -57,6 +57,21 @@ ACTIVE_REQUESTS = Gauge(
     "Number of in-flight requests",
 )
 
+QUEUED_QUERIES = Gauge(
+    "rag_queued_queries",
+    "Number of queries waiting in the queue",
+)
+
+QUERY_CAPACITY = Gauge(
+    "rag_query_capacity",
+    "Maximum concurrent queries allowed",
+)
+
+QUERIES_REJECTED = Counter(
+    "rag_queries_rejected_total",
+    "Queries rejected with 429 (at capacity)",
+)
+
 PIPELINE_READY = Gauge(
     "rag_pipeline_ready",
     "Whether the RAG pipeline is loaded (1=ready, 0=loading)",
@@ -75,6 +90,17 @@ CORPUS_PAPERS = Gauge(
 UNIQUE_USERS = Gauge(
     "rag_unique_users",
     "Unique IP addresses seen since startup",
+)
+
+REQUESTS_BY_ENDPOINT = Counter(
+    "rag_requests_by_endpoint_total",
+    "Total requests by endpoint",
+    ["endpoint"],
+)
+
+CONCURRENT_USERS = Gauge(
+    "rag_concurrent_users",
+    "Approximate concurrent users (active connections)",
 )
 
 # ── Info ──
