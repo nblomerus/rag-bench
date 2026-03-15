@@ -86,6 +86,23 @@ services:
       timeout: 10s
       retries: 3
 
+  # Cloudflare DDNS updater
+  ddns:
+    build:
+      context: ./ddns
+      dockerfile: Dockerfile
+    container_name: ragbench-ddns
+    environment:
+      - CF_API_TOKEN=${CF_API_TOKEN}
+      - CF_ZONE_ID=${CF_ZONE_ID}
+      - CF_RECORD_NAME=${CF_RECORD_NAME:-ragbench.co.za}
+      - CF_TTL=${CF_TTL:-300}
+      - CF_PROXIED=${CF_PROXIED:-false}
+      - UPDATE_INTERVAL=${UPDATE_INTERVAL:-300}
+    networks:
+      - ragbench
+    restart: always
+
   # Certbot for Let's Encrypt SSL certificates
   certbot:
     image: certbot/certbot:latest
