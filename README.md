@@ -6,16 +6,264 @@
 ![License](https://img.shields.io/github/license/nblomerus/rag-bench)
 ![Version](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/nblomerus/0ccf5c2eaa0512f4cc204b5cadb446c7/raw/version.json)
 
-A self-hosted RAG pipeline for querying 500+ AI/ML research papers. Hybrid retrieval (BM25 + dense embeddings + cross-encoder reranking), LLM generation with inline source citations, in-browser PDF viewing, and a built-in evaluation framework — all running on a single machine.
+A self-hosted RAG system for querying 21,000+ AI/ML research papers. Hybrid retrieval (BM25 + dense embeddings + cross-encoder reranking), knowledge graph augmentation (Neo4j), corrective RAG with confidence routing, LLM generation with inline source citations, and a full evaluation framework — running on a dual-GPU machine.
+
+**Live demo:** [ragbench.co.za](https://ragbench.co.za)
+
+---
 
 ## Features
 
-- **Hybrid retrieval** — BM25 sparse + BGE dense embeddings fused with Reciprocal Rank Fusion, then reranked by a cross-encoder (`BAAI/bge-reranker-v2-m3`)
-- **Grounded answers** — LLM generates responses with `[Source N]` citations mapped to specific paper chunks; citation boost for foundational papers
-- **Evaluation suite** — Built-in benchmarks (RAG-Bench + RAGTruth) with retrieval, citation, faithfulness, and relevance metrics
-- **Production dashboard** — Live latency percentiles, pipeline breakdown, hardware monitoring (CPU/RAM/GPU), with configurable time ranges
-- **Relevance gating** — Low-confidence queries are deflected instead of hallucinated
+- **Hybrid retrieval** — BM25 sparse + BGE dense embeddings fused with Reciprocal Rank Fusion, reranked by cross-encoder (`BAAI/bge-reranker-v2-m3`)
+- **GraphRAG** — Neo4j knowledge graph with entity extraction, community detection, and graph-augmented retrieval
+- **Corrective RAG (CRAG)** — Confidence routing with HyDE rewriting for low-confidence queries
+- **Grounded answers** — LLM generates responses with `[Source N]` citations; citation boost for foundational papers
+- **Streaming** — Server-Sent Events with queue position feedback and pipeline stage updates
+- **Evaluation suite** — 160-entry benchmark + RAGTruth with retrieval, citation, faithfulness, and relevance metrics
+- **Monitoring** — Prometheus metrics + Grafana dashboards with queue depth, rejection rates, and user tracking
+- **Production-hardened** — OOM protection, query queue limits (429 backpressure), curl-based healthchecks, DDNS auto-update
 - **Self-contained** — Docker Compose brings up the full stack; no external services required
+
+---
+
+## Architecture
+
+### System Overview
+
+```mermaid
+graph TB
+    User([Users]) --> CF[Cloudflare DNS]
+    CF --> NGX
+
+    subgraph Server["Production Server · 30GB RAM · Dual GPU"]
+        NGX["Nginx<br/>SSL · Rate Limit · Cache"]
+
+        NGX -->|/api/*| API
+        NGX -->|/*| FE
+        NGX -->|/grafana/*| GF
+
+        subgraph Application
+            API["FastAPI Backend<br/>Query Queue: 1 active · 4 queued · 429 reject"]
+            FE["React SPA<br/>Ask · Benchmarks · Production"]
+        end
+
+        subgraph Monitoring
+            GF["Grafana<br/>6 dashboards"]
+            PR["Prometheus<br/>15s scrape"]
+            PR -->|/metrics| API
+            GF --> PR
+        end
+
+        subgraph Storage
+            CR[("ChromaDB<br/>1.6M chunks<br/>HNSW + BM25")]
+            N4[("Neo4j<br/>Knowledge Graph")]
+        end
+
+        subgraph Inference
+            OL["Ollama · qwen2.5:14b<br/>RTX 5070 Ti 16GB"]
+        end
+
+        API --> CR
+        API -->|embeddings + reranking<br/>RTX 2070 Super 8GB| CR
+        API --> OL
+        API --> N4
+
+        DDNS["DDNS Updater<br/>5 min cycle"] -.-> CF
+        CB["Certbot<br/>SSL renewal"] -.-> NGX
+    end
+
+    style API fill:#2563eb,color:#fff,stroke:#1d4ed8
+    style CR fill:#dc2626,color:#fff,stroke:#b91c1c
+    style OL fill:#16a34a,color:#fff,stroke:#15803d
+    style N4 fill:#7c3aed,color:#fff,stroke:#6d28d9
+    style GF fill:#eab308,color:#000,stroke:#ca8a04
+    style PR fill:#ea580c,color:#fff,stroke:#c2410c
+    style NGX fill:#64748b,color:#fff,stroke:#475569
+    style FE fill:#0891b2,color:#fff,stroke:#0e7490
+```
+
+### Query Pipeline
+
+```mermaid
+graph TB
+    Q([User Question]) --> BM25 & Dense
+
+    subgraph Retrieval["Stage 1 · Hybrid Retrieval"]
+        BM25["BM25 Sparse<br/>top 500"]
+        Dense["BGE Dense<br/>top 500"]
+        BM25 & Dense --> RRF["Reciprocal Rank Fusion<br/>k=60 · BM25 40% · Dense 60%"]
+    end
+
+    subgraph Augmentation["Stage 2–3 · Augmentation"]
+        RRF --> CB2["Citation Boost<br/>27 foundational papers<br/>intent-based injection"]
+        RRF --> GF2["Graph Facts<br/>Neo4j entity match<br/>1-hop traversal"]
+        CB2 & GF2 --> RR["Cross-Encoder Reranker<br/>bge-reranker-v2-m3<br/>top 100 → 10"]
+    end
+
+    subgraph Routing["Stage 4–5 · Quality Control"]
+        RR --> CRAG{"CRAG Router"}
+        CRAG -->|"≥ 0.90 · CORRECT"| RG
+        CRAG -->|"0.70–0.90 · AMBIGUOUS"| RG["Relevance Gate<br/>score · concentration<br/>keyword overlap"]
+        CRAG -->|"< 0.70 · INCORRECT"| HYDE["HyDE Rewrite"] --> BM25
+        RG -->|insufficient| DEF([Deflect with reason])
+    end
+
+    subgraph Generation["Stage 6–7 · Response"]
+        RG -->|pass| LLM["LLM Generation<br/>qwen2.5:14b · SSE stream<br/>Source N citations"]
+        LLM --> QM["Quality Metrics<br/>citation coverage · faithfulness<br/>source diversity · confidence"]
+    end
+
+    QM --> R([Streamed Response])
+
+    style Q fill:#f8fafc,stroke:#334155
+    style R fill:#f8fafc,stroke:#334155
+    style DEF fill:#fecaca,stroke:#dc2626,color:#991b1b
+    style CRAG fill:#fef3c7,stroke:#d97706,color:#92400e
+    style LLM fill:#2563eb,color:#fff,stroke:#1d4ed8
+    style RRF fill:#7c3aed,color:#fff,stroke:#6d28d9
+    style RR fill:#16a34a,color:#fff,stroke:#15803d
+    style HYDE fill:#ea580c,color:#fff,stroke:#c2410c
+```
+
+### Codebase
+
+```
+rag_bench/
+├── api/             FastAPI server, Pydantic schemas, SSE streaming
+├── core/
+│   ├── chunker.py       Semantic chunking with equation preservation
+│   ├── enricher.py      Contextual enrichment + acronym expansion
+│   ├── embedder.py      BGE embedding + ChromaDB indexing
+│   ├── retriever.py     Hybrid BM25 + dense retrieval with RRF
+│   ├── generator.py     LLM generation with math post-processing
+│   ├── crag.py          Corrective RAG (confidence routing + HyDE)
+│   ├── graph_store.py   Neo4j wrapper (MERGE dedup, batch writes)
+│   ├── graph_retriever.py  Graph-augmented retrieval
+│   ├── entity_extractor.py LLM-based triple extraction
+│   ├── citation_boost.py   Foundational paper injection
+│   ├── agent.py         RAG agent (retrieve-first-then-escalate)
+│   └── pipeline.py      Pipeline orchestration
+├── eval/            Benchmarks (160 entries), metrics, RAGTruth
+├── observability/   Prometheus metrics, structured logging, tracker
+├── cli/             Pipeline & query CLI tools
+└── utils/           Text processing utilities
+
+frontend/            React 18 SPA (Vite + Tailwind CSS)
+monitoring/          Prometheus config + Grafana dashboards
+ddns/                Cloudflare DDNS auto-updater
+scripts/             ArXiv scraper, knowledge graph builder
+tests/               Unit tests (90%+ coverage enforced)
+```
+
+---
+
+## How It Works
+
+### Ingestion
+
+Papers are scraped from ArXiv and HuggingFace, then chunked, embedded, and indexed.
+
+```bash
+python scripts/scrape_arxiv.py                  # ~170 landmark papers
+python scripts/scrape_arxiv.py --mode extended  # ~15,000+ across 18 topics
+python -m rag_bench.cli.pipeline --hybrid       # Chunk, embed, index
+```
+
+**Chunking** — 1024-char chunks with 128-char overlap. Equations (`$$...$$`, `\begin{align}`) and tables (`|...|`) are preserved across boundaries. Noise sections (references, acknowledgments) are filtered. Each chunk gets a contextual prefix: `"{Title} — {Section}\n\n"`.
+
+**Embedding** — `BAAI/bge-base-en-v1.5` (768-dim), batched at 254, L2-normalized, stored in ChromaDB with HNSW cosine indexing. Metadata: `chunk_id`, `arxiv_id`, `section`, `source_display`, categories.
+
+### Retrieval Pipeline
+
+**Stage 1: Hybrid Retrieval** — BM25 (`k1=1.5`, `b=0.75`) and BGE dense each return top 500, fused via RRF (`k=60`, BM25 40% / dense 60%).
+
+**Stage 2: Citation Boost** — Query intent classified as foundational/recent/balanced. 27 curated landmark papers (Attention Is All You Need, BERT, GPT-3, LoRA, etc.) injected with 1.3x-2.0x boost.
+
+**Stage 3: Graph Augmentation** — Entities matched against Neo4j knowledge graph, 1-hop neighborhood traversed, relevant graph facts injected into the candidate pool.
+
+**Stage 4: Reranking** — Top 100 candidates rescored by `BAAI/bge-reranker-v2-m3` cross-encoder. Final top 10 returned.
+
+**Stage 5: CRAG Routing** — Confidence scored via reranker output. CORRECT (>=0.90): pass through. AMBIGUOUS (0.70-0.90): filter weak results. INCORRECT (<0.70): HyDE rewrite and retry.
+
+**Stage 6: Relevance Gate** — Min score, concentration, keyword overlap checks. Deflects low-confidence queries with reason.
+
+**Stage 7: Generation** — `qwen2.5:14b` via Ollama, streamed via SSE. 11-rule system prompt enforcing `[Source N]` citation discipline. Math post-processing (Greek Unicode -> LaTeX, subscript/superscript wrapping).
+
+### Quality Metrics (per response, no LLM needed)
+
+| Metric | How |
+|--------|-----|
+| Retrieval confidence | Score gap ratio between top-1 and top-2 |
+| Citation coverage | % of provided sources actually cited |
+| Citation density | `[Source N]` markers per 100 words |
+| Unsupported claims | Heuristic count of claims without adjacent citations |
+| Faithfulness score | Content-word overlap between answer and source passages (1-5) |
+| Source diversity | Unique papers and sections represented |
+
+---
+
+## Production Stack
+
+### Docker Services
+
+| Service | Image | Purpose |
+|---------|-------|---------|
+| `api` | Custom (Python 3.11) | FastAPI backend, RAG pipeline |
+| `frontend` | Custom (React + Nginx) | SPA serving |
+| `nginx` | nginx:alpine | SSL termination, reverse proxy, rate limiting |
+| `ollama` | ollama/ollama | LLM inference (GPU 0) |
+| `neo4j` | neo4j:5-community | Knowledge graph |
+| `prometheus` | prom/prometheus | Metrics collection (15s scrape) |
+| `grafana` | grafana/grafana | Monitoring dashboards |
+| `ddns` | Custom (Alpine + curl) | Cloudflare DNS auto-update (5 min) |
+| `certbot` | certbot/certbot | Let's Encrypt SSL renewal |
+
+### Capacity & Protection
+
+```
+Server: 30GB RAM + 24GB swap
+GPU 0: RTX 5070 Ti (16GB) — Ollama LLM inference
+GPU 1: RTX 2070 Super (8GB) — Embedding + reranking
+
+Query concurrency: 1 active, 4 queued, then 429 reject
+API baseline memory: ~10GB (ChromaDB HNSW + BM25 index + models)
+LLM model memory: ~9GB (qwen2.5:14b)
+Healthcheck: curl (not Python fork — avoids doubling 10GB process)
+```
+
+### Monitoring
+
+Grafana dashboard at `/grafana/` with 6 sections:
+
+- **Traffic** — Query rate, active requests, cumulative totals
+- **Users** — Concurrent connections, unique users, top endpoints
+- **Queue & Capacity** — Queue depth, rejected queries (429), capacity
+- **Latency** — p50/p90/p99 request latency, pipeline breakdown (retrieval/generation/reranking)
+- **RAG Quality** — Retrieval score distribution, citation coverage
+- **System** — Corpus size, pipeline status, build info
+
+---
+
+## API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/query` | Query with grounded answer + citations |
+| `POST` | `/api/query/stream` | Same, with SSE streaming + queue feedback |
+| `GET` | `/api/health` | Health check |
+| `GET` | `/api/stats` | Corpus statistics |
+| `GET` | `/api/queue/status` | Queue depth + capacity |
+| `GET` | `/api/papers` | List indexed papers |
+| `GET` | `/api/papers/{id}` | Paper chunks |
+| `GET` | `/api/papers/{id}/pdf` | Fetch & cache ArXiv PDF |
+| `GET` | `/api/graph/context` | Knowledge graph subgraph for a query |
+| `POST` | `/api/eval` | Run evaluation suite |
+| `GET` | `/api/metrics/summary` | Live metrics for frontend |
+| `GET` | `/metrics` | Prometheus scrape endpoint |
+
+Interactive docs at `/docs` (Swagger) or `/redoc`.
+
+---
 
 ## Quick Start
 
@@ -27,141 +275,22 @@ docker compose up -d
 
 Open http://localhost:3000 (frontend) or http://localhost:8000/docs (API docs).
 
-See [QUICKSTART.md](docs/QUICKSTART.md) for the full 5-minute guide.
+See [QUICKSTART.md](docs/QUICKSTART.md) for the full guide.
 
-## Architecture
+## Configuration
 
-```
-┌─────────────────────────────────────────────────────┐
-│  Frontend (React 18 + Vite + Tailwind)              │
-│  Ask tab · Benchmarks tab · Production dashboard    │
-└──────────────────┬──────────────────────────────────┘
-                   │ HTTP / SSE
-┌──────────────────▼──────────────────────────────────┐
-│  Nginx (production only)                            │
-│  SSL termination · static caching                   │
-└──────────────────┬──────────────────────────────────┘
-                   │
-┌──────────────────▼──────────────────────────────────┐
-│  FastAPI Backend                                    │
-│  Hybrid retrieval · LLM generation · citation boost │
-│  Evaluation runner · Prometheus metrics             │
-└──────────┬───────────────────┬──────────────────────┘
-           │                   │
-     ┌─────▼──────┐     ┌─────▼──────┐
-     │  ChromaDB  │     │   Ollama   │
-     │ BGE embed  │     │  (or cloud │
-     │ + BM25     │     │   LLM API) │
-     └────────────┘     └────────────┘
-```
-
-```
-rag_bench/
-├── api/             FastAPI server & Pydantic schemas
-├── core/            RAG pipeline — chunker, embedder, retriever, generator
-├── eval/            Benchmarks, metrics, judge LLM, report generation
-├── observability/   Prometheus metrics, structured logging, request tracker
-├── cli/             Pipeline & query CLI tools
-├── utils/           Text processing utilities
-└── config.py        All configuration & hyperparameters
-frontend/            React SPA (Vite + Tailwind)
-scripts/             ArXiv scraper, deployment, backup/restore
-tests/               Unit tests (90%+ coverage enforced)
-```
-
-## How It Works
-
-A query flows through five stages — from HTTP request to streamed, cited response. Every numeric threshold below is the actual production value from `config.py`.
-
-### Ingestion: Building the Corpus
-
-Before any queries, papers are scraped, chunked, embedded, and indexed.
-
-**Data sources.** The primary corpus comes from a combination of around ~19 000 articles scraped from ArXiv and the HuggingFace `jamescalam/ai-arxiv2` dataset (train split).
+Key settings in `.env` (see [.env.example](.env.example)):
 
 ```bash
-python scripts/scrape_arxiv.py                  # ~170 landmark papers
-python scripts/scrape_arxiv.py --mode extended  # ~15000+ across 18 topics
-python -m rag_bench.cli.pipeline --hybrid       # Chunk, embed, index
+RAG_LLM_BACKEND=ollama              # ollama | openai | anthropic
+RAG_LLM_MODEL=qwen2.5:14b           # LLM model for generation
+RAG_LLM_BASE_URL=http://ollama:11434
+RAG_EMBEDDING_MODEL=BAAI/bge-base-en-v1.5
+RAG_RERANKER_MODEL=BAAI/bge-reranker-v2-m3
+DOMAIN=ragbench.co.za               # Production only
 ```
 
-**Chunking.** Each paper is split into 1024-character chunks with 128-character overlap. Before splitting, equations (`$$...$$`, `\begin{equation}`, `\begin{align}`) are replaced with placeholders so they're never broken across chunk boundaries — same for multi-row tables detected via `| ... |` patterns. Noise sections (references, acknowledgments, ethics statements, funding) are filtered out. Each chunk gets a contextual prefix — `"{Title} — {Section}\n\n"` — prepended to improve embedding quality.
-
-**Acronym expansion.** A per-paper pass extracts all ALL-CAPS terms with parenthetical definitions (e.g., "Maximum Inner Product Search (MIPS)"). The first occurrence of each acronym per chunk is expanded inline so the embeddings capture the full meaning.
-
-**Embedding.** Chunks are embedded with `BAAI/bge-base-en-v1.5` (768-dim) in batches of 254, L2-normalized, and stored in ChromaDB with HNSW indexing using cosine distance. Each chunk carries metadata: `chunk_id`, `arxiv_id`, `section`, `source_display` (authors, year, title), and paper categories.
-
-### Stage 1: Hybrid Retrieval
-
-Two retrievers run in parallel and their results are fused.
-
-**BM25 (sparse).** Okapi BM25 (`k1=1.5`, `b=0.75`) over all chunks. Queries are tokenized to lowercase alphanumeric tokens with standard English stopwords removed. Top 500 candidates are selected via numpy `argpartition` in O(n).
-
-**Dense retrieval.** The query is prefixed with `"Represent this sentence for searching relevant passages: "` (BGE requirement), embedded with the same `bge-base-en-v1.5` model, and searched against the ChromaDB HNSW index. Returns the top 500 nearest neighbors by cosine similarity.
-
-**Reciprocal Rank Fusion.** Both ranked lists are merged by chunk ID using RRF with `k=60`:
-
-```
-RRF_score(chunk) = 0.4 / (60 + rank_bm25 + 1) + 0.6 / (60 + rank_dense + 1)
-```
-
-BM25 gets 40% weight, dense gets 60%. The fused list is sorted by combined RRF score.
-
-### Stage 2: Citation Boost
-
-An optional stage that injects chunks from foundational papers when the query warrants it.
-
-**Intent classification.** The query is classified as *foundational* ("what is", "explain", "how does", "original paper"), *recent* ("SOTA", "latest", "2024"), or *balanced*. This is pattern-based, no LLM call.
-
-**Paper injection.** 27 manually curated landmark papers (Attention Is All You Need, BERT, GPT-3, LoRA, DDPM, etc.) each have a boost factor from 1.3x to 2.0x. For foundational queries, the 3 most relevant chunks per matching paper are injected into the candidate pool (up to 25% of the rerank pool size). An age-based multiplier further adjusts scores — for foundational intent, papers from 2017 or earlier get 1.8x while recent papers get 1.0x; for recent intent, the curve inverts. Boosted papers are guaranteed to meet the 75th percentile score floor.
-
-### Stage 3: Reranking
-
-The top 100 fused candidates are rescored by a cross-encoder (`BAAI/bge-reranker-v2-m3`). Each (query, passage) pair is scored jointly — cross-encoder output ranges from roughly -10 to +10. The final top-k results (default 10) are returned to the generator. If the cross-encoder is unavailable, a keyword-overlap + phrase-bonus heuristic fills in.
-
-### Stage 4: Relevance Gating
-
-Before generation, a relevance gate decides whether to answer or deflect.
-
-**Thresholds** (auto-calibrated based on whether scores come from the cross-encoder or cosine):
-
-| Check | Threshold | Purpose |
-|-------|-----------|---------|
-| Min top score | 0.5 (cross-encoder) / 0.3 (cosine) | At least one strong result |
-| Score concentration | 0.15 | Results aren't uniformly mediocre |
-| Keyword overlap | 0.25 | Query terms actually appear in passages |
-| Min relevant chunks | 1 | At least one passage passes all checks |
-
-**Additional checks.** Queries asking for specific claims ("X achieved Y% accuracy") trigger false-premise detection — the system verifies that focal terms from the query appear 3+ times in the retrieved passages and that any referenced numbers actually exist. If checks fail, the query is deflected with a reason: *"I don't have sufficient information in my knowledge base to answer this accurately. {reason}"*
-
-### Stage 5: Generation
-
-**Prompt construction.** The LLM receives a system prompt with 11 rules enforcing citation discipline (`[Source N]` only for supported claims, no hallucination, LaTeX math in `$...$`), followed by the retrieved passages formatted as:
-
-```
-[1] Vaswani et al. (2017) "Attention Is All You Need" — §3.2 — "The scaled dot-product..."
-[2] Devlin et al. (2019) "BERT" — §2 — "We introduce a new language..."
-...
-```
-
-The LLM generates token by token, streamed to the client via SSE. Three event types are emitted: `sources` (retrieval results, sent first), `token` (each generated token), and `done` (final answer + quality metrics).
-
-**Math post-processing.** Five regex passes clean up the LLM's math output: Greek Unicode → LaTeX (`α` → `\alpha`), math symbols (`∑` → `\sum`), subscripts (`x_t` → `$x_{t}$`), superscripts (`x^2` → `$x^{2}$`), with existing `$...$` blocks preserved.
-
-**Quality metrics** (computed per response, no LLM needed):
-
-| Metric | How |
-|--------|-----|
-| Retrieval confidence | Score gap ratio between top-1 and top-2 (high/medium/low) |
-| Citation coverage | % of provided sources actually cited in the answer |
-| Citation density | `[Source N]` markers per 100 words |
-| Unsupported claims | Heuristic count of claims without adjacent citations |
-| Faithfulness score | Content-word overlap between answer and source passages (1–5) |
-| Source diversity | Unique papers and sections represented |
-
-### Parameters
-
-All tunable values live in `config.py`:
+### Key Parameters
 
 | Parameter | Value | Purpose |
 |-----------|-------|---------|
@@ -172,58 +301,10 @@ All tunable values live in `config.py`:
 | `BM25_WEIGHT` | 0.4 | RRF sparse weight |
 | `DENSE_WEIGHT` | 0.6 | RRF dense weight |
 | `DEFAULT_TOP_K` | 10 | Final results to generator |
-| `RELEVANCE_THRESHOLD` | 0.3 | Min score for relevance gate |
-| `EMBEDDING_MODEL` | `BAAI/bge-base-en-v1.5` | Dense encoder (768-dim) |
-| `RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | Cross-encoder reranker |
-| `EMBEDDING_BATCH_SIZE` | 254 | GPU batch size for indexing |
-
-## Data Pipeline
-
-```bash
-# 1. Scrape papers from ArXiv
-python scripts/scrape_arxiv.py                  # ~170 landmark papers
-python scripts/scrape_arxiv.py --mode extended  # ~1500+ across 18 topics
-
-# 2. Chunk, embed, and index
-python -m rag_bench.cli.pipeline                # Scraped papers only
-python -m rag_bench.cli.pipeline --hybrid       # Merge scraped + HuggingFace
-
-# 3. Query
-curl -X POST http://localhost:8000/api/query \
-  -H "Content-Type: application/json" \
-  -d '{"question": "What is a transformer?", "top_k": 5}'
-```
-
-## API
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/query` | Query with grounded answer + citations |
-| `POST` | `/api/query/stream` | Same, with SSE streaming |
-| `GET` | `/api/health` | Health check |
-| `GET` | `/api/stats` | Corpus statistics |
-| `GET` | `/api/papers` | List indexed papers |
-| `GET` | `/api/papers/{id}` | Paper chunks |
-| `GET` | `/api/papers/{id}/pdf` | Fetch & cache ArXiv PDF |
-| `POST` | `/api/eval` | Run evaluation suite |
-| `GET` | `/api/metrics/summary` | Live Prometheus-style metrics |
-
-Interactive docs at `/docs` (Swagger) or `/redoc`.
-
-## Configuration
-
-Key settings in `.env` (see [.env.example](.env.example)):
-
-```bash
-RAG_LLM_BACKEND=ollama          # ollama | openai | anthropic
-RAG_LLM_MODEL=gemma2:27b
-RAG_LLM_BASE_URL=http://ollama:11434
-DOMAIN=ragbench.co.za           # Production only
-```
 
 ## Setup
 
-**Requirements:** Docker & Docker Compose v2, 16 GB+ RAM, 100 GB+ disk. NVIDIA GPU optional.
+**Requirements:** Docker & Docker Compose v2, 30 GB+ RAM (or 16 GB + swap), 100 GB+ disk. NVIDIA GPU recommended.
 
 ```bash
 # Local development
@@ -244,7 +325,18 @@ make ruff            # Format & lint
 make check           # Pre-commit hooks
 ```
 
-Run `make help` for the full list of targets.
+## Load Testing
+
+```bash
+# Smoke test (5 users, 2 minutes)
+python -m locust --host https://localhost --headless -u 5 -r 1 -t 2m
+
+# Browse-only (no LLM queries)
+python -m locust --host https://localhost --headless -u 20 -r 5 -t 2m BrowseUser
+
+# Query stress test
+python -m locust --host https://localhost --headless -u 6 -r 2 -t 3m QueryUser
+```
 
 ## Docs
 
