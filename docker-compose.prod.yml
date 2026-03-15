@@ -39,9 +39,9 @@ services:
       - ollama
     restart: always
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/health')"]
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/health', timeout=15)"]
       interval: 30s
-      timeout: 10s
+      timeout: 20s
       retries: 5
       start_period: 360s
     expose:
