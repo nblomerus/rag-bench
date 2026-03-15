@@ -908,7 +908,7 @@ async def query_rag(request: QueryRequest, raw_request: Request):
     ACTIVE_REQUESTS.inc()
     start = time.time()
     try:
-        result = generator.answer(request.question, top_k=request.top_k)
+        result = await asyncio.to_thread(generator.answer, request.question, top_k=request.top_k)
     except Exception:
         ACTIVE_REQUESTS.dec()
         QUERIES_TOTAL.labels(status="error").inc()
