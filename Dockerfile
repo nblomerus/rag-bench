@@ -51,8 +51,8 @@ RUN mkdir -p /app/logs /app/chroma_db /app/data && \
     chmod -R 755 /app/logs /app/chroma_db /app/data
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/api/health')" || exit 1
+HEALTHCHECK --interval=30s --timeout=20s --start-period=360s --retries=5 \
+    CMD python -c "import httpx; httpx.get('http://localhost:8000/api/health', timeout=15)" || exit 1
 
 # Expose port
 EXPOSE 8000
