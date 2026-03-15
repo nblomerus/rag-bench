@@ -218,7 +218,7 @@ def _config_from_args(args) -> PipelineConfig:
         ),
         generator=GeneratorConfig(
             llm_backend=args.backend,
-            llm_model=args.model or "gemma2:27b",
+            llm_model=args.model or "qwen2.5:14b",
             llm_base_url=args.base_url or "",
             top_k=args.top_k,
             relevance_threshold=args.threshold,

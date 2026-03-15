@@ -175,7 +175,7 @@ class GeneratorConfig:
     """Configuration for answer generation."""
 
     llm_backend: str = "template"  # "ollama" | "openai" | "template"
-    llm_model: str = "gemma2:27b"
+    llm_model: str = "qwen2.5:14b"
     llm_base_url: str = "http://localhost:11434"
     top_k: int = 10
     relevance_threshold: float = 0.3
@@ -251,7 +251,7 @@ class PipelineConfig:
             ),
             generator=GeneratorConfig(
                 llm_backend=os.environ.get("RAG_LLM_BACKEND", "ollama"),
-                llm_model=os.environ.get("RAG_LLM_MODEL", "gemma2:27b"),
+                llm_model=os.environ.get("RAG_LLM_MODEL", "qwen2.5:14b"),
                 llm_base_url=os.environ.get("RAG_LLM_BASE_URL", "http://localhost:11434"),
             ),
         )

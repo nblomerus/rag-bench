@@ -7,7 +7,7 @@ export async function queryRAGStream(question, { onSources, onToken, onDone, onE
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question, top_k: topK }),
     })
-    if (res.status === 503) {
+    if (res.status === 429) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.detail || 'Server is at capacity. Please try again shortly.')
     }

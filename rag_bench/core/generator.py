@@ -30,7 +30,7 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_OLLAMA_MODEL = "gemma2:27b"
+DEFAULT_OLLAMA_MODEL = "qwen2.5:14b"
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Math post-processing — wrap bare math expressions in LaTeX delimiters
@@ -687,7 +687,7 @@ class LLMBackend:
 class OllamaBackend(LLMBackend):
     """Generate via Ollama API (local LLM server)."""
 
-    def __init__(self, model: str = "gemma2:27b", base_url: str = "http://localhost:11434"):
+    def __init__(self, model: str = "qwen2.5:14b", base_url: str = "http://localhost:11434"):
         self.model = model
         self.base_url = base_url.rstrip("/")
         logger.info(f"Ollama backend: {model} at {base_url}")
@@ -762,7 +762,7 @@ class OpenAICompatibleBackend(LLMBackend):
 
     def __init__(
         self,
-        model: str = "gemma2:27b",
+        model: str = "qwen2.5:14b",
         base_url: str = "http://localhost:8000/v1",
         api_key: str = "not-needed",
     ):
@@ -841,12 +841,12 @@ def build_llm_backend(backend: str, model: str = "", base_url: str = ""):
     """
     if backend == "ollama":
         return OllamaBackend(
-            model=model or "gemma2:27b",
+            model=model or "qwen2.5:14b",
             base_url=base_url or "http://localhost:11434",
         )
     elif backend == "openai":
         return OpenAICompatibleBackend(
-            model=model or "gemma2:27b",
+            model=model or "qwen2.5:14b",
             base_url=base_url or "http://localhost:8000/v1",
         )
     else:

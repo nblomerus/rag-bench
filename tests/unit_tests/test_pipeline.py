@@ -92,7 +92,7 @@ class TestBuildPipeline:
         pipeline = build_pipeline(cfg)
 
         assert pipeline.config.name == "test_run"
-        mock_build_llm.assert_called_once_with("ollama", "gemma2:27b", "http://localhost:11434")
+        mock_build_llm.assert_called_once_with("ollama", "qwen2.5:14b", "http://localhost:11434")
 
     @patch("rag_bench.core.pipeline.HybridRetriever")
     @patch("rag_bench.core.pipeline.BGEEmbedder")

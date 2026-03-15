@@ -128,9 +128,10 @@ logger = get_logger(__name__)
 # Global pipeline instance (loaded once at startup via build_pipeline)
 _pipeline: RAGPipeline | None = None
 
-# Limit concurrent queries to avoid CUDA OOM on the embedding/reranker GPU
-_QUERY_CONCURRENCY = 2
-_MAX_QUEUED_QUERIES = 4  # reject with 503 when queue is full to prevent OOM
+# Limit concurrent queries — each query uses ~8GB (embedding + reranking + Ollama generation)
+# on a 30GB system with 10GB baseline, only 1 concurrent query avoids swap thrashing
+_QUERY_CONCURRENCY = 1
+_MAX_QUEUED_QUERIES = 4  # reject with 429 when queue is full to prevent OOM
 _query_semaphore = asyncio.Semaphore(_QUERY_CONCURRENCY)
 _active_queries = 0
 _queued_queries = 0
@@ -929,7 +930,7 @@ async def query_rag(request: QueryRequest, raw_request: Request):
     # Reject early if queue is full to prevent OOM under load
     if _queued_queries >= _MAX_QUEUED_QUERIES:
         raise HTTPException(
-            status_code=503,
+            status_code=429,
             detail="Server is at capacity. Please try again shortly.",
         )
 
@@ -1063,7 +1064,7 @@ async def query_rag_stream(request: QueryRequest, raw_request: Request):
     # Reject early if queue is full to prevent OOM under load
     if _queued_queries >= _MAX_QUEUED_QUERIES:
         raise HTTPException(
-            status_code=503,
+            status_code=429,
             detail="Server is at capacity. Please try again shortly.",
         )
 
