@@ -6,11 +6,13 @@ import { PaperViewer } from '../components/PaperViewer'
 import { SendIcon, AlertIcon, Spinner } from '../components/Icons'
 
 const EXAMPLES = [
-    "What is the scaled dot-product attention formula?",
-    "How does LoRA reduce trainable parameters?",
-    "Compare RAG and RLHF approaches to factual accuracy",
-    "What is the forward diffusion process in DDPM?",
-    "What is the Mamba architecture's selective state space mechanism?",
+    "What is a Transformer?",
+    "How does GPT generate text?",
+    "What is RAG and how does it work?",
+    "How does BERT understand language?",
+    "What is the difference between fine-tuning and prompt engineering?",
+    "How does GPT-4 compare to GPT-3.5 on MMLU?",
+    "What is self-attention in the Transformer?",
 ]
 
 export function AskTab({ ready, serverOffline }) {
