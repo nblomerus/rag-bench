@@ -12,6 +12,7 @@ The hybrid approach handles edge cases that pure dense retrieval misses:
 - Final ranking precision (cross-encoder wins)
 """
 
+import json
 import logging
 import math
 import pickle
@@ -480,10 +481,154 @@ class HybridRetriever:
         self.bm25_weight = bm25_weight
         self.dense_weight = dense_weight
 
+        # Paper title index for canonical paper boosting
+        logger.info("Building paper title index...")
+        self._build_title_index()
+
         total_chunks = self.collection.count()
         logger.info(
             f"HybridRetriever ready: {total_chunks} chunks, BM25 weight={bm25_weight}, Dense weight={dense_weight}"
         )
+
+    def _build_title_index(self):
+        """Build paper title -> arxiv_id lookup for canonical paper boosting."""
+        cache_path = self._chroma_path / "title_index.json"
+
+        if cache_path.exists():
+            with open(cache_path) as f:
+                self._paper_titles = json.load(f)
+            logger.info(f"Title index loaded from cache ({len(self._paper_titles)} papers)")
+        else:
+            count = self.collection.count()
+            papers: dict[str, str] = {}
+            batch_size = 100_000
+            for offset in range(0, count, batch_size):
+                batch_limit = min(batch_size, count - offset)
+                data = self.collection.get(
+                    offset=offset,
+                    limit=batch_limit,
+                    include=["metadatas"],
+                )
+                for meta in data["metadatas"]:
+                    pid = meta.get("arxiv_id", "")
+                    title = meta.get("title", "")
+                    if pid and title and pid not in papers:
+                        papers[pid] = title
+                logger.info(f"  Title index: scanned {min(offset + batch_size, count)}/{count}")
+
+            self._paper_titles = papers
+            with open(cache_path, "w") as f:
+                json.dump(papers, f)
+            logger.info(f"Title index built and cached ({len(papers)} papers)")
+
+        # Build inverted index: word -> list of arxiv_ids
+        self._title_words: dict[str, list[str]] = {}
+        for pid, title in self._paper_titles.items():
+            for word in set(re.findall(r"[a-z0-9]+", title.lower())):
+                if len(word) >= 2:
+                    self._title_words.setdefault(word, []).append(pid)
+        logger.info(f"Title inverted index: {len(self._title_words)} unique terms")
+
+    _TITLE_STOP_WORDS = frozenset(
+        {
+            "what",
+            "how",
+            "does",
+            "did",
+            "do",
+            "is",
+            "are",
+            "was",
+            "were",
+            "the",
+            "a",
+            "an",
+            "and",
+            "or",
+            "if",
+            "to",
+            "of",
+            "in",
+            "on",
+            "at",
+            "by",
+            "it",
+            "be",
+            "as",
+            "so",
+            "up",
+            "no",
+            "we",
+            "its",
+            "not",
+            "but",
+            "they",
+            "can",
+            "which",
+            "about",
+            "have",
+            "has",
+            "this",
+            "that",
+            "than",
+            "into",
+            "between",
+            "over",
+            "from",
+            "with",
+            "many",
+            "more",
+        }
+    )
+
+    def _find_title_matches(self, question: str, max_papers: int = 3) -> list[str]:
+        """Find canonical papers whose titles best match the query using IDF scoring."""
+        query_terms = set(re.findall(r"[a-z0-9]+", question.lower())) - self._TITLE_STOP_WORDS
+        total_papers = max(len(self._paper_titles), 1)
+
+        paper_scores: Counter = Counter()
+        for term in query_terms:
+            matching_papers = self._title_words.get(term, [])
+            n = len(matching_papers)
+            if n == 0 or n > total_papers * 0.5:
+                continue
+            weight = math.log(total_papers / n)
+            for pid in matching_papers:
+                paper_scores[pid] += weight
+
+        min_score = math.log(total_papers / 200)
+        ranked = [(pid, s) for pid, s in paper_scores.most_common(max_papers * 3) if s >= min_score]
+        return [pid for pid, _ in ranked[:max_papers]]
+
+    def _search_abstracts(self, question: str, max_papers: int = 3) -> list[str]:
+        """Find canonical papers by querying abstract sections with dense search."""
+        prefixed_query = self.BGE_QUERY_PREFIX + question
+        raw_embedding = self.embed_model.encode(prefixed_query, normalize_embeddings=True)
+        query_embedding = np.array(raw_embedding).flatten().tolist()
+
+        try:
+            results = self.collection.query(
+                query_embeddings=[query_embedding],
+                where={"section": "abstract"},
+                n_results=max_papers * 5,
+                include=["metadatas", "distances"],
+            )
+        except Exception:
+            return []
+
+        if not results or not results.get("ids") or not results["ids"][0]:
+            return []
+
+        seen: set[str] = set()
+        papers: list[str] = []
+        for i in range(len(results["ids"][0])):
+            pid = results["metadatas"][0][i].get("arxiv_id", "")
+            if pid and pid not in seen:
+                seen.add(pid)
+                papers.append(pid)
+                if len(papers) >= max_papers:
+                    break
+        return papers
 
     def _build_bm25_index(self):
         """Load BM25 index from cache, or build from ChromaDB and cache."""
