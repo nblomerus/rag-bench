@@ -127,18 +127,20 @@ def compute_retrieval_metrics(
     """
     Compute all retrieval metrics at once.
 
-    Uses acceptable_sources for precision (broader set),
-    expected_sources for recall (strict set).
+
+    Uses acceptable_sources for hit_rate, mrr, ndcg, and precision (broader set)
+    since any acceptable paper can validly answer the question.
+    Uses expected_sources for recall (strict set — the canonical papers).
     """
     retrieved_ids = extract_paper_ids(results)
-    precision_ids = acceptable_sources if acceptable_sources else expected_sources
+    hit_ids = acceptable_sources if acceptable_sources else expected_sources
 
     return {
-        "precision_at_k": precision_at_k(retrieved_ids, precision_ids, k),
+        "precision_at_k": precision_at_k(retrieved_ids, hit_ids, k),
         "recall_at_k": recall_at_k(retrieved_ids, expected_sources, k),
-        "mrr": mean_reciprocal_rank(retrieved_ids, expected_sources),
-        "ndcg_at_k": ndcg_at_k(retrieved_ids, expected_sources, k),
-        "hit_rate": hit_rate(retrieved_ids, expected_sources, k),
+        "mrr": mean_reciprocal_rank(retrieved_ids, hit_ids),
+        "ndcg_at_k": ndcg_at_k(retrieved_ids, hit_ids, k),
+        "hit_rate": hit_rate(retrieved_ids, hit_ids, k),
         "retrieved_papers": retrieved_ids,
         "expected_papers": list(expected_sources),
         "k": k,
