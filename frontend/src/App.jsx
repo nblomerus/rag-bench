@@ -42,7 +42,7 @@ function AppContent() {
     }, [])
 
     return (
-        <div className="h-screen flex flex-col" style={{ background: 'var(--apple-bg-primary)', color: 'var(--apple-text-primary)' }}>
+        <div className="app-shell flex flex-col" style={{ background: 'var(--apple-bg-primary)', color: 'var(--apple-text-primary)' }}>
             {/* Header */}
             <header className="flex-shrink-0 flex items-center justify-between px-6 py-3 glass-thick border-b apple-divider sticky top-0 z-30">
                 <div className="flex items-center gap-3">
@@ -77,7 +77,7 @@ function AppContent() {
             <TabNavigation />
 
             {/* Tab Content */}
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex overflow-hidden min-h-0">
                 {/* Ask tab — always mounted, visibility toggled to preserve state */}
                 <div className={`flex-1 flex ${activeTab === 'ask' ? '' : 'hidden'}`}>
                     <AskTab ready={ready} serverOffline={serverOffline} />

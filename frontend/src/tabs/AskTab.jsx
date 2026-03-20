@@ -190,8 +190,8 @@ export function AskTab({ ready, serverOffline }) {
     return (
         <div className="flex flex-1 overflow-hidden">
             {/* Main content area */}
-            <div className="flex-1 flex flex-col overflow-hidden">
-                <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-4 flex flex-col">
+            <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-4 flex flex-col min-h-0 overflow-hidden">
                     <div className="flex-1 overflow-y-auto pb-4">
                         {serverOffline && (
                             <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
